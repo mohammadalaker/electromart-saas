@@ -64,8 +64,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Routes>
           <Route path="/signup" element={<SignUp />} />
           <Route path="/signin" element={<SignIn />} />
-          <Route path="/my-store" element={<PublicStoreLanding />} />
-          <Route path="/my-store/:slug" element={<PublicStorePage />} />
+          <Route path="/" element={<PublicStoreLanding />} />
           <Route element={<RequireAuth />}>
           <Route path="/overview" element={<ExecutiveDashboardPage />} />
           <Route path="/inventory" element={<App />} />
@@ -109,8 +108,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/settings/plan" element={<SubscriptionPlanPage />} />
           <Route path="/settings/integrations" element={<IntegrationsPage />} />
           <Route path="/settings/storefront" element={<EntitlementGuard module="storefront"><StorefrontSettingsPage /></EntitlementGuard>} />
-          <Route path="/" element={<Navigate to="/overview" replace />} />
           </Route>
+          <Route path="/:slug" element={<PublicStorePage />} />
         </Routes>
       </StoreProvider>
       </ToastProvider>

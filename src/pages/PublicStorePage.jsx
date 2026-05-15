@@ -340,7 +340,7 @@ export default function PublicStorePage() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-100 text-slate-800" dir="rtl">
         <Package className="text-slate-400 mb-4" size={48} />
         <p className="text-lg font-black text-center">{loadError || 'المتجر غير متاح'}</p>
-        <Link to="/my-store" className="mt-6 text-blue-700 font-bold hover:underline">
+        <Link to="/" className="mt-6 text-blue-700 font-bold hover:underline">
           العودة
         </Link>
       </div>

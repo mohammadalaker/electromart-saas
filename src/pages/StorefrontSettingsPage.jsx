@@ -63,7 +63,7 @@ export default function StorefrontSettingsPage() {
 
   const publicUrl =
     typeof window !== 'undefined' && slug
-      ? `${window.location.origin}/my-store/${encodeURIComponent(slug.trim().toLowerCase())}`
+      ? `${window.location.origin}/${encodeURIComponent(slug.trim().toLowerCase())}`
       : '';
 
   const handleSave = async (e) => {
@@ -180,7 +180,7 @@ export default function StorefrontSettingsPage() {
               <label className="block text-xs font-bold text-slate-600 mb-1.5">معرّف الرابط (بالإنجليزية)</label>
               <div className="flex flex-wrap items-center gap-2" dir="ltr">
                 <span className="text-xs text-slate-400 font-mono truncate max-w-[200px] sm:max-w-none">
-                  {typeof window !== 'undefined' ? window.location.origin : ''}/my-store/
+                  {typeof window !== 'undefined' ? `${window.location.origin}/` : ''}
                 </span>
                 <input
                   type="text"

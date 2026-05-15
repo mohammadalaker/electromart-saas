@@ -4,7 +4,7 @@ import SwiftmLogo from '../components/SwiftmLogo.jsx';
 import { BRAND_NAME, BRAND_TAGLINE_AR } from '../constants/brand.js';
 
 /**
- * صفحة توضيحية عند زيارة /my-store بدون معرّف متجر.
+ * صفحة توضيحية عند زيارة / بدون معرّف متجر.
  */
 export default function PublicStoreLanding() {
   return (
@@ -23,7 +23,7 @@ export default function PublicStoreLanding() {
           للاستخدام العام ولا يتطلّب تسجيل دخول.
         </p>
         <p className="text-xs text-slate-500 font-mono break-all" dir="ltr">
-          مثال: …/my-store/اسم-متجرك
+          مثال: …/اسم-متجرك
         </p>
         <Link
           to="/signin"
