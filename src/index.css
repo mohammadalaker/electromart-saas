@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* تنبيه مخزن: كمية = 1 قطعة — وميض خفيف */
+@keyframes inventory-qty-pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px rgb(239 68 68 / 0.45);
+    background-color: rgb(254 242 242 / 0.85);
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px rgb(239 68 68 / 0.75);
+    background-color: rgb(254 226 226 / 0.95);
+  }
+}
+.dark .inventory-qty-critical {
+  animation: inventory-qty-pulse 1.2s ease-in-out infinite;
+  background-color: rgb(127 29 29 / 0.25) !important;
+  color: rgb(254 202 202) !important;
+  box-shadow: inset 0 0 0 1px rgb(248 113 113 / 0.5);
+}
+.inventory-qty-critical {
+  animation: inventory-qty-pulse 1.2s ease-in-out infinite;
+}
+
+body {
+  @apply font-arabic bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* عناوين عربية بخط Cairo */
+h1, h2, h3, h4 {
+  @apply font-title;
+}
+
+/* أرقام ورموز عملة (₪ وغيرها) بخط sans لاتيني — لا توريث من خطوط العربية */
+@layer utilities {
+  .font-currency {
+    @apply font-sans tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+}
+
+/* يتفوق على font-title في h3/h4 عند عرض أرقام أو ₪ */
+h3.font-currency,
+h4.font-currency {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* طباعة الفاتورة: إخفاء بقية الواجهة */
+@media print {
+  @page {
+    margin: 12mm;
+    size: A4;
+  }
+  body.print-invoice-active #root > * {
+    display: none !important;
+  }
+  body.print-invoice-active #print-invoice-mount {
+    display: block !important;
+  }
+  #print-invoice-mount {
+    position: relative;
+    z-index: 0;
+  }
+  #print-invoice-mount .print-invoice-root {
+    font-family: 'Cairo', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    box-shadow: none !important;
+  }
+
+  /* كشف حساب مورد: نفس #print-invoice-mount + portal إلى body (SupplierAccountStatementPage) */
+  .print-supplier-statement.print-invoice-root {
+    font-family: 'Cairo', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    box-shadow: none !important;
+  }
+  .print-supplier-statement {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-supplier-statement table thead {
+    display: table-header-group;
+  }
+  .print-supplier-statement table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-customer-statement.print-invoice-root {
+    font-family: 'Cairo', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    box-shadow: none !important;
+  }
+  .print-customer-statement {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-customer-statement table thead {
+    display: table-header-group;
+  }
+  .print-customer-statement table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/*
+ * Recharts (عند إضافتها لاحقاً): نصوص ومحاور وشبكة فاتحة في Dark Mode
+ * تُطبَّق تلقائياً على أي ResponsiveContainer داخل html.dark
+ */
+.dark .recharts-cartesian-axis-tick-value {
+  fill: #e2e8f0;
+}
+.dark .recharts-text {
+  fill: #e2e8f0;
+}
+.dark .recharts-label {
+  fill: #cbd5e1;
+}
+.dark .recharts-legend-item-text {
+  color: #e2e8f0 !important;
+  fill: #e2e8f0;
+}
+.dark .recharts-cartesian-grid line {
+  stroke: #475569;
+}
+.dark .recharts-cartesian-axis-line {
+  stroke: #64748b;
+}
+.dark .recharts-polar-grid line {
+  stroke: #475569;
+}
+.dark .recharts-radial-bar-background-sector {
+  fill: #334155;
+}
+.dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: rgb(15 23 42 / 0.95) !important;
+  border: 1px solid rgb(71 85 105 / 0.55) !important;
+  color: #f1f5f9;
+}
+.dark .recharts-tooltip-label {
+  color: #f1f5f9 !important;
+}
+.dark .recharts-tooltip-item-name,
+.dark .recharts-tooltip-item-value {
+  color: #e2e8f0 !important;
+}

@@ -1,0 +1,37 @@
+{
+  "name": "swiftm",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "npx vite build",
+    "preview": "npx vite preview",
+    "serve": "npm run build && npm run preview",
+    "sync-electric": "node scripts/syncElectric.cjs",
+    "read-excel": "node scripts/readExcel.cjs",
+    "update-products": "node scripts/readExcel.cjs",
+    "update-electric": "node scripts/syncElectric.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.93.3",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.563.0",
+    "react": "^18.3.1",
+    "react-barcode": "^1.3.2",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.14.0",
+    "react-to-print": "^3.3.0",
+    "recharts": "^3.8.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "vite": "^5.4.10"
+  }
+}
