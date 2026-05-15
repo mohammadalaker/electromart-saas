@@ -348,19 +348,15 @@ export default function PublicStorePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900" dir="rtl">
-      <header className="sticky top-0 z-40 border-b border-blue-800/10 bg-[#0b5fae] text-white shadow-md">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 text-slate-900" dir="rtl">
+      <header className="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-2xl border-b border-white/5">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 flex items-center gap-3">
-            <SwiftmLogo
-              className="text-white"
-              compact
-              showTagline={false}
-            />
+            <SwiftmLogo className="text-white opacity-90" compact showTagline={false} />
             <div className="h-6 w-px bg-white/30" />
             <div>
-              <h1 className="text-sm sm:text-base font-black truncate">{storeName || 'متجر إلكتروني'}</h1>
-              <p className="text-[11px] text-white/80 mt-0.5">
+              <h1 className="text-sm sm:text-base font-black truncate text-white">{storeName || 'متجر إلكتروني'}</h1>
+              <p className="text-[11px] text-indigo-300/80 mt-0.5">
                 {paymentLink ? 'الدفع عند الاستلام أو إلكترونياً' : 'تصفّح المنتجات — الدفع عند الاستلام'}
               </p>
             </div>
@@ -369,7 +365,7 @@ export default function PublicStorePage() {
             type="button"
             onClick={() => setCartOpen(true)}
             aria-label="فتح السلة"
-            className="order-first relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+            className="order-first relative inline-flex w-11 h-11 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-white/90 transition-colors hover:bg-white/15 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
           >
             <ShoppingCart size={22} strokeWidth={1.75} />
             {cartCount > 0 ? (
@@ -393,17 +389,24 @@ export default function PublicStorePage() {
       )}
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+        <section className="relative overflow-hidden rounded-3xl shadow-2xl border border-slate-200">
           <img
             src={heroKitchenImage}
             alt="بانر أجهزة مطبخ"
-            className="block h-[320px] w-full object-cover sm:h-[420px]"
+            className="block h-[420px] sm:h-[500px] w-full object-cover brightness-125 contrast-100 saturate-110"
             loading="eager"
           />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-black/20 to-black/10" />
+          <div className="absolute inset-0 bg-black/20" />
+          <div className="absolute bottom-8 right-8 z-10 text-right max-w-xs">
+            <span className="inline-block text-[10px] font-bold tracking-[0.35em] text-white/70 uppercase mb-2">مجموعة مختارة</span>
+            <h2 className="text-4xl sm:text-5xl font-black text-white leading-tight" style={{ textShadow: '0 2px 20px rgba(0,0,0,0.5)' }}>أجهزة مطبخ أذكى<br/>لأداء أفضل.</h2>
+            <p className="mt-3 text-sm text-white/80">ذوق رفيع.. وأداء أذكى.</p>
+          </div>
         </section>
 
         <div className="space-y-4">
-          <div className="-mx-1 px-1">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 border border-slate-100 shadow-sm">
             <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 pt-1 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.4)_transparent]">
               {STORE_CATEGORY_TILES.map((tile) => {
                 const active = categoryTile === tile.id;
@@ -413,15 +416,15 @@ export default function PublicStorePage() {
                     key={tile.id}
                     type="button"
                     onClick={() => setCategoryTile(tile.id)}
-                    className={`flex shrink-0 flex-col items-center gap-2 w-[4.75rem] sm:w-[5.75rem] text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-xl pb-1 ${
+                    className={`flex shrink-0 flex-col items-center gap-2 w-[4.75rem] sm:w-[5.75rem] text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-xl pb-1 transition-all duration-200 ${
                       active ? 'opacity-100' : 'opacity-90 hover:opacity-100'
                     }`}
                   >
                     <span
-                      className={`flex h-[4.5rem] w-[4.5rem] sm:h-[5.25rem] sm:w-[5.25rem] items-center justify-center overflow-hidden rounded-[1.35rem] border bg-white transition-all ${
+                      className={`flex h-[4.5rem] w-[4.5rem] sm:h-[5.25rem] sm:w-[5.25rem] items-center justify-center overflow-hidden rounded-[1.35rem] border transition-all duration-200 ${
                         active
-                          ? 'border-blue-400 shadow-[0_0_0_1px_rgba(59,130,246,0.2)] ring-2 ring-blue-200'
-                          : 'border-slate-200 hover:border-slate-300'
+                          ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-md bg-gradient-to-br from-indigo-50 to-blue-50'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
                     >
                       {tile.id === 'all' ? (
@@ -447,7 +450,7 @@ export default function PublicStorePage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="rounded-2xl border border-slate-200/60 bg-white/90 backdrop-blur-sm p-4 space-y-3 shadow-sm">
             <div className="flex items-center gap-2 text-blue-700 font-bold text-xs">
               <Filter size={16} />
               بحث وتصفية إضافية
@@ -460,13 +463,13 @@ export default function PublicStorePage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="بحث بالاسم أو الباركود…"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-10 py-2.5 text-sm font-medium placeholder:text-slate-400"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-3 pr-10 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-all"
                 />
               </div>
               <select
                 value={brandFilter}
                 onChange={(e) => setBrandFilter(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700"
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-all"
               >
                 <option value="">كل الماركات</option>
                 {allBrands.map((b) => (
@@ -485,7 +488,7 @@ export default function PublicStorePage() {
               type="button"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPageClamped <= 1}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40 transition-all hover:shadow-md"
             >
               الصفحة السابقة
             </button>
@@ -496,7 +499,7 @@ export default function PublicStorePage() {
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPageClamped >= totalPages}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40 transition-all hover:shadow-md"
             >
               الصفحة التالية
             </button>
@@ -511,9 +514,9 @@ export default function PublicStorePage() {
             return (
               <article
                 key={item.id}
-                className="group rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-blue-300 transition-colors flex flex-col shadow-sm"
+                className="group relative rounded-3xl border border-slate-100 bg-white overflow-hidden hover:border-indigo-200 hover:shadow-2xl hover:shadow-indigo-100/50 hover:-translate-y-2 transition-all duration-300 flex flex-col"
               >
-                <div className="aspect-[4/3] bg-slate-50 flex items-center justify-center p-4">
+                <div className="aspect-[4/3] bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 flex items-center justify-center p-6 border-b border-slate-100/60">
                   {img ? (
                     <img src={img} alt="" className="max-h-full max-w-full object-contain drop-shadow-lg" />
                   ) : (
@@ -521,7 +524,7 @@ export default function PublicStorePage() {
                   )}
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <p className="text-xs font-black text-indigo-700 mb-1">
+                  <p className="text-[10px] font-black text-indigo-500 mb-1 tracking-wide uppercase">
                     {getProductTypeLabel(item.productType) || '—'}
                   </p>
                   {item.group ? (
@@ -536,7 +539,7 @@ export default function PublicStorePage() {
                   <div className="mt-3 flex items-end justify-between gap-2">
                     <div>
                       <p className="text-xs text-slate-500">السعر</p>
-                      <p className="text-xl font-black text-slate-900 font-currency" lang="en">
+                      <p className="text-2xl font-black text-slate-900 font-currency" lang="en">
                         ₪ {roundMoney(item.priceAfterDiscount ?? item.price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -552,7 +555,7 @@ export default function PublicStorePage() {
                     type="button"
                     disabled={out}
                     onClick={() => addToCart(item)}
-                    className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b5fae] hover:bg-[#0a4f92] text-white font-black py-3 disabled:opacity-40 disabled:pointer-events-none"
+                    className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-indigo-600 to-blue-500 hover:from-indigo-500 hover:to-blue-400 active:scale-[0.98] text-white font-black py-3.5 shadow-lg shadow-indigo-200/60 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none disabled:bg-slate-300 disabled:shadow-none"
                   >
                     <Plus size={18} />
                     {inCart ? `في السلة (${inCart.qty})` : 'أضف للسلة'}
@@ -583,10 +586,10 @@ export default function PublicStorePage() {
                   key={token}
                   type="button"
                   onClick={() => setCurrentPage(token)}
-                  className={`h-9 min-w-9 rounded-lg px-2 text-sm font-black ${
+                  className={`h-9 min-w-9 px-2 text-sm font-black transition-all ${
                     token === currentPageClamped
-                      ? 'bg-[#0b5fae] text-white'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      ? 'rounded-xl bg-gradient-to-l from-indigo-600 to-blue-500 text-white shadow-md shadow-indigo-200'
+                      : 'rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:shadow-md'
                   }`}
                 >
                   {token}
@@ -675,8 +678,8 @@ export default function PublicStorePage() {
             aria-label="إغلاق"
             onClick={() => setCartOpen(false)}
           />
-          <div className="absolute left-0 top-0 h-full w-full max-w-[30rem] border-r border-slate-200 bg-white shadow-2xl flex flex-col">
-            <div className="border-b border-slate-200 px-4 py-4">
+          <div className="absolute left-0 top-0 h-full w-full max-w-[30rem] border-r border-slate-200 bg-gradient-to-b from-white to-slate-50/80 shadow-2xl flex flex-col">
+            <div className="border-b border-indigo-100 bg-gradient-to-l from-indigo-50 to-white px-4 py-4">
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-xl font-black text-slate-900">عربة السوق</h2>
                 <button
@@ -797,14 +800,14 @@ export default function PublicStorePage() {
                   setCartOpen(false);
                   setCheckoutOpen(true);
                 }}
-                className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:opacity-40"
+                className="w-full rounded-2xl bg-gradient-to-l from-indigo-700 to-blue-600 py-3 text-sm font-black text-white shadow-lg disabled:opacity-40"
               >
                 إتمام الطلب
               </button>
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 text-sm font-bold text-slate-700"
+                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
               >
                 إضافة منتجات أخرى للطلب
               </button>
@@ -823,7 +826,7 @@ export default function PublicStorePage() {
       {checkoutOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-950 p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-indigo-500/20 bg-gradient-to-b from-slate-950 to-indigo-950 p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
             dir="rtl"
           >
             <div className="flex items-center justify-between mb-4">
@@ -851,7 +854,7 @@ export default function PublicStorePage() {
                   required
                   value={custName}
                   onChange={(e) => setCustName(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                 />
               </label>
               <label className="block">
@@ -861,7 +864,7 @@ export default function PublicStorePage() {
                   type="tel"
                   value={custPhone}
                   onChange={(e) => setCustPhone(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white font-mono"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white font-mono focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                   dir="ltr"
                 />
               </label>
@@ -872,7 +875,7 @@ export default function PublicStorePage() {
                   rows={3}
                   value={custAddress}
                   onChange={(e) => setCustAddress(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white resize-none"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white resize-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                 />
               </label>
               <label className="block">
@@ -881,7 +884,7 @@ export default function PublicStorePage() {
                   rows={2}
                   value={custNotes}
                   onChange={(e) => setCustNotes(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white resize-none"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white resize-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                 />
               </label>
               <div className="flex flex-col gap-2 pt-2">
@@ -889,7 +892,7 @@ export default function PublicStorePage() {
                    type="submit"
                    onClick={() => setUseElectronicPayment(false)}
                    disabled={submitting || cart.length === 0}
-                   className="w-full rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3.5 flex items-center justify-center gap-2 disabled:opacity-50"
+                   className="w-full rounded-2xl bg-gradient-to-l from-amber-500 to-orange-400 hover:from-amber-400 hover:to-orange-300 text-slate-950 font-black py-3.5 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/30 disabled:opacity-50"
                  >
                    {submitting && !useElectronicPayment ? <Loader2 className="animate-spin" size={22} /> : null}
                    تأكيد الطلب (الدفع عند الاستلام)
