@@ -352,8 +352,6 @@ export default function PublicStorePage() {
       <header className="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-2xl border-b border-white/5">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 flex items-center gap-3">
-            <SwiftmLogo className="text-white opacity-90" compact showTagline={false} />
-            <div className="h-6 w-px bg-white/30" />
             <div>
               <h1 className="text-sm sm:text-base font-black truncate text-white">{storeName || 'متجر إلكتروني'}</h1>
               <p className="text-[11px] text-indigo-300/80 mt-0.5">
