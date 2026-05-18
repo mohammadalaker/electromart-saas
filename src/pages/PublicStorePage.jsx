@@ -161,6 +161,15 @@ export default function PublicStorePage() {
     }
   }, [cart, slug]);
 
+  useEffect(() => {
+    if (storeName) {
+      document.title = storeName;
+    }
+    return () => {
+      document.title = 'Swiftm — إدارة تجارة ذكية';
+    };
+  }, [storeName]);
+
   const allBrands = useMemo(
     () => [...new Set(items.map((i) => i.group).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b))),
     [items]
