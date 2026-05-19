@@ -607,73 +607,8 @@ export default function PublicStorePage() {
         )}
       </div>
 
-      <footer className="mt-8 text-white">
-        <div className="h-16 bg-white border-t border-slate-200" />
-        <div className="relative overflow-hidden border-t border-white/10 bg-gradient-to-b from-[#04177a] via-[#03115f] to-[#020a41]">
-          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-[94px] font-semibold tracking-[-0.02em] text-white/15 hidden xl:block">
-            {BRAND_NAME_LOWER}
-          </span>
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rotate-90 text-[94px] font-semibold tracking-[-0.02em] text-white/15 hidden xl:block">
-            {BRAND_NAME_LOWER}
-          </span>
-
-          <div className="max-w-6xl mx-auto px-4 py-12 relative z-10">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
-              <div>
-                <h3 className="text-sm font-black mb-4 text-blue-100">خدمة العملاء</h3>
-                <ul className="space-y-2.5 text-sm text-blue-100/85">
-                  <li>الشحن والتوصيل</li>
-                  <li>الاستبدال والاسترجاع</li>
-                  <li>دعم المنتجات</li>
-                  <li>تواصل معنا</li>
-                  <li>موقع المتجر</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-black mb-4 text-blue-100">سياساتنا</h3>
-                <ul className="space-y-2.5 text-sm text-blue-100/85">
-                  <li>سياسة الاستخدام</li>
-                  <li>إعدادات ملفات الارتباط</li>
-                  <li>سياسة الكوكيز</li>
-                  <li>سياسة الخصوصية</li>
-                  <li>الشروط والأحكام</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-black mb-4 text-blue-100">عن الشركة</h3>
-                <ul className="space-y-2.5 text-sm text-blue-100/85">
-                  <li>عن {BRAND_NAME}</li>
-                  <li>المسؤولية المجتمعية</li>
-                  <li>الاستثمار</li>
-                  <li>الوظائف</li>
-                  <li>الأخبار</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-sm font-black mb-4 text-blue-100">روابط التواصل</h3>
-                <ul className="space-y-2.5 text-sm text-blue-100/85">
-                  <li>Facebook</li>
-                  <li>Instagram</li>
-                  <li>LinkedIn</li>
-                  <li>YouTube</li>
-                  <li>TikTok</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-12 text-center">
-              <p className="text-[2.3rem] font-semibold tracking-[-0.02em] text-white/90 leading-none">{BRAND_NAME_LOWER}</p>
-              <p className="mt-2 text-[0.7rem] font-semibold tracking-[0.45em] text-blue-100/65">{BRAND_TAGLINE_EN}</p>
-            </div>
-
-            <div className="mt-12 pt-5 border-t border-white/15 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs sm:text-sm text-blue-100/75">
-                {brandCopyright()}
-              </p>
-              <p className="text-xs text-blue-200/70">{BRAND_FOOTER_AR}</p>
-            </div>
-          </div>
-        </div>
+      <footer className="mt-8 border-t border-slate-200 py-6 text-center text-xs text-slate-400">
+        {storeName} — جميع الحقوق محفوظة.
       </footer>
 
       {/* Cart drawer */}
