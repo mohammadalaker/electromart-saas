@@ -36,7 +36,12 @@ const CONTACTS = 'store_contacts';
 const SALES = 'sales';
 const PURCHASES = 'store_purchases';
 const SHEKEL = '\u20AA';
-const CHART_DAYS = 14;
+const CHART_OPTIONS = [
+  { label: '7 أيام', value: 7 },
+  { label: '14 يوم', value: 14 },
+  { label: '30 يوم', value: 30 },
+  { label: '3 أشهر', value: 90 },
+];
 const LATE_SALES_DAYS = 30;
 
 function formatMoney(n) {
@@ -107,6 +112,7 @@ export default function ExecutiveDashboardPage() {
     liquidityTotal: 0,
   });
   const [topDebtors, setTopDebtors] = useState([]);
+  const [chartDays, setChartDays] = useState(14);
 
   const load = useCallback(async () => {
     if (!store?.id) {
@@ -116,7 +122,7 @@ export default function ExecutiveDashboardPage() {
     setLoading(true);
     setErr(null);
     const since = new Date();
-    since.setDate(since.getDate() - CHART_DAYS);
+    since.setDate(since.getDate() - chartDays);
     since.setHours(0, 0, 0, 0);
     const sinceIso = since.toISOString();
     const lateCut = new Date();
@@ -195,8 +201,8 @@ export default function ExecutiveDashboardPage() {
         if (bankIds.has(f.id)) bankBalance += b;
       }
 
-      const saleSeries = seriesByDay(saleRows, CHART_DAYS, (r) => Number(r.total_amount ?? 0));
-      const purSeries = seriesByDay(purchaseRows, CHART_DAYS, (r) => Number(r.total_amount ?? 0));
+      const saleSeries = seriesByDay(saleRows, chartDays, (r) => Number(r.total_amount ?? 0));
+      const purSeries = seriesByDay(purchaseRows, chartDays, (r) => Number(r.total_amount ?? 0));
 
       let lateCount = 0;
       let lateAmount = 0;
@@ -262,7 +268,7 @@ export default function ExecutiveDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [store?.id]);
+  }, [store?.id, chartDays]);
 
   useEffect(() => {
     if (storeLoading) return;
@@ -275,7 +281,7 @@ export default function ExecutiveDashboardPage() {
       const pAmount = purchaseSeries[i] || 0;
       const d = new Date();
       d.setHours(12, 0, 0, 0);
-      d.setDate(d.getDate() - (CHART_DAYS - 1 - i));
+      d.setDate(d.getDate() - (chartDays - 1 - i));
       return {
         label: new Intl.DateTimeFormat('ar', { day: 'numeric', month: 'short' }).format(d),
         sales: sAmount,
@@ -444,6 +450,22 @@ export default function ExecutiveDashboardPage() {
                        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">المشتريات</span>
                     </div>
                   </div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {CHART_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setChartDays(opt.value)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                        chartDays === opt.value
+                          ? 'bg-indigo-600 text-white shadow'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
                 <div className="h-[300px] w-full rounded-[18px] bg-gradient-to-br from-indigo-50/80 via-white to-rose-50/60 p-3 dark:from-indigo-950/20 dark:via-white/[0.02] dark:to-rose-950/20" dir="ltr">
                   <ResponsiveContainer width="100%" height="100%">
