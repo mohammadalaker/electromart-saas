@@ -7,9 +7,9 @@ import { useStore } from '../context/StoreContext';
 const SALES_TABLE = 'sales';
 
 // 5 as default low stock warning.
-const LOW_STOCK_THRESHOLD = 5;
+const LOW_STOCK_THRESHOLD = 10;
 // 5000 Shekels default for high-value anomaly.
-const UNUSUAL_SALE_THRESHOLD = 5000;
+const UNUSUAL_SALE_THRESHOLD = 3000;
 
 function formatMoney(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,7 +20,28 @@ export default function SystemAlerts() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [alerts, setAlerts] = useState([]);
+  const [readIds, setReadIds] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('swiftm-read-alerts') || '[]')); }
+    catch { return new Set(); }
+  });
   const dropdownRef = useRef(null);
+
+  const markRead = (id) => {
+    setReadIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      try { localStorage.setItem('swiftm-read-alerts', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
+
+  const markAllRead = () => {
+    const allIds = alerts.map(a => a.id);
+    setReadIds(new Set(allIds));
+    try { localStorage.setItem('swiftm-read-alerts', JSON.stringify(allIds)); } catch {}
+  };
+
+  const unreadCount = alerts.filter(a => !readIds.has(a.id)).length;
 
   const fetchAlerts = useCallback(async () => {
     if (!store?.id) return;
@@ -138,9 +159,9 @@ export default function SystemAlerts() {
         className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/90 bg-white/90 text-slate-500 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/15 focus:outline-none"
       >
         <Bell size={20} className={alerts.length > 0 ? "animate-[bell-ring_1.5s_ease-out_infinite]" : ""} />
-        {alerts.length > 0 && (
+        {unreadCount > 0 && (
             <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-black text-white shadow-md border-2 border-white dark:border-gray-900 leading-none">
-               {alerts.length > 9 ? '9+' : alerts.length}
+               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
         )}
       </button>
@@ -162,9 +183,14 @@ export default function SystemAlerts() {
                  <h3 className="text-sm font-black text-slate-800 dark:text-white">إشعارات وتنبيهات</h3>
                  <span className="bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full text-[10px] font-bold h-fit min-w-4 flex justify-center items-center leading-none mt-0.5">{alerts.length}</span>
               </div>
-              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition">
-                  <X size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={markAllRead} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition">
+                  تحديد الكل كمقروء
+                </button>
+                <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition">
+                    <X size={16} />
+                </button>
+              </div>
           </div>
 
           <div className="max-h-[350px] overflow-y-auto px-1 py-1 custom-scrollbar">
@@ -183,14 +209,19 @@ export default function SystemAlerts() {
                         <Link 
                            key={al.id} 
                            to={al.link}
-                           onClick={() => setOpen(false)}
-                           className="group flex gap-3 rounded-[16px] p-3 transition hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+                           onClick={() => { markRead(al.id); setOpen(false); }}
+                           className={`group flex gap-3 rounded-[16px] p-3 transition hover:bg-slate-50 dark:hover:bg-white/[0.03] ${
+                             !readIds.has(al.id) ? 'bg-indigo-50/40 dark:bg-indigo-500/5' : ''
+                           }`}
                         >
                             <div className={`flex shrink-0 items-center justify-center h-10 w-10 rounded-xl ${al.bgIcon}`}>
                                {al.icon}
                             </div>
                             <div className="flex flex-col min-w-0 flex-1 justify-center">
-                               <p className="text-xs font-bold text-slate-900 dark:text-white truncate pb-0.5">
+                               <p className="text-xs font-bold text-slate-900 dark:text-white truncate pb-0.5 flex items-center gap-1.5">
+                                  {!readIds.has(al.id) ? (
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                                  ) : null}
                                   {al.title}
                                </p>
                                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
@@ -201,6 +232,13 @@ export default function SystemAlerts() {
                      ))}
                  </div>
              )}
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-white/[0.04] px-4 py-3 flex items-center justify-between">
+            <span className="text-[11px] text-slate-400">تحديث كل 5 دقائق</span>
+            <button type="button" onClick={fetchAlerts} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700">
+              تحديث الآن
+            </button>
           </div>
         </div>
       )}
