@@ -69,7 +69,7 @@ function ProductCard({
             isOutOfStock
               ? 'bg-rose-50/90 text-rose-700 ring-1 ring-rose-100 dark:bg-rose-950/70 dark:text-rose-200 dark:ring-rose-900/70'
               : isLowStock
-                ? 'bg-amber-50/90 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-950/70 dark:text-amber-200 dark:ring-amber-900/70'
+                ? 'bg-rose-500 text-white font-black animate-pulse rounded-full px-2 py-0.5 text-[10px]'
                 : 'bg-emerald-50/90 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/70 dark:text-emerald-200 dark:ring-emerald-900/70'
           }`}
         >
@@ -132,7 +132,7 @@ function ProductCard({
               isOutOfStock
                 ? 'bg-rose-600/90 text-white'
                 : isLowStock
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                ? 'bg-rose-500 text-white font-black animate-pulse rounded-full px-2 py-0.5 text-[10px]'
                   : 'bg-white/10 text-slate-200'
             }`}
           >

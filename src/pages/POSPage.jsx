@@ -260,6 +260,7 @@ export default function POSPage() {
     walletLabel: '',
     pickupDate: '',
     pickupLocation: '',
+    manualDiscount: 0,
   });
   const [directoryCustomers, setDirectoryCustomers] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -812,6 +813,27 @@ export default function POSPage() {
     };
   }, [posCheckoutOpen, posCartFullOpen]);
 
+  useEffect(() => {
+    const shortcutRoutes = { p: '/pos', i: '/inventory', s: '/sales', h: '/overview' };
+    const onKeyDown = (e) => {
+      const key = e.key.toLowerCase();
+      if (key === 'escape') {
+        setPosCheckoutOpen(false);
+        setPosCartFullOpen(false);
+      }
+      if (key === 'f2') {
+        e.preventDefault();
+        barcodeInputRef.current?.focus();
+      }
+      if (key === 'f4' && orderLines.length > 0) {
+        e.preventDefault();
+        setPosCheckoutOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [orderLines.length]);
+
   const promotionResult = useMemo(
     () => evaluatePromotions(orderLines, promotions),
     [orderLines, promotions]
@@ -905,6 +927,9 @@ export default function POSPage() {
     directoryCustomers,
     loyaltyDerived.payable,
   ]);
+
+  const manualDiscount = roundMoney(Math.min(orderCustomer.manualDiscount ?? 0, cartTotals.finalTotal));
+  const invoicePayable = roundMoney(Math.max(0, loyaltyDerived.payable - manualDiscount));
 
   const getImage = (item) => getPublicImageUrl(item?.image);
 
@@ -2212,6 +2237,27 @@ export default function POSPage() {
               </div>
 
               <div className="sticky bottom-0 shrink-0 space-y-3 border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+                <div className="px-4 pb-2 space-y-2">
+                  <input
+                    type="text"
+                    placeholder="ملاحظات الفاتورة..."
+                    value={orderCustomer.notes}
+                    onChange={(e) => setOrderCustomer((p) => ({ ...p, notes: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-500 shrink-0">خصم يدوي ₪</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0.00"
+                      value={orderCustomer.manualDiscount ?? ''}
+                      onChange={(e) => setOrderCustomer((p) => ({ ...p, manualDiscount: parseFloat(e.target.value) || 0 }))}
+                      className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -2259,6 +2305,12 @@ export default function POSPage() {
                       </span>
                     </div>
                   )}
+                  {manualDiscount > 0.005 && (
+                    <div className="flex items-baseline justify-between text-xs">
+                      <span className="text-rose-500">خصم يدوي</span>
+                      <span className="font-currency font-black text-rose-500" dir="ltr">−₪{manualDiscount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex items-baseline justify-between border-t border-gray-200 pt-2 dark:border-gray-800">
                     <span
                       className={`text-base font-black ${shellDark ? 'text-slate-100' : 'text-slate-800'}`}
@@ -2270,7 +2322,7 @@ export default function POSPage() {
                       dir="ltr"
                       lang="en"
                     >
-                      ₪{loyaltyDerived.payable.toFixed(2)}
+                      ₪{invoicePayable.toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -2306,7 +2358,7 @@ export default function POSPage() {
                     }`}
                     id="pos-checkout-btn"
                   >
-                    الدفع — ₪{loyaltyDerived.payable.toFixed(2)}
+                    الدفع — ₪{invoicePayable.toFixed(2)}
                   </button>
                 </div>
               </div>
