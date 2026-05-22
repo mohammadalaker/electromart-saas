@@ -53,6 +53,8 @@ export default function LowStockPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [search, setSearch] = useState('');
   const [filterLevel, setFilterLevel] = useState('all');
+  const [filterBrand, setFilterBrand] = useState('');
+  const allBrands = useMemo(() => [...new Set(items.map(i => i.brand_group).filter(Boolean))].sort(), [items]);
 
   const fetchItems = useCallback(async () => {
     if (!store?.id) { setLoading(false); return; }
@@ -91,8 +93,9 @@ export default function LowStockPage() {
     if (filterLevel !== 'all') {
       res = res.filter(i => stockLevel(i.stock_count, threshold) === filterLevel);
     }
+    if (filterBrand) res = res.filter(i => i.brand_group === filterBrand);
     return res;
-  }, [items, search, filterLevel, threshold]);
+  }, [items, search, filterLevel, filterBrand, threshold]);
 
   const counts = useMemo(() => ({
     out: items.filter(i => i.stock_count <= 0).length,
@@ -214,6 +217,14 @@ export default function LowStockPage() {
                 placeholder="بحث باسم المنتج أو الباركود…"
                 className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-gray-900 text-slate-800 dark:text-slate-100 text-xs py-2 pr-8 pl-3 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" />
             </div>
+            <select
+              value={filterBrand}
+              onChange={e => setFilterBrand(e.target.value)}
+              className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-gray-900 text-slate-700 dark:text-slate-200 text-xs py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            >
+              <option value="">كل المجموعات</option>
+              {allBrands.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
           </div>
 
           {/* Table */}
@@ -253,7 +264,7 @@ export default function LowStockPage() {
                       <tr key={item.id}
                         className={`border-b border-slate-100/70 dark:border-slate-700/40 transition-colors hover:bg-rose-50/40 dark:hover:bg-rose-950/15 border-r-0 border-l-[3px] ${cfg.border} ${idx % 2 === 0 ? 'bg-white dark:bg-slate-900/50' : 'bg-slate-50/40 dark:bg-slate-800/30'}`}>
                         <td className="py-3.5 px-5">
-                          <p className="font-bold text-slate-900 dark:text-white text-sm">{item.eng_name || '—'}</p>
+                          <p className="font-bold text-slate-900 dark:text-white text-sm line-clamp-2 max-w-[280px]">{item.eng_name || '—'}</p>
                           {item.reference && <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{item.reference}</p>}
                         </td>
                         <td className="py-3.5 px-4 text-xs font-currency text-slate-500 dark:text-slate-400" dir="ltr">{item.barcode || '—'}</td>
@@ -274,7 +285,7 @@ export default function LowStockPage() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <Link to="/purchases" className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/40 dark:bg-indigo-950/30 dark:text-indigo-300 transition-colors">
+                          <Link to={`/purchases/lines?product=${encodeURIComponent(item.eng_name || '')}&barcode=${encodeURIComponent(item.barcode || '')}`} className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/40 dark:bg-indigo-950/30 dark:text-indigo-300 transition-colors">
                             <ShoppingBag size={12} />
                             أمر شراء
                           </Link>
