@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Copy, Check, Store, ExternalLink, ChevronLeft, Settings } from 'lucide-react';
+import { Loader2, Copy, Check, Store, ExternalLink, ChevronLeft, Settings, Upload, Image as ImageIcon } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -20,6 +20,10 @@ export default function StorefrontSettingsPage() {
   const [error, setError] = useState(null);
   const [savedOk, setSavedOk] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [heroImage, setHeroImage] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [uploadingHero, setUploadingHero] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   useEffect(() => {
     if (storeLoading) return;
@@ -33,7 +37,7 @@ export default function StorefrontSettingsPage() {
       setError(null);
       const { data, error: qErr } = await supabase
         .from('stores')
-        .select('public_slug, public_catalog_enabled')
+        .select('public_slug, public_catalog_enabled, hero_image, logo_url')
         .eq('id', store.id)
         .single();
       if (cancelled) return;
@@ -50,6 +54,8 @@ export default function StorefrontSettingsPage() {
       }
       setSlug((data?.public_slug ?? '').toString().trim());
       setEnabled(Boolean(data?.public_catalog_enabled));
+      setHeroImage((data?.hero_image ?? '').toString().trim());
+      setLogoUrl((data?.logo_url ?? '').toString().trim());
       try {
           const lPay = localStorage.getItem(`store-payment-config-${store.id}`);
           if (lPay) setPaymentLink(lPay);
@@ -108,6 +114,32 @@ export default function StorefrontSettingsPage() {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.info(`تعذّر النسخ تلقائياً. الرابط: ${publicUrl}`);
+    }
+  };
+
+  const uploadImage = async (file, type) => {
+    if (!store?.id || !file) return;
+    const isHero = type === 'hero';
+    isHero ? setUploadingHero(true) : setUploadingLogo(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `stores/${store.id}/${type}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('store-assets')
+        .upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage
+        .from('store-assets')
+        .getPublicUrl(path);
+      const url = urlData.publicUrl;
+      await supabase.from('stores').update(
+        isHero ? { hero_image: url } : { logo_url: url }
+      ).eq('id', store.id);
+      isHero ? setHeroImage(url) : setLogoUrl(url);
+    } catch (err) {
+      setError(err.message || 'فشل رفع الصورة');
+    } finally {
+      isHero ? setUploadingHero(false) : setUploadingLogo(false);
     }
   };
 
@@ -229,6 +261,36 @@ export default function StorefrontSettingsPage() {
                       dir="ltr"
                    />
                 </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+              <h3 className="text-sm font-black text-slate-800 dark:text-white">صور المتجر</h3>
+
+              {/* Hero Image */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-2">صورة الغلاف (Banner)</label>
+                {heroImage && (
+                  <img src={heroImage} alt="hero" className="w-full h-32 object-cover rounded-xl mb-2 border border-slate-200" />
+                )}
+                <label className="flex items-center gap-2 cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-400 px-4 py-3 transition-all">
+                  {uploadingHero ? <Loader2 size={18} className="animate-spin text-violet-500" /> : <Upload size={18} className="text-slate-400" />}
+                  <span className="text-sm font-bold text-slate-500">{uploadingHero ? 'جاري الرفع...' : 'رفع صورة الغلاف'}</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0], 'hero')} />
+                </label>
+              </div>
+
+              {/* Logo */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-2">لوجو المتجر</label>
+                {logoUrl && (
+                  <img src={logoUrl} alt="logo" className="h-16 w-16 object-contain rounded-xl mb-2 border border-slate-200 bg-slate-50 p-1" />
+                )}
+                <label className="flex items-center gap-2 cursor-pointer rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-400 px-4 py-3 transition-all">
+                  {uploadingLogo ? <Loader2 size={18} className="animate-spin text-violet-500" /> : <Upload size={18} className="text-slate-400" />}
+                  <span className="text-sm font-bold text-slate-500">{uploadingLogo ? 'جاري الرفع...' : 'رفع لوجو المتجر'}</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0], 'logo')} />
+                </label>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
