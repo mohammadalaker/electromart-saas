@@ -942,12 +942,9 @@ export default function POSPage() {
       unitPrice: getLineUnitPrice(o),
       lineTotal: getLineTotal(o),
       originalPrice: getLineOriginalPrice(o),
-      discountPercent:
-        getLineOriginalPrice(o) > 0 && getLineUnitPrice(o) < getLineOriginalPrice(o)
-          ? Math.round(
-              ((getLineOriginalPrice(o) - getLineUnitPrice(o)) / getLineOriginalPrice(o)) * 100
-            )
-          : 0,
+      discountPercent: getLineOriginalPrice(o) > 0 && getLineUnitPrice(o) < getLineOriginalPrice(o)
+        ? Math.round(((getLineOriginalPrice(o) - getLineUnitPrice(o)) / getLineOriginalPrice(o)) * 100)
+        : 0,
       imageUrl: getImage(o.item),
       serial: serialForPrint(o.serial),
     }));
