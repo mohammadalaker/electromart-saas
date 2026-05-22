@@ -44,6 +44,7 @@ import SubscriptionPlanPage from './pages/SubscriptionPlanPage.jsx'
 import SystemSettingsPage from './pages/SystemSettingsPage.jsx'
 import IntegrationsPage from './pages/IntegrationsPage.jsx'
 import ExecutiveDashboardPage from './pages/ExecutiveDashboardPage.jsx'
+import AlertsPage from './pages/AlertsPage.jsx'
 import AnalyticsReportsPage from './pages/AnalyticsReportsPage.jsx'
 import EndOfDayReportPage from './pages/EndOfDayReportPage.jsx'
 import LowStockPage from './pages/LowStockPage.jsx'
@@ -67,6 +68,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/" element={<PublicStoreLanding />} />
           <Route element={<RequireAuth />}>
           <Route path="/overview" element={<ExecutiveDashboardPage />} />
+          <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/inventory" element={<App />} />
           <Route path="/inventory/logs" element={<EntitlementGuard module="inventory_logs"><StockLogsPage /></EntitlementGuard>} />
           <Route path="/inventory/low-stock" element={<LowStockPage />} />
