@@ -9,7 +9,7 @@ import {
   ShieldCheck, Building2, Landmark, CalendarClock, CalendarDays,
   PackageMinus, TrendingUp, Receipt, Banknote, Search,
   Pin, X, LineChart, HeartHandshake, Puzzle, Settings as SettingsIcon,
-  Minus, LogOut,
+  Minus, LogOut, Bell,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -46,7 +46,10 @@ const CATEGORIES = [
         id: 'home',
         title: 'الرئيسية',
         icon: Home,
-        items: [{ to: '/overview', icon: LayoutGrid, label: 'المركز التنفيذي' }],
+        items: [
+          { to: '/overview', icon: LayoutGrid, label: 'المركز التنفيذي' },
+          { to: '/alerts', icon: Bell, label: 'الإشعارات والتنبيهات' },
+        ],
       },
     ],
   },
