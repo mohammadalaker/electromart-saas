@@ -29,6 +29,13 @@ export default function PrintInvoice({ data }) {
   } = data;
 
   return (
+    <>
+      <style>{`
+  @media print {
+    @page { margin: 10mm; }
+    head, header ~ *, .print-browser-header { display: none !important; }
+  }
+`}</style>
     <div
       className="print-invoice-root max-w-[210mm] mx-auto bg-white text-slate-900 px-6 py-8 sm:px-10"
       dir="rtl"
@@ -251,5 +258,6 @@ export default function PrintInvoice({ data }) {
         </p>
       </footer>
     </div>
+    </>
   );
 }
