@@ -951,6 +951,7 @@ export default function POSPage() {
       imageUrl: getImage(o.item),
       serial: serialForPrint(o.serial),
     }));
+    const manualDiscount = roundMoney(Math.min(orderCustomer.manualDiscount ?? 0, cartTotals.finalTotal));
     setPrintInvoiceData({
       storeName: store?.name,
       customerName: orderCustomer.name,
@@ -972,8 +973,9 @@ export default function POSPage() {
           : undefined,
       lines,
       subtotal: cartTotals.subtotal,
-      totalDiscount: cartTotals.totalDiscount + (loyaltyDerived.discountShekel > 0 ? loyaltyDerived.discountShekel : 0),
-      finalTotal: loyaltyDerived.payable,
+      manualDiscount,
+      totalDiscount: cartTotals.totalDiscount + (loyaltyDerived.discountShekel > 0 ? loyaltyDerived.discountShekel : 0) + manualDiscount,
+      finalTotal: roundMoney(loyaltyDerived.payable - manualDiscount),
       loyaltyDiscount: loyaltyDerived.discountShekel > 0 ? loyaltyDerived.discountShekel : undefined,
       printedAtLabel: new Date().toLocaleString('en-GB', {
         dateStyle: 'medium',

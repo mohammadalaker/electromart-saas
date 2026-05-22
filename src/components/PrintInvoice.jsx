@@ -24,6 +24,7 @@ export default function PrintInvoice({ data }) {
     subtotal,
     totalDiscount,
     finalTotal,
+    manualDiscount,
     printedAtLabel,
   } = data;
 
@@ -231,6 +232,14 @@ export default function PrintInvoice({ data }) {
             − ₪{Number(totalDiscount ?? 0).toFixed(2)}
           </span>
         </div>
+        {Number(manualDiscount ?? 0) > 0.005 && (
+          <div className="flex justify-between text-sm font-bold text-rose-600">
+            <span>خصم يدوي</span>
+            <span className="font-currency" dir="ltr" lang="en">
+              − ₪{Number(manualDiscount).toFixed(2)}
+            </span>
+          </div>
+        )}
         <div className="flex justify-between items-center rounded-2xl bg-indigo-50 border border-indigo-100 px-5 py-4">
           <span className="font-title text-lg font-black text-slate-900">المطلوب دفعه</span>
           <span className="font-title text-2xl font-black text-indigo-600 font-currency tracking-tight" dir="ltr" lang="en">
