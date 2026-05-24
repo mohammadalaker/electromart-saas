@@ -50,12 +50,7 @@ export function initThemeOnBoot() {
     document.documentElement.classList.toggle('dark', stored === 'dark');
     return;
   }
-  const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  const apply = () => {
-    document.documentElement.classList.toggle('dark', mq.matches);
-  };
-  apply();
-  mq.addEventListener('change', apply);
+  document.documentElement.classList.remove('dark');
 }
 
 /** يتبع فئة `dark` على `document.documentElement` (من إعدادات النظام فقط، بدون أزرار في الصفحات). */
