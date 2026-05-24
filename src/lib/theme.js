@@ -48,9 +48,9 @@ export function initThemeOnBoot() {
   const stored = getStoredTheme();
   if (stored === 'dark' || stored === 'light') {
     document.documentElement.classList.toggle('dark', stored === 'dark');
-    return;
+  } else {
+    document.documentElement.classList.remove('dark');
   }
-  document.documentElement.classList.remove('dark');
 }
 
 /** يتبع فئة `dark` على `document.documentElement` (من إعدادات النظام فقط، بدون أزرار في الصفحات). */
