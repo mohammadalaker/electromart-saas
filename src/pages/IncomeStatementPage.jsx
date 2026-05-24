@@ -628,14 +628,35 @@ export default function IncomeStatementPage() {
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={monthlyChart} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <defs>
+                          <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.9} />
+                            <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.6} />
+                          </linearGradient>
+                          <linearGradient id="gradExpense" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.9} />
+                            <stop offset="100%" stopColor="#e11d48" stopOpacity={0.6} />
+                          </linearGradient>
+                          <linearGradient id="gradProfit" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity={0.9} />
+                            <stop offset="100%" stopColor="#059669" stopOpacity={0.6} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                         <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                         <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(v) => v.toLocaleString('en-US')} />
-                        <Tooltip content={<ChartTooltip />} />
-                        <Legend wrapperStyle={{ fontSize: 12, color: '#cbd5e1' }} />
-                        <Bar dataKey="revenue" name="الإيرادات" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                        <Bar dataKey="expenses" name="المصاريف" fill="#f43f5e" radius={[6, 6, 0, 0]} />
-                        <Bar dataKey="profit" name="صافي الربح" fill="#10b981" radius={[6, 6, 0, 0]} />
+                        <Tooltip
+                          contentStyle={{
+                            background: 'rgba(15,23,42,0.95)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '12px',
+                            backdropFilter: 'blur(10px)',
+                          }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '16px', fontSize: '13px' }} />
+                        <Bar dataKey="revenue" name="الإيرادات" fill="url(#gradRevenue)" radius={[6, 6, 0, 0]} />
+                        <Bar dataKey="expenses" name="المصاريف" fill="url(#gradExpense)" radius={[6, 6, 0, 0]} />
+                        <Bar dataKey="profit" name="صافي الربح" fill="url(#gradProfit)" radius={[6, 6, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
