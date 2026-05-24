@@ -54,7 +54,7 @@ const glassCard =
   'rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_8px_32px_-12px_rgba(0,0,0,0.45)]';
 
 function formatShekel(n) {
-  return `${roundMoney(Number(n ?? 0)).toLocaleString('ar-SA', {
+  return `${roundMoney(Number(n ?? 0)).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })} ₪`;
@@ -62,7 +62,7 @@ function formatShekel(n) {
 
 function formatShekelParen(n) {
   const v = roundMoney(Math.abs(Number(n ?? 0)));
-  const formatted = v.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatted = v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return Number(n) < 0 ? `(${formatted}) ₪` : `${formatted} ₪`;
 }
 
@@ -584,7 +584,7 @@ export default function IncomeStatementPage() {
                     <p className="text-xs font-black text-violet-400 uppercase tracking-wider mb-2">تكلفة البضاعة المباعة</p>
                     <StatementRow label="تكلفة المبيعات" value={metrics.cogs} indent negative />
                     <StatementRow label="مجمل الربح" value={metrics.grossProfit} bold />
-                    <StatementRow label="هامش مجمل الربح %" value={`${metrics.grossMargin.toLocaleString('ar-SA')}%`} indent raw />
+                    <StatementRow label="هامش مجمل الربح %" value={`${metrics.grossMargin.toLocaleString('en-US')}%`} indent raw />
                   </div>
 
                   <div className="py-3">
@@ -630,7 +630,7 @@ export default function IncomeStatementPage() {
                       <BarChart data={monthlyChart} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                         <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                        <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(v) => v.toLocaleString('ar-SA')} />
+                        <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(v) => v.toLocaleString('en-US')} />
                         <Tooltip content={<ChartTooltip />} />
                         <Legend wrapperStyle={{ fontSize: 12, color: '#cbd5e1' }} />
                         <Bar dataKey="revenue" name="الإيرادات" fill="#6366f1" radius={[6, 6, 0, 0]} />
