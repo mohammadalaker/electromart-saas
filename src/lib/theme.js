@@ -63,7 +63,7 @@ export function useHtmlDarkClass() {
     window.addEventListener(BRAND_THEME_EVENT, sync);
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onMq = () => {
-      if (getStoredTheme() == null) sync();
+      /* if (getStoredTheme() == null) sync(); */
     };
     mq.addEventListener('change', onMq);
     return () => {
