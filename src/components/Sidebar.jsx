@@ -121,6 +121,7 @@ const CATEGORIES = [
           { to: '/finance/activity-log', icon: ShieldCheck, label: 'سجل التدقيق', module: 'activity_log' },
           { to: '/finance/funds', icon: Building2, label: 'الصناديق والبنوك', module: 'funds' },
           { to: '/finance', icon: Landmark, label: 'المالية والمصروفات', module: 'finance_overview' },
+          { to: '/finance/income-statement', icon: TrendingUp, label: 'قائمة الدخل', module: 'finance_overview' },
           { to: '/finance/debt-aging', icon: CalendarClock, label: 'أعمار الديون', module: 'debt_aging' },
           { to: '/vouchers', icon: Receipt, label: 'سندات الصرف والقبض', module: 'vouchers' },
           { to: '/finance/checks', icon: Banknote, label: 'الشيكات', module: 'checks' },

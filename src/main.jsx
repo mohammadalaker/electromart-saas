@@ -48,6 +48,7 @@ import AlertsPage from './pages/AlertsPage.jsx'
 import AnalyticsReportsPage from './pages/AnalyticsReportsPage.jsx'
 import EndOfDayReportPage from './pages/EndOfDayReportPage.jsx'
 import LowStockPage from './pages/LowStockPage.jsx'
+import IncomeStatementPage from './pages/IncomeStatementPage.jsx'
 import EntitlementGuard from './components/EntitlementGuard.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
 import './index.css'
@@ -85,6 +86,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/finance/activity-log" element={<EntitlementGuard module="activity_log"><ActivityLogPage /></EntitlementGuard>} />
           <Route path="/finance" element={<EntitlementGuard module="finance_overview"><FinancialOverviewPage /></EntitlementGuard>} />
           <Route path="/finance/cashflow" element={<EntitlementGuard module="finance_overview"><CashFlowPage /></EntitlementGuard>} />
+          <Route path="/finance/income-statement" element={<EntitlementGuard module="finance_overview"><IncomeStatementPage /></EntitlementGuard>} />
           <Route path="/finance/debt-aging" element={<EntitlementGuard module="debt_aging"><DebtAgingReportPage /></EntitlementGuard>} />
           <Route path="/promotions" element={<EntitlementGuard module="promotions"><PromotionsAdminPage /></EntitlementGuard>} />
           <Route path="/service/warranty" element={<EntitlementGuard module="service_warranty"><ServiceCenterPage /></EntitlementGuard>} />
