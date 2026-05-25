@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Loader2,
   CheckCircle2,
@@ -296,6 +296,11 @@ export default function VoucherPage() {
   const [formError, setFormError] = useState(null);
   const [toast, setToast] = useState(null);
 
+  const [recentPayments, setRecentPayments] = useState([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [paymentFilter, setPaymentFilter] = useState('all');
+  const [deletingPaymentId, setDeletingPaymentId] = useState(null);
+
   /**
    * جلب الموردين — يُفضّل دليل المتجر (store_contacts) ليتطابق id مع كشف الحساب؛ ثم جدول suppliers.
    */
@@ -367,6 +372,128 @@ export default function VoucherPage() {
     if (storeLoading) return;
     fetchCustomers();
   }, [storeLoading, fetchCustomers]);
+
+  const fetchRecentPayments = useCallback(async () => {
+    if (!store?.id) {
+      setRecentPayments([]);
+      setPaymentsLoading(false);
+      return;
+    }
+    setPaymentsLoading(true);
+    try {
+      const baseSelect =
+        'id, supplier_contact_id, account_id, amount, paid_at, notes, created_at, voucher_type';
+      let { data, error } = await supabase
+        .from(STORE_SUPPLIER_PAYMENTS_TABLE)
+        .select(`${baseSelect}, store_contacts ( name )`)
+        .eq('store_id', store.id)
+        .order('paid_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error && /voucher_type|column|PGRST204/i.test(String(error.message || ''))) {
+        const res = await supabase
+          .from(STORE_SUPPLIER_PAYMENTS_TABLE)
+          .select(`${baseSelect.replace(', voucher_type', '')}, store_contacts ( name )`)
+          .eq('store_id', store.id)
+          .order('paid_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(20);
+        data = res.data;
+        error = res.error;
+      }
+
+      if (error && /store_contacts|relationship|PGRST/i.test(String(error.message || ''))) {
+        const res = await supabase
+          .from(STORE_SUPPLIER_PAYMENTS_TABLE)
+          .select('id, supplier_contact_id, account_id, amount, paid_at, notes, created_at')
+          .eq('store_id', store.id)
+          .order('paid_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(20);
+        data = res.data;
+        error = res.error;
+      }
+
+      if (error) throw error;
+
+      const nameById = new Map(suppliers.map((s) => [String(s.id), s.name]));
+      setRecentPayments(
+        (data || []).map((row) => {
+          const contact = row.store_contacts;
+          const joinedName =
+            contact && typeof contact === 'object'
+              ? contact.name ?? (Array.isArray(contact) ? contact[0]?.name : null)
+              : null;
+          const contactId = row.supplier_contact_id || row.account_id;
+          return {
+            ...row,
+            contactId,
+            supplierName: joinedName || nameById.get(String(contactId)) || '—',
+            voucher_type: row.voucher_type || 'payment',
+          };
+        })
+      );
+    } catch (e) {
+      console.error('[store_supplier_payments:list]', e);
+      setRecentPayments([]);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }, [store?.id, suppliers]);
+
+  useEffect(() => {
+    if (storeLoading) return;
+    void fetchRecentPayments();
+  }, [storeLoading, fetchRecentPayments]);
+
+  const filteredPayments = useMemo(() => {
+    if (paymentFilter === 'all') return recentPayments;
+    if (paymentFilter === 'payment') {
+      return recentPayments.filter((p) => (p.voucher_type || 'payment') === 'payment');
+    }
+    return recentPayments.filter((p) => p.voucher_type === 'receipt');
+  }, [recentPayments, paymentFilter]);
+
+  const handleDeletePayment = async (row) => {
+    if (!store?.id || !row?.id) return;
+    const contactId = row.contactId || row.supplier_contact_id || row.account_id;
+    const amount = parseMoneyInput(row.amount);
+    const vType = row.voucher_type || 'payment';
+    setDeletingPaymentId(row.id);
+    try {
+      const { error: delErr } = await supabase
+        .from(STORE_SUPPLIER_PAYMENTS_TABLE)
+        .delete()
+        .eq('id', row.id)
+        .eq('store_id', store.id);
+      if (delErr) throw delErr;
+
+      if (contactId && amount > 0) {
+        const reverseType = vType === 'payment' ? 'receipt' : 'payment';
+        const bal = await applySupplierOutstandingFromVoucher({
+          storeId: store.id,
+          supplierContactId: contactId,
+          voucherType: reverseType,
+          amount,
+        });
+        if (!bal.ok && !bal.skipped) {
+          console.warn('[store_supplier_payments:reverse]', bal.error);
+        }
+      }
+
+      setToast({ message: 'تم حذف السند وعكس الترحيل.', variant: 'success' });
+      void fetchRecentPayments();
+    } catch (e) {
+      console.error(e);
+      setToast({
+        message: e.message || 'تعذّر حذف السند.',
+        variant: 'error',
+      });
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  };
 
   const resetForm = useCallback(() => {
     setVoucherType('receipt');
@@ -555,6 +682,7 @@ export default function VoucherPage() {
         variant: extra.includes('تعذّر') || extra.includes('تحذير') ? 'error' : 'success',
       });
       resetForm();
+      void fetchRecentPayments();
     } else {
       setToast({
         message:
@@ -1131,6 +1259,132 @@ export default function VoucherPage() {
                 )}
               </button>
             </form>
+
+            <div className="mt-8 pt-8 border-t border-white/10">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h2 className={`text-sm font-black ${darkUi ? 'text-white' : 'text-slate-900'}`}>
+                  آخر 20 سند
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'all', label: 'عرض الكل' },
+                    { id: 'payment', label: 'سندات الصرف فقط' },
+                    { id: 'receipt', label: 'سندات القبض فقط' },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setPaymentFilter(f.id)}
+                      className={`rounded-xl px-3 py-1.5 text-[11px] font-black transition ${
+                        paymentFilter === f.id
+                          ? darkUi
+                            ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40'
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                          : darkUi
+                            ? 'border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10'
+                            : 'border border-slate-200 bg-white/60 text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div
+                className={`overflow-x-auto rounded-2xl border backdrop-blur-xl ${
+                  darkUi
+                    ? 'border-white/10 bg-white/[0.03]'
+                    : 'border-slate-200/80 bg-white/80'
+                }`}
+              >
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr
+                      className={`border-b text-xs ${
+                        darkUi
+                          ? 'border-white/10 text-slate-400'
+                          : 'border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
+                      <th className="text-right py-3 px-4 font-semibold">المورد</th>
+                      <th className="text-right py-3 px-4 font-semibold">المبلغ</th>
+                      <th className="text-right py-3 px-4 font-semibold">الملاحظات</th>
+                      <th className="text-center py-3 px-4 font-semibold w-16">حذف</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentsLoading ? (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center">
+                          <Loader2
+                            className={`inline animate-spin ${darkUi ? 'text-indigo-400' : 'text-indigo-500'}`}
+                            size={28}
+                          />
+                        </td>
+                      </tr>
+                    ) : filteredPayments.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className={`py-10 text-center text-sm ${darkUi ? 'text-slate-500' : 'text-slate-400'}`}
+                        >
+                          لا توجد سندات مطابقة
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredPayments.map((row) => (
+                        <tr
+                          key={row.id}
+                          className={`border-b transition-colors ${
+                            darkUi
+                              ? 'border-white/5 hover:bg-white/[0.04]'
+                              : 'border-slate-100 hover:bg-slate-50/80'
+                          }`}
+                        >
+                          <td className={`py-3 px-4 text-xs ${darkUi ? 'text-slate-300' : 'text-slate-600'}`}>
+                            {row.paid_at
+                              ? new Date(row.paid_at).toLocaleDateString('ar-SA')
+                              : '—'}
+                          </td>
+                          <td className={`py-3 px-4 text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                            {row.supplierName}
+                          </td>
+                          <td
+                            className={`py-3 px-4 text-xs font-black font-currency ${darkUi ? 'text-emerald-300' : 'text-emerald-700'}`}
+                            dir="ltr"
+                          >
+                            ₪{parseMoneyInput(row.amount).toFixed(2)}
+                          </td>
+                          <td
+                            className={`py-3 px-4 text-xs max-w-[180px] truncate ${darkUi ? 'text-slate-400' : 'text-slate-500'}`}
+                            title={row.notes || ''}
+                          >
+                            {row.notes || '—'}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              type="button"
+                              disabled={deletingPaymentId === row.id}
+                              onClick={() => handleDeletePayment(row)}
+                              className="inline-flex items-center justify-center rounded-lg p-1.5 text-rose-400 hover:bg-rose-500/10 disabled:opacity-40"
+                              aria-label="حذف السند"
+                            >
+                              {deletingPaymentId === row.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Trash2 size={14} />
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
