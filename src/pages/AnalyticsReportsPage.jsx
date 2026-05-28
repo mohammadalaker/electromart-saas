@@ -364,7 +364,7 @@ export default function AnalyticsReportsPage() {
                 {activeTab === 'sales' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                        {/* Sales Top Metric */}
-                       <div className="rounded-[20px] bg-white border border-slate-200/80 shadow-sm dark:bg-[#18181b] dark:border-white/[0.04] p-6 lg:col-span-3 flex flex-col md:flex-row items-center gap-6 justify-between relative overflow-hidden">
+                       <div className="rounded-[20px] bg-white border border-slate-200/80 shadow-sm dark:bg-[#18181b] dark:border-white/[0.04] p-6 lg:col-span-3 flex flex-col md:flex-row items-center gap-6 justify-between transition-all duration-300 ease-out hover:shadow-md dark:hover:shadow-xl hover:-translate-y-0.5 relative overflow-hidden">
                            <div className="pointer-events-none absolute left-0 top-0 h-full w-1/3 bg-gradient-to-r from-indigo-500/5 to-transparent"></div>
                            <div>
                                <p className="text-[12px] font-black text-slate-500 dark:text-slate-400 mb-1">إجمالي المبيعات المحققة (في الفترة)</p>
@@ -457,7 +457,7 @@ export default function AnalyticsReportsPage() {
                 {activeTab === 'purchases' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                        {/* Top Metric */}
-                       <div className="rounded-[20px] bg-white border border-slate-200/80 shadow-sm dark:bg-[#18181b] dark:border-white/[0.04] p-6 lg:col-span-3 flex flex-col md:flex-row items-center gap-6 justify-between relative overflow-hidden">
+                       <div className="rounded-[20px] bg-white border border-slate-200/80 shadow-sm dark:bg-[#18181b] dark:border-white/[0.04] p-6 lg:col-span-3 flex flex-col md:flex-row items-center gap-6 justify-between transition-all duration-300 ease-out hover:shadow-md dark:hover:shadow-xl hover:-translate-y-0.5 relative overflow-hidden">
                            <div className="pointer-events-none absolute left-0 top-0 h-full w-1/3 bg-gradient-to-r from-rose-500/5 to-transparent"></div>
                            <div>
                                <p className="text-[12px] font-black text-slate-500 dark:text-slate-400 mb-1">إجمالي مشتريات البضاعة (في الفترة)</p>
@@ -503,7 +503,7 @@ export default function AnalyticsReportsPage() {
                 {activeTab === 'inventory' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                        {/* Top Metric */}
-                       <div className="rounded-[20px] bg-white border border-slate-200/80 shadow-sm dark:bg-[#18181b] dark:border-white/[0.04] p-6 lg:col-span-3 flex flex-col md:flex-row items-center gap-6 justify-between relative overflow-hidden">
+                       <div className="rounded-[20px] bg-white border border-slate-200/80 shadow-sm dark:bg-[#18181b] dark:border-white/[0.04] p-6 lg:col-span-3 flex flex-col md:flex-row items-center gap-6 justify-between transition-all duration-300 ease-out hover:shadow-md dark:hover:shadow-xl hover:-translate-y-0.5 relative overflow-hidden">
                            <div className="pointer-events-none absolute left-0 top-0 h-full w-1/3 bg-gradient-to-r from-amber-500/5 to-transparent"></div>
                            <div>
                                <p className="text-[12px] font-black text-slate-500 dark:text-slate-400 mb-1">التقييم التقريبي لرأس المال في المخزون</p>
