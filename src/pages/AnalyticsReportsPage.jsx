@@ -538,8 +538,23 @@ export default function AnalyticsReportsPage() {
                                      <BarChart data={inventoryAnalytics.topCapitalItems} layout="vertical" margin={{ top: 0, right: 0, left: 30, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" horizontal={false} className="text-slate-100 dark:text-slate-800" />
                                         <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 10, fill: '#888891' }} axisLine={false} tickLine={false} />
-                                        <Tooltip content={<CustomTooltip prefix={SHEKEL} />} cursor={{ fill: 'var(--tw-colors-slate-100)', opacity: 0.1 }} />
+                                        <YAxis
+                                          dataKey="name"
+                                          type="category"
+                                          width={150}
+                                          tick={{ fontSize: 11, fill: '#6b7280' }}
+                                          tickFormatter={(value) => {
+                                            if (!value) return value;
+                                            return value.length > 22 ? '\u2026' + value.slice(0, 22) : value;
+                                          }}
+                                          axisLine={false}
+                                          tickLine={false}
+                                        />
+                                        <Tooltip
+                                          content={<CustomTooltip prefix={SHEKEL} />}
+                                          contentStyle={{ background: 'rgba(255,255,255,0.98)', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '12px' }}
+                                          cursor={{ fill: 'var(--tw-colors-slate-100)', opacity: 0.1 }}
+                                        />
                                         <Bar dataKey="رأس_المال" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={22} />
                                      </BarChart>
                                   </ResponsiveContainer>
