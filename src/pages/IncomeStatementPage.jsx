@@ -51,7 +51,7 @@ const EXPENSE_CATEGORIES = [
 const CAT_LABELS = Object.fromEntries(EXPENSE_CATEGORIES.map((c) => [c.value, c.label]));
 
 const glassCard =
-  'rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_8px_32px_-12px_rgba(0,0,0,0.45)]';
+  'rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl shadow-sm dark:shadow-none';
 
 function formatShekel(n) {
   return `${roundMoney(Number(n ?? 0)).toLocaleString('en-US', {
@@ -204,11 +204,11 @@ function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
     <div className={`${glassCard} px-4 py-3 text-xs`} dir="rtl">
-      <p className="font-bold text-slate-400 mb-2">{label}</p>
+      <p className="font-bold text-gray-600 dark:text-slate-400 mb-2">{label}</p>
       {payload.map((entry) => (
         <div key={entry.name} className="flex items-center justify-between gap-4 py-0.5">
           <span style={{ color: entry.color }}>{entry.name}</span>
-          <span className="font-black text-white" dir="ltr">{formatShekel(entry.value)}</span>
+          <span className="font-black text-gray-900 dark:text-white" dir="ltr">{formatShekel(entry.value)}</span>
         </div>
       ))}
     </div>
@@ -218,11 +218,11 @@ function ChartTooltip({ active, payload, label }) {
 function StatementRow({ label, value, bold, indent, negative, highlight, raw }) {
   const valueClass = highlight
     ? Number(value) >= 0
-      ? 'text-emerald-400'
-      : 'text-rose-400'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-rose-600 dark:text-rose-400'
     : negative
-      ? 'text-rose-300'
-      : 'text-indigo-200';
+      ? 'text-rose-600 dark:text-rose-300'
+      : 'text-indigo-600 dark:text-indigo-200';
 
   let display = raw ? String(value) : formatShekel(value);
   if (!raw && (negative || Number(value) < 0)) {
@@ -231,7 +231,7 @@ function StatementRow({ label, value, bold, indent, negative, highlight, raw }) 
 
   return (
     <div
-      className={`flex items-center justify-between gap-4 py-2 ${bold ? 'font-black text-white' : 'text-slate-300'} ${indent ? 'pr-4' : ''}`}
+      className={`flex items-center justify-between gap-4 py-2 ${bold ? 'font-black text-gray-900 dark:text-white' : 'text-gray-600 dark:text-slate-300'} ${indent ? 'pr-4' : ''}`}
     >
       <span className={bold ? 'text-base' : 'text-sm'}>{label}</span>
       <span className={`text-sm font-black tabular-nums ${valueClass}`} dir="ltr">
@@ -467,14 +467,14 @@ export default function IncomeStatementPage() {
           type="button"
           onClick={handlePrint}
           data-no-print
-          className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-black text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+          className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-black text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
         >
           <Printer size={16} />
           تصدير PDF
         </button>
       }
     >
-      <div className="min-h-full bg-[#0a0f1e] -m-4 sm:-m-6 p-4 sm:p-6" dir="rtl">
+      <div className="min-h-full bg-gray-50 dark:bg-[#0a0f1e] -m-4 sm:-m-6 p-4 sm:p-6" dir="rtl">
         <div className="mx-auto max-w-6xl space-y-6" ref={printRef}>
           {/* Header */}
           <div className={`${glassCard} p-6`}>
@@ -484,9 +484,9 @@ export default function IncomeStatementPage() {
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
                     <TrendingUp size={22} />
                   </div>
-                  <h1 className="text-xl font-black text-white">قائمة الدخل</h1>
+                  <h1 className="text-xl font-black text-gray-900 dark:text-white">قائمة الدخل</h1>
                 </div>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   {store?.name || 'المتجر'} — من {from.toLocaleDateString('ar-SA')} إلى {to.toLocaleDateString('ar-SA')}
                 </p>
               </div>
@@ -502,7 +502,7 @@ export default function IncomeStatementPage() {
                   className={`rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
                     periodPreset === p.id
                       ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
-                      : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                      : 'border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'
                   }`}
                 >
                   {p.label}
@@ -516,14 +516,14 @@ export default function IncomeStatementPage() {
                   type="date"
                   value={customFrom}
                   onChange={(e) => setCustomFrom(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 text-xs text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 />
-                <span className="text-slate-500 text-xs">إلى</span>
+                <span className="text-gray-500 dark:text-gray-500 text-xs">إلى</span>
                 <input
                   type="date"
                   value={customTo}
                   onChange={(e) => setCustomTo(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 text-xs text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 />
               </div>
             )}
@@ -542,28 +542,28 @@ export default function IncomeStatementPage() {
                     <DollarSign size={18} />
                     <span className="text-xs font-bold">الإيرادات الإجمالية</span>
                   </div>
-                  <p className="text-2xl font-black text-indigo-300" dir="ltr">{formatShekel(metrics.netRevenue)}</p>
+                  <p className="text-2xl font-black text-indigo-600 dark:text-indigo-300" dir="ltr">{formatShekel(metrics.netRevenue)}</p>
                 </div>
                 <div className={`${glassCard} p-5 border-l-4 border-l-violet-500`}>
                   <div className="flex items-center gap-2 text-violet-400 mb-2">
                     <Receipt size={18} />
                     <span className="text-xs font-bold">تكلفة البضاعة المباعة</span>
                   </div>
-                  <p className="text-2xl font-black text-violet-300" dir="ltr">{formatShekel(metrics.cogs)}</p>
+                  <p className="text-2xl font-black text-violet-600 dark:text-violet-300" dir="ltr">{formatShekel(metrics.cogs)}</p>
                 </div>
                 <div className={`${glassCard} p-5 border-l-4 border-l-rose-500`}>
                   <div className="flex items-center gap-2 text-rose-400 mb-2">
                     <TrendingDown size={18} />
                     <span className="text-xs font-bold">إجمالي المصاريف</span>
                   </div>
-                  <p className="text-2xl font-black text-rose-300" dir="ltr">{formatShekel(metrics.totalExpenses)}</p>
+                  <p className="text-2xl font-black text-rose-600 dark:text-rose-300" dir="ltr">{formatShekel(metrics.totalExpenses)}</p>
                 </div>
                 <div className={`${glassCard} p-5 border-l-4 ${metrics.netProfit >= 0 ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
                   <div className={`flex items-center gap-2 mb-2 ${metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     <TrendingUp size={18} />
                     <span className="text-xs font-bold">صافي الربح</span>
                   </div>
-                  <p className={`text-2xl font-black ${metrics.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-300'}`} dir="ltr">
+                  <p className={`text-2xl font-black ${metrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`} dir="ltr">
                     {formatShekel(metrics.netProfit)}
                   </p>
                 </div>
@@ -571,8 +571,8 @@ export default function IncomeStatementPage() {
 
               {/* Income Statement Table */}
               <div className={`${glassCard} p-6`}>
-                <h2 className="text-sm font-black text-white mb-4">قائمة الدخل التفصيلية</h2>
-                <div className="divide-y divide-white/10">
+                <h2 className="text-sm font-black text-gray-900 dark:text-white mb-4">قائمة الدخل التفصيلية</h2>
+                <div className="divide-y divide-gray-200 dark:divide-white/10">
                   <div className="pb-3 mb-1">
                     <p className="text-xs font-black text-indigo-400 uppercase tracking-wider mb-2">الإيرادات</p>
                     <StatementRow label="إيرادات المبيعات" value={metrics.grossSales} indent />
@@ -590,7 +590,7 @@ export default function IncomeStatementPage() {
                   <div className="py-3">
                     <p className="text-xs font-black text-rose-400 uppercase tracking-wider mb-2">المصاريف التشغيلية</p>
                     {sortedCategories.length === 0 ? (
-                      <p className="text-sm text-slate-500 pr-4 py-2">لا توجد مصاريف مسجّلة في هذه الفترة</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-500 pr-4 py-2">لا توجد مصاريف مسجّلة في هذه الفترة</p>
                     ) : (
                       sortedCategories.map(([cat, amt]) => (
                         <StatementRow
@@ -620,10 +620,10 @@ export default function IncomeStatementPage() {
               <div className={`${glassCard} p-6`} data-no-print>
                 <div className="flex items-center gap-2 mb-4">
                   <BarChart2 size={18} className="text-indigo-400" />
-                  <h2 className="text-sm font-black text-white">مقارنة شهرية: الإيرادات vs المصاريف vs الربح</h2>
+                  <h2 className="text-sm font-black text-gray-900 dark:text-white">مقارنة شهرية: الإيرادات vs المصاريف vs الربح</h2>
                 </div>
                 {monthlyChart.length === 0 ? (
-                  <p className="text-center text-sm text-slate-500 py-12">لا توجد بيانات كافية للرسم البياني</p>
+                  <p className="text-center text-sm text-gray-500 dark:text-gray-500 py-12">لا توجد بيانات كافية للرسم البياني</p>
                 ) : (
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -666,7 +666,7 @@ export default function IncomeStatementPage() {
               {/* Expenses management */}
               <div className={`${glassCard} p-6`} data-no-print>
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <h2 className="text-sm font-black text-white">إدارة المصاريف</h2>
+                  <h2 className="text-sm font-black text-gray-900 dark:text-white">إدارة المصاريف</h2>
                   <button
                     type="button"
                     onClick={() => setShowModal(true)}
@@ -677,10 +677,10 @@ export default function IncomeStatementPage() {
                   </button>
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border border-white/10">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
                   <table className="w-full text-sm min-w-[560px]">
                     <thead>
-                      <tr className="border-b border-white/10 text-slate-400 text-xs">
+                      <tr className="border-b border-gray-200 dark:border-white/10 text-gray-600 dark:text-slate-400 text-xs">
                         <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
                         <th className="text-right py-3 px-4 font-semibold">الفئة</th>
                         <th className="text-right py-3 px-4 font-semibold">الوصف</th>
@@ -691,21 +691,21 @@ export default function IncomeStatementPage() {
                     <tbody>
                       {expensesList.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="py-10 text-center text-slate-500 text-sm">
+                          <td colSpan={5} className="py-10 text-center text-gray-500 dark:text-gray-500 text-sm">
                             لا توجد مصاريف في هذه الفترة
                           </td>
                         </tr>
                       ) : (
                         expensesList.map((row) => (
-                          <tr key={row.id} className="border-b border-white/5 hover:bg-white/[0.03]">
-                            <td className="py-3 px-4 text-slate-300 text-xs">
+                          <tr key={row.id} className="border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/[0.03]">
+                            <td className="py-3 px-4 text-gray-700 dark:text-slate-300 text-xs">
                               {row.expense_date
                                 ? new Date(row.expense_date).toLocaleDateString('ar-SA')
                                 : '—'}
                             </td>
-                            <td className="py-3 px-4 text-slate-300 text-xs">{CAT_LABELS[row.category] || row.category || '—'}</td>
-                            <td className="py-3 px-4 text-slate-400 text-xs max-w-[200px] truncate">{row.description || '—'}</td>
-                            <td className="py-3 px-4 font-black text-rose-300 text-xs" dir="ltr">{formatShekel(row.amount)}</td>
+                            <td className="py-3 px-4 text-gray-700 dark:text-slate-300 text-xs">{CAT_LABELS[row.category] || row.category || '—'}</td>
+                            <td className="py-3 px-4 text-gray-500 dark:text-slate-400 text-xs max-w-[200px] truncate">{row.description || '—'}</td>
+                            <td className="py-3 px-4 font-black text-rose-600 dark:text-rose-300 text-xs" dir="ltr">{formatShekel(row.amount)}</td>
                             <td className="py-3 px-4 text-center">
                               <button
                                 type="button"
@@ -731,20 +731,20 @@ export default function IncomeStatementPage() {
       {/* Add expense modal */}
       {showModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" data-no-print>
-          <div className={`${glassCard} w-full max-w-md p-6 bg-[#0f1629]`} dir="rtl">
+          <div className={`${glassCard} w-full max-w-md p-6 bg-white dark:bg-[#0f1629]`} dir="rtl">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-base font-black text-white">إضافة مصروف</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white">
+              <h3 className="text-base font-black text-gray-900 dark:text-white">إضافة مصروف</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white">
                 <X size={20} />
               </button>
             </div>
             <form onSubmit={handleAddExpense} className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1.5">الفئة</label>
+                <label className="text-xs font-bold text-gray-600 dark:text-slate-400 block mb-1.5">الفئة</label>
                 <select
                   value={expForm.category}
                   onChange={(e) => setExpForm((f) => ({ ...f, category: e.target.value }))}
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2.5 text-sm text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 >
                   {EXPENSE_CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
@@ -752,34 +752,34 @@ export default function IncomeStatementPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1.5">الوصف</label>
+                <label className="text-xs font-bold text-gray-600 dark:text-slate-400 block mb-1.5">الوصف</label>
                 <input
                   type="text"
                   value={expForm.description}
                   onChange={(e) => setExpForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder="وصف المصروف (اختياري)"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2.5 text-sm text-gray-800 dark:text-slate-200 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1.5">المبلغ (₪)</label>
+                <label className="text-xs font-bold text-gray-600 dark:text-slate-400 block mb-1.5">المبلغ (₪)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={expForm.amount}
                   onChange={(e) => setExpForm((f) => ({ ...f, amount: e.target.value }))}
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2.5 text-sm text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                   required
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1.5">التاريخ</label>
+                <label className="text-xs font-bold text-gray-600 dark:text-slate-400 block mb-1.5">التاريخ</label>
                 <input
                   type="date"
                   value={expForm.expense_date}
                   onChange={(e) => setExpForm((f) => ({ ...f, expense_date: e.target.value }))}
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2.5 text-sm text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                   required
                 />
               </div>
@@ -795,7 +795,7 @@ export default function IncomeStatementPage() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
+                  className="rounded-xl border border-gray-200 dark:border-white/10 px-4 py-2.5 text-sm font-bold text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-white/5"
                 >
                   إلغاء
                 </button>
