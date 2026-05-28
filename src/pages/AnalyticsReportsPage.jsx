@@ -170,7 +170,11 @@ export default function AnalyticsReportsPage() {
       const lines = parseLineItems(sale.line_items);
       lines.forEach(line => {
         const id = line.product_id ? String(line.product_id) : `b:${line.barcode}`;
-        const name = line.product_name || line.name || 'غير معروف';
+        const lookedUp =
+          (line.product_id && productsMap.get(String(line.product_id))?.name) ||
+          (line.barcode && productsMap.get(`b:${line.barcode}`)?.name) ||
+          null;
+        const name = line.product_name || line.name || lookedUp || 'غير معروف';
         const qty = Number(line.qty || 0);
         const amount = Number(line.line_total || (line.unit_price * qty));
         
@@ -189,7 +193,7 @@ export default function AnalyticsReportsPage() {
         .slice(0, 10);
 
     return { dailySalesArray, topProducts, totalSales };
-  }, [salesRows]);
+  }, [salesRows, productsMap]);
 
   // -------- PROCESS PURCHASES DATA --------
   const purchaseAnalytics = useMemo(() => {
