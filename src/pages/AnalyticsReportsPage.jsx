@@ -72,6 +72,23 @@ const CustomTooltip = ({ active, payload, label, prefix = '' }) => {
   return null;
 };
 
+const TruncatedTick = ({ x, y, payload }) => {
+  const raw = payload?.value ?? '';
+  const text = raw.length > 24 ? raw.slice(0, 24) + '…' : raw;
+  return (
+    <text
+      x={x}
+      y={y}
+      dy={4}
+      textAnchor="end"
+      fill="#6b7280"
+      fontSize={11}
+    >
+      {text}
+    </text>
+  );
+};
+
 export default function AnalyticsReportsPage() {
   const { store, loading: storeLoading } = useStore();
   const [loading, setLoading] = useState(true);
@@ -535,18 +552,15 @@ export default function AnalyticsReportsPage() {
                            ) : (
                                <div className="h-[300px] w-full" dir="ltr">
                                   <ResponsiveContainer width="100%" height="100%">
-                                     <BarChart data={inventoryAnalytics.topCapitalItems} layout="vertical" margin={{ top: 0, right: 0, left: 30, bottom: 0 }}>
+                                     <BarChart data={inventoryAnalytics.topCapitalItems} layout="vertical" margin={{ top: 0, right: 0, left: 10, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" horizontal={false} className="text-slate-100 dark:text-slate-800" />
                                         <XAxis type="number" hide />
                                         <YAxis
                                           dataKey="name"
                                           type="category"
-                                          width={150}
-                                          tick={{ fontSize: 11, fill: '#6b7280' }}
-                                          tickFormatter={(value) => {
-                                            if (!value) return value;
-                                            return value.length > 22 ? '\u2026' + value.slice(0, 22) : value;
-                                          }}
+                                          width={170}
+                                          interval={0}
+                                          tick={<TruncatedTick />}
                                           axisLine={false}
                                           tickLine={false}
                                         />
