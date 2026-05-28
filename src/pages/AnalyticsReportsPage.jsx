@@ -306,7 +306,7 @@ export default function AnalyticsReportsPage() {
             </div>
             
             {/* TABS */}
-            <div className="flex items-center gap-1 mt-8 border-b border-slate-200 dark:border-white/[0.05]">
+            <div className="flex items-center gap-2 mt-8">
                 {[
                     { id: 'sales', label: 'المبيعات', icon: TrendingUp },
                     { id: 'purchases', label: 'المشتريات', icon: ShoppingCart },
@@ -318,15 +318,14 @@ export default function AnalyticsReportsPage() {
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold transition-all relative ${
-                                active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                            className={`flex items-center gap-2 text-[14px] transition-all ${
+                                active
+                                  ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl px-4 py-2 font-semibold'
+                                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-xl px-4 py-2 transition-colors'
                             }`}
                         >
                             <Icon size={18} strokeWidth={active ? 2.5 : 2} />
                             {tab.label}
-                            {active && (
-                                <span className="absolute bottom-[-1px] left-0 w-full h-[3px] bg-indigo-600 dark:bg-indigo-500 rounded-t-full shadow-[0_-2px_10px_rgba(99,102,241,0.5)]"></span>
-                            )}
                         </button>
                     )
                 })}
@@ -404,7 +403,10 @@ export default function AnalyticsReportsPage() {
                                           type="category"
                                           width={150}
                                           tick={{ fontSize: 11, fill: '#6b7280' }}
-                                          tickFormatter={(value) => (value && value.length > 22 ? `${value.slice(0, 22)}…` : value)}
+                                          tickFormatter={(value) => {
+                                            if (!value) return value;
+                                            return value.length > 22 ? '\u2026' + value.slice(0, 22) : value;
+                                          }}
                                           axisLine={false}
                                           tickLine={false}
                                         />
