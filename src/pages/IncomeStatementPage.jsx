@@ -53,6 +53,12 @@ const CAT_LABELS = Object.fromEntries(EXPENSE_CATEGORIES.map((c) => [c.value, c.
 const glassCard =
   'rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl shadow-sm dark:shadow-none';
 
+const kpiCardHover =
+  'transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-2xl cursor-default group relative overflow-hidden border-gray-200/80 dark:border-white/10';
+
+const kpiShimmer =
+  'absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out bg-gradient-to-r from-transparent via-white/10 dark:via-white/5 to-transparent pointer-events-none';
+
 function formatShekel(n) {
   return `${roundMoney(Number(n ?? 0)).toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -537,35 +543,47 @@ export default function IncomeStatementPage() {
             <>
               {/* KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div className={`${glassCard} p-5 border-l-4 border-l-indigo-500`}>
-                  <div className="flex items-center gap-2 text-indigo-400 mb-2">
-                    <DollarSign size={18} />
-                    <span className="text-xs font-bold">الإيرادات الإجمالية</span>
+                <div className={`${glassCard} ${kpiCardHover} p-5 border-l-4 border-l-indigo-500`}>
+                  <div className={kpiShimmer} aria-hidden />
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 text-indigo-400 mb-2">
+                      <DollarSign size={18} />
+                      <span className="text-xs font-bold">الإيرادات الإجمالية</span>
+                    </div>
+                    <p className="text-2xl font-black text-indigo-600 dark:text-indigo-300" dir="ltr">{formatShekel(metrics.netRevenue)}</p>
                   </div>
-                  <p className="text-2xl font-black text-indigo-600 dark:text-indigo-300" dir="ltr">{formatShekel(metrics.netRevenue)}</p>
                 </div>
-                <div className={`${glassCard} p-5 border-l-4 border-l-violet-500`}>
-                  <div className="flex items-center gap-2 text-violet-400 mb-2">
-                    <Receipt size={18} />
-                    <span className="text-xs font-bold">تكلفة البضاعة المباعة</span>
+                <div className={`${glassCard} ${kpiCardHover} p-5 border-l-4 border-l-violet-500`}>
+                  <div className={kpiShimmer} aria-hidden />
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 text-violet-400 mb-2">
+                      <Receipt size={18} />
+                      <span className="text-xs font-bold">تكلفة البضاعة المباعة</span>
+                    </div>
+                    <p className="text-2xl font-black text-violet-600 dark:text-violet-300" dir="ltr">{formatShekel(metrics.cogs)}</p>
                   </div>
-                  <p className="text-2xl font-black text-violet-600 dark:text-violet-300" dir="ltr">{formatShekel(metrics.cogs)}</p>
                 </div>
-                <div className={`${glassCard} p-5 border-l-4 border-l-rose-500`}>
-                  <div className="flex items-center gap-2 text-rose-400 mb-2">
-                    <TrendingDown size={18} />
-                    <span className="text-xs font-bold">إجمالي المصاريف</span>
+                <div className={`${glassCard} ${kpiCardHover} p-5 border-l-4 border-l-rose-500`}>
+                  <div className={kpiShimmer} aria-hidden />
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 text-rose-400 mb-2">
+                      <TrendingDown size={18} />
+                      <span className="text-xs font-bold">إجمالي المصاريف</span>
+                    </div>
+                    <p className="text-2xl font-black text-rose-600 dark:text-rose-300" dir="ltr">{formatShekel(metrics.totalExpenses)}</p>
                   </div>
-                  <p className="text-2xl font-black text-rose-600 dark:text-rose-300" dir="ltr">{formatShekel(metrics.totalExpenses)}</p>
                 </div>
-                <div className={`${glassCard} p-5 border-l-4 ${metrics.netProfit >= 0 ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
-                  <div className={`flex items-center gap-2 mb-2 ${metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    <TrendingUp size={18} />
-                    <span className="text-xs font-bold">صافي الربح</span>
+                <div className={`${glassCard} ${kpiCardHover} p-5 border-l-4 ${metrics.netProfit >= 0 ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
+                  <div className={kpiShimmer} aria-hidden />
+                  <div className="relative z-10">
+                    <div className={`flex items-center gap-2 mb-2 ${metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <TrendingUp size={18} />
+                      <span className="text-xs font-bold">صافي الربح</span>
+                    </div>
+                    <p className={`text-2xl font-black ${metrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`} dir="ltr">
+                      {formatShekel(metrics.netProfit)}
+                    </p>
                   </div>
-                  <p className={`text-2xl font-black ${metrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`} dir="ltr">
-                    {formatShekel(metrics.netProfit)}
-                  </p>
                 </div>
               </div>
 
