@@ -389,15 +389,27 @@ export default function AnalyticsReportsPage() {
                                     <AreaChart data={salesAnalytics.dailySalesArray} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
                                       <defs>
                                         <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                                          <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4}/>
-                                          <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                                          <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.35}/>
+                                          <stop offset="50%" stopColor="#6366f1" stopOpacity={0.15}/>
+                                          <stop offset="100%" stopColor="#4f46e5" stopOpacity={0}/>
                                         </linearGradient>
                                       </defs>
                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
                                       <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#888891', fontWeight: 600 }} dy={10} />
                                       <YAxis hide domain={[0, 'dataMax']} />
                                       <Tooltip content={<CustomTooltip prefix={SHEKEL} />} cursor={{ stroke: '#52525b', strokeWidth: 1, strokeDasharray: '4 4' }} />
-                                      <Area type="monotone" dataKey="المبيعات" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#salesGrad)" />
+                                      <Area
+                                        type="monotone"
+                                        dataKey="المبيعات"
+                                        stroke="#6366f1"
+                                        strokeWidth={3}
+                                        fillOpacity={1}
+                                        fill="url(#salesGrad)"
+                                        dot={false}
+                                        activeDot={{ r: 5, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }}
+                                        animationDuration={800}
+                                        animationEasing="ease-out"
+                                      />
                                     </AreaChart>
                                   </ResponsiveContainer>
                                </div>
