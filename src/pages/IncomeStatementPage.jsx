@@ -472,8 +472,7 @@ export default function IncomeStatementPage() {
         <button
           type="button"
           onClick={handlePrint}
-          data-no-print
-          className="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-black text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+          className="no-print inline-flex items-center gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm font-black text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
         >
           <Printer size={16} />
           تصدير PDF
@@ -481,67 +480,64 @@ export default function IncomeStatementPage() {
       }
     >
       <div className="min-h-full bg-gray-50 dark:bg-[#0a0f1e] -m-4 sm:-m-6 p-4 sm:p-6" dir="rtl">
-        <div className="mx-auto max-w-6xl space-y-6" ref={printRef}>
-          {/* Header */}
-          <div className={`${glassCard} p-6`}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
-                    <TrendingUp size={22} />
+        <div className="mx-auto max-w-6xl space-y-6">
+          <div className="print-area space-y-6" dir="rtl" ref={printRef}>
+            {/* Header */}
+            <div className={`${glassCard} p-6`}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
+                      <TrendingUp size={22} />
+                    </div>
+                    <h1 className="text-xl font-black text-gray-900 dark:text-white">قائمة الدخل</h1>
                   </div>
-                  <h1 className="text-xl font-black text-gray-900 dark:text-white">قائمة الدخل</h1>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {store?.name || 'المتجر'} — من {from.toLocaleDateString('ar-SA')} إلى {to.toLocaleDateString('ar-SA')}
+                  </p>
                 </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {store?.name || 'المتجر'} — من {from.toLocaleDateString('ar-SA')} إلى {to.toLocaleDateString('ar-SA')}
-                </p>
               </div>
-            </div>
 
-            {/* Period filter */}
-            <div className="mt-5 flex flex-wrap gap-2" data-no-print>
-              {PERIOD_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPeriodPreset(p.id)}
-                  className={`rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
-                    periodPreset === p.id
-                      ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
-                      : 'border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {periodPreset === 'custom' && (
-              <div className="mt-3 flex flex-wrap items-center gap-3" data-no-print>
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 text-xs text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
-                <span className="text-gray-500 dark:text-gray-500 text-xs">إلى</span>
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 text-xs text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                />
+              {/* Period filter */}
+              <div className="mt-5 flex flex-wrap gap-2 no-print">
+                {PERIOD_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPeriodPreset(p.id)}
+                    className={`no-print rounded-xl px-3.5 py-2 text-xs font-black transition-all ${
+                      periodPreset === p.id
+                        ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
+                        : 'border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
 
-          {loading ? (
-            <div className="flex justify-center py-20">
-              <Loader2 className="animate-spin text-indigo-400" size={36} />
+              {periodPreset === 'custom' && (
+                <div className="mt-3 flex flex-wrap items-center gap-3 no-print">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="no-print rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 text-xs text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                  <span className="text-gray-500 dark:text-gray-500 text-xs">إلى</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="no-print rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 text-xs text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </div>
+              )}
             </div>
-          ) : (
-            <>
-              {/* KPI Cards */}
+
+            {!loading && (
+              <>
+                {/* KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className={`${glassCard} ${kpiCardHover} p-5 border-l-4 border-l-indigo-500`}>
                   <div className={kpiShimmer} aria-hidden />
@@ -633,9 +629,18 @@ export default function IncomeStatementPage() {
                   </div>
                 </div>
               </div>
+              </>
+            )}
+          </div>
 
+          {loading ? (
+            <div className="flex justify-center py-20 no-print">
+              <Loader2 className="animate-spin text-indigo-400" size={36} />
+            </div>
+          ) : (
+            <>
               {/* Chart */}
-              <div className={`${glassCard} p-6`} data-no-print>
+              <div className={`${glassCard} p-6 no-print`}>
                 <div className="flex items-center gap-2 mb-4">
                   <BarChart2 size={18} className="text-indigo-400" />
                   <h2 className="text-sm font-black text-gray-900 dark:text-white">مقارنة شهرية: الإيرادات vs المصاريف vs الربح</h2>
@@ -682,7 +687,7 @@ export default function IncomeStatementPage() {
               </div>
 
               {/* Expenses management */}
-              <div className={`${glassCard} p-6`} data-no-print>
+              <div className={`${glassCard} p-6 no-print`}>
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <h2 className="text-sm font-black text-gray-900 dark:text-white">إدارة المصاريف</h2>
                   <button
@@ -748,7 +753,7 @@ export default function IncomeStatementPage() {
 
       {/* Add expense modal */}
       {showModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" data-no-print>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm no-print">
           <div className={`${glassCard} w-full max-w-md p-6 bg-white dark:bg-[#0f1629]`} dir="rtl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-black text-gray-900 dark:text-white">إضافة مصروف</h3>
@@ -822,15 +827,6 @@ export default function IncomeStatementPage() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @media print {
-          @page { margin: 12mm; }
-          body { background: white !important; }
-          [data-no-print] { display: none !important; }
-          .sidebar, nav, header { display: none !important; }
-        }
-      `}</style>
     </DashboardLayout>
   );
 }
