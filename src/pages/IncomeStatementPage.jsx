@@ -357,6 +357,7 @@ export default function IncomeStatementPage() {
     const grossProfit = roundMoney(netRevenue - cogs);
     const grossMargin = netRevenue > 0 ? roundMoney((grossProfit / netRevenue) * 100) : 0;
     const netProfit = roundMoney(grossProfit - totalExpenses);
+    const netProfitMargin = netRevenue > 0 ? roundMoney((netProfit / netRevenue) * 100) : 0;
 
     return {
       grossSales: roundMoney(grossSales),
@@ -367,6 +368,7 @@ export default function IncomeStatementPage() {
       grossMargin,
       totalExpenses,
       netProfit,
+      netProfitMargin,
       byCategory: expenseSummary.byCategory,
     };
   }, [salesRows, cogs, expenseSummary]);
@@ -571,14 +573,35 @@ export default function IncomeStatementPage() {
                 </div>
                 <div className={`${glassCard} ${kpiCardHover} p-5 border-l-4 ${metrics.netProfit >= 0 ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
                   <div className={kpiShimmer} aria-hidden />
-                  <div className="relative z-10">
-                    <div className={`flex items-center gap-2 mb-2 ${metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      <TrendingUp size={18} />
-                      <span className="text-xs font-bold">صافي الربح</span>
+                  <div className="relative z-10 flex items-center justify-between gap-4">
+                    <div>
+                      <div className={`flex items-center gap-2 mb-2 ${metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <TrendingUp size={18} />
+                        <span className="text-xs font-bold">صافي الربح</span>
+                      </div>
+                      <p className={`text-2xl font-black ${metrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`} dir="ltr">
+                        {formatShekel(metrics.netProfit)}
+                      </p>
                     </div>
-                    <p className={`text-2xl font-black ${metrics.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`} dir="ltr">
-                      {formatShekel(metrics.netProfit)}
-                    </p>
+                    <div className="relative h-32 w-32 shrink-0">
+                      <svg className="h-full w-full -rotate-90" aria-hidden>
+                        <circle cx="64" cy="64" r="56" className="stroke-slate-200 dark:stroke-slate-700" strokeWidth="12" fill="none" />
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke={metrics.netProfitMargin > 0 ? '#4CAF50' : '#FF3B30'}
+                          strokeWidth="12"
+                          fill="none"
+                          strokeDasharray={`${(Math.min(Math.abs(metrics.netProfitMargin), 100) / 100) * 351} 351`}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className={`text-2xl font-black ${metrics.netProfitMargin > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {metrics.netProfitMargin > 0 ? '+' : ''}{metrics.netProfitMargin.toLocaleString('en-US')}%
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

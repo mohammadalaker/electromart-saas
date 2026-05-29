@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, TrendingUp } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, AlertTriangle, Minus } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -129,85 +138,85 @@ function aggregateSalesToProfitRows(salesRows, productsMap) {
   };
 }
 
-/** صافي ربح كل يوم ضمن آخر 7 أيام تنتهي بـ `toDate` (تقويم محلي) */
-function buildLast7DaysProfit(salesRows, productsMap, toDateStr) {
+/** ربح وتكلفة يومية ضمن الفترة المختارة */
+function buildProfitChartData(salesRows, productsMap, fromDateStr, toDateStr) {
+  const start = new Date(`${fromDateStr}T00:00:00`);
   const end = new Date(`${toDateStr}T23:59:59`);
-  if (Number.isNaN(end.getTime())) return [];
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
 
   const dayKeys = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(end);
-    d.setHours(12, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    const key = dateKeyLocal(d.toISOString());
-    if (key) dayKeys.push({ key, date: new Date(d) });
+  const cursor = new Date(start);
+  cursor.setHours(12, 0, 0, 0);
+  while (cursor <= end) {
+    const key = dateKeyLocal(cursor.toISOString());
+    if (key) dayKeys.push({ key, date: new Date(cursor) });
+    cursor.setDate(cursor.getDate() + 1);
   }
 
-  const profitByDay = new Map(dayKeys.map(({ key }) => [key, 0]));
+  const byDay = new Map(dayKeys.map(({ key }) => [key, { profit: 0, costs: 0 }]));
 
   for (const sale of salesRows) {
     const dk = dateKeyLocal(sale.created_at);
-    if (!dk || !profitByDay.has(dk)) continue;
+    if (!dk || !byDay.has(dk)) continue;
     const lines = parseLineItems(sale.line_items);
-    let saleProfit = 0;
     for (const line of lines) {
-      saleProfit += lineFinancials(line, productsMap).profit;
+      const f = lineFinancials(line, productsMap);
+      const prev = byDay.get(dk);
+      prev.profit += f.profit;
+      prev.costs += f.cost;
     }
-    profitByDay.set(dk, profitByDay.get(dk) + saleProfit);
   }
 
   return dayKeys.map(({ key, date }) => ({
-    key,
-    label: date.toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'numeric' }),
-    profit: profitByDay.get(key) ?? 0,
+    date: date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' }),
+    profit: roundMoney(byDay.get(key).profit),
+    costs: roundMoney(byDay.get(key).costs),
   }));
 }
 
-function WeeklyProfitChart({ series }) {
-  if (!series.length) return null;
-  const maxVal = Math.max(...series.map((s) => Math.abs(s.profit)), 1);
+function ProfitLineChart({ data }) {
+  if (!data.length) return null;
+
   return (
-    <div className={`${glassPanel} p-5 sm:p-6 overflow-hidden relative`}>
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-500/[0.06] dark:from-emerald-400/[0.08] via-transparent to-violet-500/[0.04] rounded-2xl" />
-      <div className="relative">
-        <h2 className="font-black text-slate-900 dark:text-white mb-1">الربح خلال آخر 7 أيام</h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-          يعتمد على أسطر المبيعات في الفترة المختارة؛ الأيام خارج الفلتر تظهر صفراً.
-        </p>
-        <div className="flex items-end justify-between gap-1 sm:gap-2 min-h-[200px] pt-2" dir="ltr">
-          {series.map((d) => {
-            const h = maxVal > 0 ? Math.max(8, (Math.abs(d.profit) / maxVal) * 100) : 8;
-            const positive = d.profit >= 0;
-            return (
-              <div key={d.key} className="flex-1 flex flex-col items-center gap-2 min-w-0">
-                <div className="w-full flex flex-col items-center justify-end h-40">
-                  <span
-                    className={`text-[10px] sm:text-xs font-black font-currency mb-1 truncate max-w-full ${
-                      positive ? profitGlowClass : lossGlowClass
-                    }`}
-                    title={d.profit.toFixed(2)}
-                  >
-                    {d.profit >= 0 ? '' : '−'}
-                    ₪{Math.abs(d.profit).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                  </span>
-                  <div
-                    className={`w-full max-w-[48px] mx-auto rounded-t-lg transition-all ${
-                      positive
-                        ? 'bg-gradient-to-t from-emerald-700 via-emerald-500 to-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.45)] dark:shadow-[0_0_28px_rgba(52,211,153,0.4)]'
-                        : 'bg-gradient-to-t from-rose-700 to-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.25)]'
-                    }`}
-                    style={{ height: `${h}%` }}
-                    role="img"
-                    aria-label={`${d.label}: ${d.profit}`}
-                  />
-                </div>
-                <span className="text-[10px] sm:text-xs font-bold text-slate-600 dark:text-slate-400 text-center leading-tight px-0.5">
-                  {d.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+    <div className={`${glassPanel} p-5 sm:p-6`}>
+      <h2 className="font-black text-slate-900 dark:text-white mb-1">الربح والتكاليف</h2>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+        اتجاه يومي ضمن الفترة المختارة — أخضر للربح، برتقالي للتكاليف.
+      </p>
+      <div className="h-[300px] w-full" dir="ltr">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E5EA" className="dark:opacity-20" />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#888891' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#888891' }} axisLine={false} tickLine={false} width={48} />
+            <Tooltip
+              contentStyle={{
+                borderRadius: '16px',
+                border: 'none',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+              }}
+              formatter={(value) =>
+                `₪${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              }
+            />
+            <Line
+              type="monotone"
+              dataKey="profit"
+              name="الربح"
+              stroke="#4CAF50"
+              strokeWidth={3}
+              dot={{ fill: '#4CAF50', r: 6 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="costs"
+              name="التكاليف"
+              stroke="#FF9800"
+              strokeWidth={3}
+              dot={{ fill: '#FF9800', r: 6 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
@@ -339,10 +348,84 @@ export default function ProfitReportsPage() {
       ? roundMoney(netProfit - operatingExpensesTotal)
       : null;
 
-  const weekSeries = useMemo(
-    () => buildLast7DaysProfit(salesRows, productsMap, toDate),
-    [salesRows, productsMap, toDate]
+  const profitData = useMemo(
+    () => buildProfitChartData(salesRows, productsMap, fromDate, toDate),
+    [salesRows, productsMap, fromDate, toDate]
   );
+
+  const kpiCards = useMemo(() => {
+    const profitColor =
+      netProfit > 0
+        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+        : netProfit < 0
+          ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'
+          : 'bg-yellow-50 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-300';
+    const ProfitIcon = netProfit > 0 ? TrendingUp : netProfit < 0 ? AlertTriangle : Minus;
+
+    return [
+      {
+        title: 'إجمالي المبيعات',
+        value: totalRevenue,
+        color: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
+        icon: TrendingUp,
+      },
+      {
+        title: 'إجمالي التكاليف',
+        value: totalCost,
+        color: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+        icon: TrendingDown,
+      },
+      {
+        title: 'صافي الربح',
+        value: netProfit,
+        color: profitColor,
+        icon: ProfitIcon,
+      },
+    ];
+  }, [totalRevenue, totalCost, netProfit]);
+
+  const detailItems = useMemo(() => {
+    const revenueBase = totalRevenue > 0 ? totalRevenue : 1;
+    const share = (amount) => Math.min(100, Math.round((Math.abs(amount) / revenueBase) * 1000) / 10);
+
+    const rows = [
+      { name: 'إجمالي المبيعات', amount: totalRevenue, percent: 100, trend: 1 },
+      { name: 'إجمالي التكاليف', amount: totalCost, percent: share(totalCost), trend: -1 },
+      { name: 'صافي الربح', amount: netProfit, percent: share(netProfit), trend: netProfit >= 0 ? 1 : -1 },
+    ];
+
+    if (typeof purchasesTotal === 'number') {
+      rows.push({ name: 'مشتريات الفترة', amount: purchasesTotal, percent: share(purchasesTotal), trend: -1 });
+    }
+    if (typeof operatingExpensesTotal === 'number') {
+      rows.push({
+        name: 'مصروفات تشغيلية',
+        amount: operatingExpensesTotal,
+        percent: share(operatingExpensesTotal),
+        trend: -1,
+      });
+    }
+    if (netAfterOperating != null) {
+      rows.push({
+        name: 'صافي الربح بعد المصروفات',
+        amount: netAfterOperating,
+        percent: share(netAfterOperating),
+        trend: netAfterOperating >= 0 ? 1 : -1,
+      });
+    }
+
+    return rows;
+  }, [totalRevenue, totalCost, netProfit, purchasesTotal, operatingExpensesTotal, netAfterOperating]);
+
+  const productItems = useMemo(() => {
+    const maxProfit = Math.max(...topByProfit.map((r) => Math.abs(r.profit)), 1);
+    return topByProfit.map((r) => ({
+      name: r.name,
+      amount: r.profit,
+      percent: Math.min(100, Math.round((Math.abs(r.profit) / maxProfit) * 1000) / 10),
+      trend: r.profit >= 0 ? 1 : -1,
+    }));
+  }, [topByProfit]);
 
   if (storeLoading) {
     return (
@@ -432,47 +515,35 @@ export default function ProfitReportsPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div
-                className={`${glassPanel} p-5 transition-all hover:border-emerald-300/40 dark:hover:border-emerald-500/25`}
-              >
-                <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  إجمالي المبيعات
-                </p>
-                <p
-                  className="text-2xl font-black font-currency text-slate-900 dark:text-white mt-2 [text-shadow:0_1px_2px_rgba(0,0,0,0.06)]"
-                  dir="ltr"
-                >
-                  {fmtMoney(totalRevenue)}
-                </p>
-              </div>
-              <div
-                className={`${glassPanel} p-5 transition-all hover:border-amber-300/40 dark:hover:border-amber-500/20`}
-              >
-                <p className="text-xs font-black text-slate-500 dark:text-slate-400">إجمالي التكاليف (تقديري)</p>
-                <p className="text-2xl font-black font-currency text-amber-800 dark:text-amber-200/95 mt-2" dir="ltr">
-                  {fmtMoney(totalCost)}
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-500 mt-2 leading-snug">
-                  الكمية × تكلفة الوحدة من المخزن لكل سطر بيع.
-                </p>
-              </div>
-              <div
-                className={`${glassPanel} p-5 relative overflow-hidden ring-1 ring-emerald-500/20 dark:ring-emerald-400/25`}
-              >
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-500/[0.12] dark:from-emerald-400/[0.14] via-transparent to-teal-500/[0.06] rounded-2xl" />
-                <div className="relative">
-                  <p className="text-xs font-black text-emerald-800/90 dark:text-emerald-200/90">صافي الربح الإجمالي</p>
-                  <p
-                    className={`text-2xl sm:text-3xl font-black font-currency mt-2 ${
-                      netProfit >= 0 ? profitGlowClass : lossGlowClass
-                    }`}
-                    dir="ltr"
-                  >
-                    {fmtMoney(netProfit)}
+              {kpiCards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <div key={card.title} className={`rounded-2xl p-6 ${card.color}`}>
+                    <div className="flex items-center justify-between">
+                      <Icon size={24} />
+                      <span className="text-sm font-bold opacity-70">{card.title}</span>
+                    </div>
+                    <p className="mt-2 text-3xl font-black font-currency" dir="ltr">
+                      ₪{Number(card.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {netProfit < 0 && (
+              <div className="mb-4 flex items-center gap-3 rounded-2xl bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800/50 p-4">
+                <AlertTriangle className="text-rose-500 shrink-0" size={24} />
+                <div>
+                  <p className="font-bold text-rose-700 dark:text-rose-300" dir="ltr">
+                    تنبيه: خسارة ₪{Math.abs(netProfit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-sm text-rose-600 dark:text-rose-400" dir="ltr">
+                    التكاليف أعلى من المبيعات بـ ₪{Math.abs(netProfit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
-            </div>
+            )}
 
             {typeof purchasesTotal === 'number' && (
               <p
@@ -511,60 +582,99 @@ export default function ProfitReportsPage() {
               </div>
             )}
 
-            <WeeklyProfitChart series={weekSeries} />
+            <ProfitLineChart data={profitData} />
 
-            <div className={`${glassPanel} overflow-hidden`}>
-              <div className="px-4 py-3 border-b border-white/20 dark:border-white/5 bg-white/40 dark:bg-white/[0.03] backdrop-blur-sm">
-                <h2 className="font-black text-slate-900 dark:text-white">صافي الربح لكل صنف (الأعلى)</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  شركة {store?.name || 'المتجر'} — تجميع حسب الصنف ضمن الفترة
+            <div className="rounded-2xl bg-white dark:bg-[#18181b] overflow-hidden shadow-sm border border-gray-200 dark:border-white/10">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
+                <h2 className="font-black text-gray-900 dark:text-white text-sm">ملخص الأرباح التفصيلي</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  شركة {store?.name || 'المتجر'} — الفترة المختارة
                 </p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm text-right min-w-[560px]">
-                  <thead>
-                    <tr className="bg-slate-900/95 dark:bg-slate-950/90 text-white backdrop-blur-md">
-                      <th className="p-3">#</th>
-                      <th className="p-3">الصنف</th>
-                      <th className="p-3 text-center">كمية مباعة</th>
-                      <th className="p-3 text-center">مبيعات</th>
-                      <th className="p-3 text-center">تكلفة</th>
-                      <th className="p-3 text-center">صافي ربح</th>
+                <table className="w-full min-w-[480px]">
+                  <thead className="bg-gray-50 dark:bg-white/[0.03]">
+                    <tr>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">البند</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">المبلغ</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">النسبة</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">الاتجاه</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {topByProfit.length === 0 ? (
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/10">
+                    {detailItems.map((item) => (
+                      <tr key={item.name} className="hover:bg-gray-50 dark:hover:bg-white/[0.03] transition">
+                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
+                        <td className="px-4 py-3 font-bold font-currency text-gray-900 dark:text-gray-100" dir="ltr">
+                          ₪{Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-2 w-24 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${item.trend > 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                              style={{ width: `${item.percent}%` }}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.trend > 0 ? (
+                            <TrendingUp className="text-green-500" size={20} />
+                          ) : (
+                            <TrendingDown className="text-red-500" size={20} />
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white dark:bg-[#18181b] overflow-hidden shadow-sm border border-gray-200 dark:border-white/10">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-white/10">
+                <h2 className="font-black text-gray-900 dark:text-white text-sm">صافي الربح لكل صنف (الأعلى)</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  تجميع حسب الصنف ضمن الفترة
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[480px]">
+                  <thead className="bg-gray-50 dark:bg-white/[0.03]">
+                    <tr>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">البند</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">المبلغ</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">النسبة</th>
+                      <th className="px-4 py-3 text-right text-sm font-bold text-gray-600 dark:text-gray-400">الاتجاه</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/10">
+                    {productItems.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-500 dark:text-slate-400">
+                        <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                           لا توجد بيانات في الفترة أو لا تطابق أصناف المخزن (line_items).
                         </td>
                       </tr>
                     ) : (
-                      topByProfit.map((r, i) => (
-                        <tr
-                          key={`${r.name}-${r.barcode}-${i}`}
-                          className="border-b border-slate-200/60 dark:border-white/[0.06] odd:bg-white/50 dark:odd:bg-slate-900/35 even:bg-white/30 dark:even:bg-transparent"
-                        >
-                          <td className="p-2.5 text-center font-currency text-slate-600 dark:text-slate-400">
-                            {i + 1}
-                          </td>
-                          <td className="p-2.5 font-bold text-slate-900 dark:text-slate-100">{r.name}</td>
-                          <td className="p-2.5 text-center font-currency text-slate-700 dark:text-slate-300" dir="ltr">
-                            {r.qty != null ? r.qty : '—'}
-                          </td>
-                          <td className="p-2.5 text-center font-currency text-slate-700 dark:text-slate-300" dir="ltr">
-                            {fmtMoney(r.revenue)}
-                          </td>
-                          <td className="p-2.5 text-center font-currency text-amber-800/90 dark:text-amber-200/85" dir="ltr">
-                            {fmtMoney(r.cost)}
-                          </td>
+                      productItems.map((item, i) => (
+                        <tr key={`${item.name}-${i}`} className="hover:bg-gray-50 dark:hover:bg-white/[0.03] transition">
+                          <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
                           <td
-                            className={`p-2.5 text-center font-black font-currency ${
-                              r.profit >= 0 ? profitGlowClass : lossGlowClass
-                            }`}
+                            className={`px-4 py-3 font-bold font-currency ${item.trend > 0 ? profitGlowClass : lossGlowClass}`}
                             dir="ltr"
                           >
-                            {fmtMoney(r.profit)}
+                            ₪{Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="h-2 w-24 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+                              <div className="h-full rounded-full bg-blue-500" style={{ width: `${item.percent}%` }} />
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {item.trend > 0 ? (
+                              <TrendingUp className="text-green-500" size={20} />
+                            ) : (
+                              <TrendingDown className="text-red-500" size={20} />
+                            )}
                           </td>
                         </tr>
                       ))
