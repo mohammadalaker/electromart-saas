@@ -1081,21 +1081,45 @@ export default function PublicStorePage() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-[#E8E8EC] pt-10 pb-6">
-        <div className="max-w-6xl mx-auto px-4">
+      <footer className="bg-[#1a1b3d] border-t border-[#2a2b50] pt-10">
+        <div className="max-w-6xl mx-auto px-4 pb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
-              <div className="text-sm font-bold text-[#1a1b3d] mb-1">{storeName || 'OnElect Company'}</div>
-              <p className="text-[9px] text-[#6E7278] mb-3">منتج المنزليات والكهربائيات عند الاستلام</p>
-              <p className="font-mono text-[10px] text-[#6E7278] leading-relaxed mb-3">
-                وجهتك الأولى للأجهزة المنزلية وأدوات الحلاقة الاحترافية.
+              <div className="text-sm font-bold text-white mb-1">{storeName || 'OnElect Company'}</div>
+              <p className="text-[9px] text-[#8b8ec2] mb-3">منتج المنزليات والكهربائيات عند الاستلام</p>
+              <p className="font-mono text-[10px] text-[#8b8ec2] leading-relaxed mb-3">
+                وجهتك الأولى للأجهزة المنزلية والأجهزة الكهربائية.
               </p>
               <div className="flex gap-2">
-                {[Instagram, Facebook].map((Icon, i) => (
-                  <span key={i} className="w-7 h-7 rounded-full bg-[#F5F5F7] flex items-center justify-center text-[#6E7278] hover:text-[#5B6BF5] hover:bg-[#5B6BF5]/10 transition-all cursor-pointer">
-                    <Icon size={12} />
-                  </span>
-                ))}
+                <a
+                  href={instagramUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-[#5B6BF5] flex items-center justify-center text-[#8b8ec2] hover:text-white transition-all"
+                  aria-label="Instagram"
+                >
+                  <Instagram size={16} />
+                </a>
+                <a
+                  href={facebookUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-[#5B6BF5] flex items-center justify-center text-[#8b8ec2] hover:text-white transition-all"
+                  aria-label="Facebook"
+                >
+                  <Facebook size={16} />
+                </a>
+                <a
+                  href={tiktokUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-[#5B6BF5] flex items-center justify-center text-[#8b8ec2] hover:text-white transition-all"
+                  aria-label="TikTok"
+                >
+                  <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z" />
+                  </svg>
+                </a>
               </div>
             </div>
             {[
@@ -1104,22 +1128,44 @@ export default function PublicStorePage() {
               { title: 'عن الشركة', items: ['من نحن', storeName || 'OnElect Company', 'الوظائف', 'الشروط والأحكام'] },
             ].map((col) => (
               <div key={col.title}>
-                <h4 className="text-[11px] font-bold text-[#0D0E13] tracking-wider uppercase mb-3">{col.title}</h4>
+                <h4 className="text-[11px] font-bold text-white tracking-wider uppercase mb-3">{col.title}</h4>
                 <ul className="space-y-2">
                   {col.items.map((item) => (
                     <li key={item}>
-                      <span className="font-mono text-[10px] text-[#6E7278] hover:text-[#5B6BF5] cursor-pointer transition-colors">{item}</span>
+                      <span className="font-mono text-[10px] text-[#8b8ec2] hover:text-white cursor-pointer transition-colors">{item}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-          <div className="mt-8 pt-4 border-t border-[#E8E8EC] flex flex-col sm:flex-row items-center justify-between gap-2">
-            <p className="font-mono text-[9px] text-[#B0B2C3]">© {new Date().getFullYear()} {storeName || 'OnElect Company'}. جميع الحقوق محفوظة.</p>
+        </div>
+        <div className="bg-[#0D0E13] py-4 px-4 border-t border-[#2a2b50]">
+          <div className="max-w-6xl mx-auto flex justify-between items-center flex-wrap gap-3" dir="ltr">
+            <a
+              href="https://swiftm.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-[#1a1b3d] border border-[#2a2b50] rounded-full px-4 py-1.5 hover:border-[#5B6BF5] transition-all group"
+            >
+              <span className="text-[11px] text-[#8b8ec2] group-hover:text-white transition-colors">
+                مدعوم بواسطة
+              </span>
+              <span className="text-[12px] font-black text-[#5B6BF5] group-hover:text-white transition-colors">
+                Swiftm
+              </span>
+              <span className="text-[10px] text-[#6E7278]">إدارة تجارة ذكية</span>
+            </a>
+            <p className="text-[10px] text-[#6E7278] font-mono text-center">
+              © {new Date().getFullYear()} {storeName}. جميع الحقوق محفوظة.
+            </p>
             <div className="flex gap-4">
-              <span className="font-mono text-[9px] text-[#B0B2C3] hover:text-[#6E7278] cursor-pointer">سياسة الخصوصية</span>
-              <span className="font-mono text-[9px] text-[#B0B2C3] hover:text-[#6E7278] cursor-pointer">الشروط والأحكام</span>
+              <span className="text-[10px] text-[#6E7278] hover:text-white cursor-pointer transition-colors">
+                سياسة الخصوصية
+              </span>
+              <span className="text-[10px] text-[#6E7278] hover:text-white cursor-pointer transition-colors">
+                الشروط والأحكام
+              </span>
             </div>
           </div>
         </div>
