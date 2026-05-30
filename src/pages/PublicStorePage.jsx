@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Loader2,
   ShoppingCart,
@@ -7,25 +7,25 @@ import {
   Minus,
   X,
   Search,
-  Filter,
   Package,
   Sparkles,
+  User,
+  Menu,
+  ChevronLeft,
+  Instagram,
+  Facebook,
 } from 'lucide-react';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { normalizeItemFromSupabase, roundMoney, isUuid, runProductsSelectWithFallback } from '../utils/productModel';
 import { getPublicImageUrl } from '../utils/storageImageUrl';
 import { isInventoryOutOfStock } from '../lib/inventoryStock';
 import { STORE_CATEGORY_TILES, itemMatchesStoreCategory, getProductTypeLabel } from '../utils/productTypes';
-import SwiftmLogo from '../components/SwiftmLogo.jsx';
-import {
-  BRAND_FOOTER_AR,
-  BRAND_NAME,
-  BRAND_NAME_LOWER,
-  BRAND_TAGLINE_EN,
-  brandCopyright,
-  brandPublicCartKey,
-} from '../constants/brand.js';
+import { brandPublicCartKey } from '../constants/brand.js';
 import heroKitchenImage from '../assets/store-hero-kitchen.jpg';
+
+gsap.registerPlugin(ScrollTrigger);
 
 const FETCH_PAGE_SIZE = 500;
 const PRODUCTS_PER_PAGE = 24;
@@ -45,17 +45,89 @@ function mapRpcError(msg) {
   return m || 'تعذّر إرسال الطلب.';
 }
 
+function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false }) {
+  const img = getPublicImageUrl(item.image);
+  const out = isInventoryOutOfStock(item);
+  const fullPrice = roundMoney(item.price ?? 0);
+  const salePrice = roundMoney(item.priceAfterDiscount ?? item.price ?? 0);
+  const discountPercent =
+    fullPrice > 0 && salePrice < fullPrice
+      ? Math.round(((fullPrice - salePrice) / fullPrice) * 100)
+      : 0;
+
+  return (
+    <article
+      {...(scrollAnimate ? { 'data-product-card': true } : {})}
+      className="group relative bg-white rounded-xl border border-[#E8E8EC] overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 p-3"
+    >
+      <div className="relative aspect-square bg-[#F5F5F7] p-3 flex items-center justify-center">
+        {discountPercent > 0 ? (
+          <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md z-10 group-hover:animate-pulse">
+            -{discountPercent}%
+          </span>
+        ) : null}
+        {showNewBadge ? (
+          <span className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] px-2 py-0.5 rounded-md z-10">
+            جديد
+          </span>
+        ) : null}
+        {showBestSellerBadge ? (
+          <span className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-md z-10">
+            الأكثر مبيعاً
+          </span>
+        ) : null}
+        {img ? (
+          <img src={img} alt="" className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-500" loading="lazy" />
+        ) : (
+          <Package className="text-[#5B6BF5]/20" size={48} />
+        )}
+      </div>
+      {item.group ? (
+        <p className="mt-2 text-center font-bold text-sm text-[#0D0E13]">{item.group}</p>
+      ) : null}
+      <h3 className="mt-1 text-[12px] text-[#0D0E13] line-clamp-2 text-center min-h-[36px]">
+        {item.name || '—'}
+      </h3>
+      <div className="mt-2 flex items-center justify-center gap-2">
+        <span className="text-[#5B6BF5] font-bold text-base font-currency" lang="en" dir="ltr">
+          ₪ {salePrice.toFixed(2)}
+        </span>
+        {discountPercent > 0 ? (
+          <span className="text-[#B0B2C3] line-through text-xs font-currency" lang="en" dir="ltr">
+            ₪ {fullPrice.toFixed(2)}
+          </span>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        disabled={out}
+        onClick={() => onAddToCart(item)}
+        className="mt-3 w-full bg-[#1a1b3d] text-white rounded-lg py-2.5 text-sm font-bold hover:bg-[#5B6BF5] transition-all active:scale-95 hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-30 disabled:pointer-events-none"
+      >
+        <ShoppingCart size={16} />
+        {inCart ? `في السلة (${inCart.qty})` : 'إضافة إلى السلة'}
+      </button>
+    </article>
+  );
+}
+
 export default function PublicStorePage() {
   const { slug: slugParam } = useParams();
+  const navigate = useNavigate();
   const slug = (slugParam || '').trim().toLowerCase();
 
   const [storeId, setStoreId] = useState(null);
   const [storeName, setStoreName] = useState('');
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [facebookUrl, setFacebookUrl] = useState('');
+  const [tiktokUrl, setTiktokUrl] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [brandFilter, setBrandFilter] = useState('');
   const [categoryTile, setCategoryTile] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -87,7 +159,7 @@ export default function PublicStorePage() {
       try {
         const { data: st, error: e1 } = await supabase
           .from('stores')
-          .select('id,name')
+          .select('id, name, instagram_url, facebook_url, tiktok_url')
           .eq('public_slug', slug)
           .eq('public_catalog_enabled', true)
           .maybeSingle();
@@ -100,6 +172,9 @@ export default function PublicStorePage() {
         }
         setStoreId(st.id);
         setStoreName((st.name || '').toString());
+        setInstagramUrl((st.instagram_url ?? '').toString().trim());
+        setFacebookUrl((st.facebook_url ?? '').toString().trim());
+        setTiktokUrl((st.tiktok_url ?? '').toString().trim());
 
         const { data: products, error: e2 } = await runProductsSelectWithFallback((sel) =>
           supabase
@@ -239,6 +314,8 @@ export default function PublicStorePage() {
   }, [totalPages, currentPageClamped]);
 
   const cartLineById = useMemo(() => new Map(cart.map((c) => [c.id, c])), [cart]);
+  const newArrivals = items.slice(0, 5);
+  const bestSellers = items.filter((i) => !isInventoryOutOfStock(i)).slice(0, 5);
 
   const cartTotals = useMemo(() => {
     let sub = 0;
@@ -336,20 +413,113 @@ export default function PublicStorePage() {
 
   const cartCount = cart.reduce((a, c) => a + Math.max(1, Number(c.qty) || 1), 0);
 
+  const heroT1 = useRef(null);
+  const heroT2 = useRef(null);
+  const heroSub = useRef(null);
+  const heroImg = useRef(null);
+  const productsGridRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!storeId) return;
+    document.documentElement.style.scrollBehavior = 'smooth';
+    if (heroT1.current) gsap.set(heroT1.current, { opacity: 1, color: '#ffffff' });
+    if (heroT2.current) gsap.set(heroT2.current, { opacity: 1 });
+    const tl = gsap.timeline({ delay: 0.4 });
+    if (heroT1.current) {
+      tl.fromTo(heroT1.current, { opacity: 0, y: 50, clipPath: 'inset(100% 0 0 0)' }, { opacity: 1, y: 0, clipPath: 'inset(0% 0 0 0)', duration: 1, ease: 'power4.out' });
+    }
+    if (heroT2.current) {
+      tl.fromTo(heroT2.current, { opacity: 0, y: 50, clipPath: 'inset(100% 0 0 0)' }, { opacity: 1, y: 0, clipPath: 'inset(0% 0 0 0)', duration: 1, ease: 'power4.out' }, '-=0.7');
+    }
+    if (heroSub.current) {
+      tl.fromTo(heroSub.current, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, '-=0.4');
+    }
+    if (heroImg.current) {
+      tl.fromTo(heroImg.current, { opacity: 0, scale: 1.03 }, { opacity: 1, scale: 1, duration: 1, ease: 'power3.out' }, '-=0.5');
+    }
+    return () => {
+      tl.kill();
+      document.documentElement.style.scrollBehavior = 'auto';
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!storeId || !productsGridRef.current) return;
+    const cards = productsGridRef.current.querySelectorAll('[data-product-card]');
+    const tweens = [];
+    cards.forEach((card, i) => {
+      tweens.push(
+        gsap.fromTo(
+          card,
+          { opacity: 0, y: 30, scale: 0.96 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.5,
+            delay: i * 0.04,
+            ease: 'power3.out',
+            scrollTrigger: { trigger: card, start: 'top 92%' },
+          },
+        ),
+      );
+    });
+    return () => {
+      tweens.forEach((t) => {
+        t.scrollTrigger?.kill();
+        t.kill();
+      });
+    };
+  }, [storeId, pagedItems]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    const titles = document.querySelectorAll('[data-section-title]');
+    const tweens = [];
+    titles.forEach((title) => {
+      tweens.push(
+        gsap.fromTo(
+          title,
+          { opacity: 0, y: 30 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.6,
+            ease: 'power3.out',
+            scrollTrigger: { trigger: title, start: 'top 90%' },
+          },
+        ),
+      );
+    });
+    return () => {
+      tweens.forEach((t) => {
+        t.scrollTrigger?.kill();
+        t.kill();
+      });
+    };
+  }, [storeId, items.length, allBrands.length]);
+
+  useEffect(() => {
+    if (searchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [searchOpen]);
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100" dir="rtl">
-        <Loader2 className="animate-spin text-blue-700" size={48} />
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F5F7]" dir="rtl" style={{ fontFamily: "'Inter Tight', sans-serif" }}>
+        <Loader2 className="animate-spin text-[#5B6BF5]" size={48} />
       </div>
     );
   }
 
   if (loadError || !storeId) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-100 text-slate-800" dir="rtl">
-        <Package className="text-slate-400 mb-4" size={48} />
-        <p className="text-lg font-black text-center">{loadError || 'المتجر غير متاح'}</p>
-        <Link to="/" className="mt-6 text-blue-700 font-bold hover:underline">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#F5F5F7] text-[#0D0E13]" dir="rtl" style={{ fontFamily: "'Inter Tight', sans-serif" }}>
+        <Package className="text-[#6E7278] mb-4" size={48} />
+        <p className="text-lg font-bold text-center">{loadError || 'المتجر غير متاح'}</p>
+        <Link to="/" className="mt-6 text-[#5B6BF5] font-bold hover:underline">
           العودة
         </Link>
       </div>
@@ -357,126 +527,267 @@ export default function PublicStorePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 text-slate-900" dir="rtl">
-      <header className="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-2xl border-b border-white/5">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0 flex items-center gap-3">
-            <div>
-              <h1 className="text-sm sm:text-base font-black truncate text-white">{storeName || 'متجر إلكتروني'}</h1>
-              <p className="text-[11px] text-indigo-300/80 mt-0.5">
-                {paymentLink ? 'الدفع عند الاستلام أو إلكترونياً' : 'تصفّح المنتجات — الدفع عند الاستلام'}
-              </p>
+    <div
+      className="min-h-screen bg-[#F5F5F7] text-slate-900"
+      dir="rtl"
+      style={{ fontFamily: "'Inter Tight', sans-serif", backgroundColor: '#F5F5F7' }}
+    >
+      {/* SocialBar */}
+      <div className="w-full bg-[#1a1b3d] text-white text-[11px] font-mono py-1.5">
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
+          {(tiktokUrl || facebookUrl || instagramUrl) ? (
+            <div className="flex items-center gap-4">
+              {tiktokUrl ? (
+                <a href={tiktokUrl} target="_blank" rel="noopener noreferrer" className="text-[#8b8ec2] hover:text-white cursor-pointer transition-colors">
+                  TikTok
+                </a>
+              ) : null}
+              {facebookUrl ? (
+                <a href={facebookUrl} target="_blank" rel="noopener noreferrer" className="text-[#8b8ec2] hover:text-white cursor-pointer transition-colors">
+                  Facebook
+                </a>
+              ) : null}
+              {instagramUrl ? (
+                <a href={instagramUrl} target="_blank" rel="noopener noreferrer" className="text-[#8b8ec2] hover:text-white cursor-pointer transition-colors">
+                  Instagram
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+          <span className="text-[#8b8ec2]">العربية ▾</span>
+        </div>
+      </div>
+
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-[#1a1b3d] border-b border-[#2a2b50] backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
+              aria-label="فتح السلة"
+              className="relative text-white/80 hover:text-white transition-colors"
+            >
+              <ShoppingCart size={20} />
+              {cartCount > 0 ? (
+                <span
+                  className="absolute -top-1.5 -right-1.5 min-w-[1rem] h-4 px-1 inline-flex items-center justify-center rounded-full bg-[#5B6BF5] text-white text-[9px] font-bold font-currency"
+                  lang="en"
+                >
+                  {cartCount}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchOpen(!searchOpen)}
+              className="text-white/80 hover:text-white transition-colors"
+              aria-label="بحث"
+            >
+              <Search size={20} />
+            </button>
+          </div>
+          <div className="text-center">
+            <div className="text-[15px] font-bold text-white tracking-wide">{storeName || 'OnElect Company'}</div>
+            <div className="text-[9px] text-[#8b8ec2] -mt-0.5">
+              {paymentLink ? 'الدفع عند الاستلام أو إلكترونياً' : 'منتج المنزليات والكهربائيات عند الاستلام'}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setCartOpen(true)}
-            aria-label="فتح السلة"
-            className="order-first relative inline-flex w-11 h-11 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-white/90 transition-colors hover:bg-white/15 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-          >
-            <ShoppingCart size={22} strokeWidth={1.75} />
-            {cartCount > 0 ? (
-              <span
-                className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 inline-flex items-center justify-center rounded-full bg-white text-blue-800 text-[10px] font-black font-currency shadow"
-                lang="en"
-              >
-                {cartCount}
-              </span>
-            ) : null}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-white/80 hover:text-white hidden sm:block transition-colors"
+              aria-label="حسابي"
+            >
+              <User size={20} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="text-white/80 hover:text-white sm:hidden transition-colors"
+              aria-label="القائمة"
+            >
+              <Menu size={20} />
+            </button>
+          </div>
         </div>
       </header>
 
+      {searchOpen ? (
+        <div className="fixed top-[108px] left-0 right-0 z-50 bg-[#1a1b3d] px-4 py-3 border-b border-[#2a2b50]">
+          <div className="max-w-7xl mx-auto flex items-center gap-2">
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ابحث عن منتج..."
+              className="w-full rounded-xl bg-white/10 text-white placeholder:text-white/40 px-4 py-2.5 outline-none focus:ring-2 focus:ring-[#5B6BF5]"
+            />
+            <button
+              type="button"
+              onClick={() => setSearchOpen(false)}
+              className="shrink-0 text-white/70 hover:text-white transition-colors p-1"
+              aria-label="إغلاق البحث"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {mobileMenuOpen ? (
+        <div className="sm:hidden bg-[#1a1b3d] border-b border-[#2a2b50] py-2">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col gap-1">
+            {STORE_CATEGORY_TILES.map((tile) => {
+              const active = categoryTile === tile.id;
+              return (
+                <button
+                  key={`mobile-nav-${tile.id}`}
+                  type="button"
+                  onClick={() => {
+                    setCategoryTile(tile.id);
+                    setMobileMenuOpen(false);
+                    document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className={`text-[13px] font-medium whitespace-nowrap px-3 py-2 rounded-lg transition-all cursor-pointer text-right ${
+                    active
+                      ? 'bg-[#5B6BF5] text-white'
+                      : 'text-white/80 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {tile.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <nav className="bg-[#252654] border-b border-[#2a2b50]">
+        <div className="max-w-7xl mx-auto px-4 py-2.5">
+          <div className="hidden sm:flex gap-1 overflow-x-auto justify-center [scrollbar-width:none]">
+            {STORE_CATEGORY_TILES.map((tile) => {
+              const active = categoryTile === tile.id;
+              return (
+                <button
+                  key={`nav-${tile.id}`}
+                  type="button"
+                  onClick={() => {
+                    setCategoryTile(tile.id);
+                    document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className={`text-[13px] font-medium whitespace-nowrap px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#5B6BF5] text-white'
+                      : 'text-white/80 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {tile.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </nav>
+
       {submitDone && (
         <div className="max-w-6xl mx-auto px-4 pt-4">
-          <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 text-center">
+          <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 text-center">
             تم استلام طلبك. سيتواصل معك المتجر قريباً. شكراً لثقتك.
           </div>
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        <section className="relative overflow-hidden rounded-3xl shadow-2xl border border-slate-200">
-          <img
-            src={heroKitchenImage}
-            alt="بانر أجهزة مطبخ"
-            className="block h-[420px] sm:h-[500px] w-full object-cover brightness-125 contrast-100 saturate-110"
-            loading="eager"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-black/20 to-black/10" />
-          <div className="absolute inset-0 bg-black/20" />
-          <div className="absolute bottom-8 right-8 z-10 text-right max-w-xs">
-            <span className="inline-block text-[10px] font-bold tracking-[0.35em] text-white/70 uppercase mb-2">مجموعة مختارة</span>
-            <h2 className="text-4xl sm:text-5xl font-black text-white leading-tight" style={{ textShadow: '0 2px 20px rgba(0,0,0,0.5)' }}>أجهزة مطبخ أذكى<br/>لأداء أفضل.</h2>
-            <p className="mt-3 text-sm text-white/80">ذوق رفيع.. وأداء أذكى.</p>
+      {/* Hero */}
+      <section className="relative z-10 overflow-x-hidden">
+        <div className="relative h-[85vh] w-full overflow-hidden">
+          <div ref={heroImg} className="absolute inset-0">
+            <img
+              src={heroKitchenImage}
+              alt="بانر أجهزة مطبخ"
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="eager"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0D0E13]/80 via-[#0D0E13]/30 to-[#0D0E13]/50" />
           </div>
-        </section>
 
-        <div className="space-y-4">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 border border-slate-100 shadow-sm">
-            <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 pt-1 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.4)_transparent]">
-              {STORE_CATEGORY_TILES.map((tile) => {
-                const active = categoryTile === tile.id;
-                const preview = tile.id === 'all' ? null : tilePreviewById[tile.id];
-                return (
-                  <button
-                    key={tile.id}
-                    type="button"
-                    onClick={() => setCategoryTile(tile.id)}
-                    className={`flex shrink-0 flex-col items-center gap-2 w-[4.75rem] sm:w-[5.75rem] text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-xl pb-1 transition-all duration-200 ${
-                      active ? 'opacity-100' : 'opacity-90 hover:opacity-100'
-                    }`}
-                  >
-                    <span
-                      className={`flex h-[4.5rem] w-[4.5rem] sm:h-[5.25rem] sm:w-[5.25rem] items-center justify-center overflow-hidden rounded-[1.35rem] border transition-all duration-200 ${
-                        active
-                          ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-md bg-gradient-to-br from-indigo-50 to-blue-50'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
-                      }`}
-                    >
-                      {tile.id === 'all' ? (
-                        <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-100 to-slate-100">
-                          <Sparkles className="text-blue-600" size={28} strokeWidth={2} />
-                        </span>
-                      ) : preview ? (
-                        <img src={preview} alt="" className="h-full w-full object-contain p-1.5" />
-                      ) : (
-                        <Package className="text-slate-500" size={32} />
-                      )}
-                    </span>
-                    <span
-                      className={`max-w-[5.75rem] px-0.5 text-[10px] sm:text-[11px] font-black leading-tight ${
-                        active ? 'text-slate-900' : 'text-slate-600'
-                      }`}
-                    >
-                      {tile.label}
-                    </span>
-                  </button>
-                );
-              })}
+          <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 text-center">
+            <div
+              ref={heroT1}
+              className="w-full text-center text-[14vw] md:text-[11vw] font-black uppercase leading-[0.85] text-white tracking-[-0.04em]"
+            >
+              ONELECT
+            </div>
+            <div
+              ref={heroT2}
+              className="w-full text-center text-[14vw] md:text-[11vw] font-black uppercase leading-[0.85] tracking-[-0.04em]"
+              style={{
+                backgroundColor: 'transparent',
+                background: 'linear-gradient(135deg, #5B6BF5, #8B9DF5)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                color: 'transparent',
+              }}
+            >
+              COMPANY
+            </div>
+            <p ref={heroSub} className="mt-4 font-mono text-sm text-white/90 tracking-wider max-w-xl">
+              منتجات المنزليات والكهربائيات — الدفع عند الاستلام
+            </p>
+            <div className="mt-5 flex gap-3">
+              <a href="#products" className="px-6 py-2.5 bg-[#5B6BF5] text-white font-mono text-sm rounded-full hover:bg-[#4a59d9] transition-all active:scale-95 hover:shadow-lg">
+                تسوق الآن
+              </a>
+              <a href="#categories" className="px-6 py-2.5 border border-white/30 text-white font-mono text-sm rounded-full hover:bg-white/10 transition-all active:scale-95">
+                تصفح التصنيفات
+              </a>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/60 bg-white/90 backdrop-blur-sm p-4 space-y-3 shadow-sm">
-            <div className="flex items-center gap-2 text-blue-700 font-bold text-xs">
-              <Filter size={16} />
-              بحث وتصفية إضافية
+          <div className="absolute bottom-0 right-0 z-10 p-6 md:p-10 text-right pointer-events-none">
+            <span className="text-[10px] font-mono text-[#8b9df5] tracking-wider uppercase block mb-1">مجموعة مميزة</span>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white leading-tight mb-1">أجهزة مطبخ أذكى</h2>
+            <h3 className="text-base sm:text-lg md:text-xl font-bold text-white/90 leading-tight mb-2">لأداء أفضل</h3>
+            <p className="font-mono text-[10px] sm:text-xs text-white/60">ذوق رفيع، وأداء أذكى</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Products section */}
+      <section id="products" className="bg-white py-12 md:py-16 scroll-mt-20">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-bold text-[#0D0E13]">منتجاتنا</h2>
+              <p className="font-mono text-xs text-[#6E7278] mt-1">أفضل الماركات العالمية بأفضل الأسعار</p>
             </div>
+            {filteredItems.length > PRODUCTS_PER_PAGE && (
+              <span className="font-mono text-[10px] text-[#5B6BF5] bg-[#5B6BF5]/8 px-2 py-1 rounded-full">
+                صفحة {currentPageClamped} من {totalPages}
+              </span>
+            )}
+          </div>
+
+          {/* Search + brand filter */}
+          <div className="bg-white rounded-xl border border-[#E8E8EC] p-3 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-[#B0B2C3]" size={16} />
                 <input
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="بحث بالاسم أو الباركود…"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-3 pr-10 py-2.5 text-sm font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-all"
+                  className="w-full rounded-lg border border-[#E8E8EC] bg-[#F5F5F7] pl-3 pr-10 py-2.5 text-sm placeholder:text-[#B0B2C3] focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5] transition-all"
                 />
               </div>
               <select
                 value={brandFilter}
                 onChange={(e) => setBrandFilter(e.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-all"
+                className="rounded-lg border border-[#E8E8EC] bg-[#F5F5F7] px-3 py-2.5 text-sm text-[#0D0E13] focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5] transition-all"
               >
                 <option value="">كل الماركات</option>
                 {allBrands.map((b) => (
@@ -487,128 +798,331 @@ export default function PublicStorePage() {
               </select>
             </div>
           </div>
-        </div>
 
-        {filteredItems.length > PRODUCTS_PER_PAGE && (
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPageClamped <= 1}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40 transition-all hover:shadow-md"
-            >
-              الصفحة السابقة
-            </button>
-            <p className="text-sm font-bold text-slate-700">
-              صفحة {currentPageClamped} من {totalPages}
-            </p>
-            <button
-              type="button"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPageClamped >= totalPages}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40 transition-all hover:shadow-md"
-            >
-              الصفحة التالية
-            </button>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {pagedItems.map((item) => {
-            const img = getPublicImageUrl(item.image);
-            const out = isInventoryOutOfStock(item);
-            const inCart = cartLineById.get(item.id);
-            return (
-              <article
-                key={item.id}
-                className="group relative rounded-3xl border border-slate-100 bg-white overflow-hidden hover:border-indigo-200 hover:shadow-2xl hover:shadow-indigo-100/50 hover:-translate-y-2 transition-all duration-300 flex flex-col"
+          {filteredItems.length > PRODUCTS_PER_PAGE && (
+            <div className="mb-6 flex items-center justify-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPageClamped <= 1}
+                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
               >
-                <div className="aspect-[4/3] bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 flex items-center justify-center p-6 border-b border-slate-100/60">
-                  {img ? (
-                    <img src={img} alt="" className="max-h-full max-w-full object-contain drop-shadow-lg" />
-                  ) : (
-                    <Package className="text-slate-300" size={64} />
-                  )}
-                </div>
-                <div className="p-4 flex-1 flex flex-col">
-                  <p className="text-[10px] font-black text-indigo-500 mb-1 tracking-wide uppercase">
-                    {getProductTypeLabel(item.productType) || '—'}
-                  </p>
-                  {item.group ? (
-                    <p className="text-[10px] font-bold text-slate-500 mb-1">{item.group}</p>
-                  ) : null}
-                  <h2 className="text-base font-black text-slate-900 leading-snug line-clamp-2 min-h-[2.5rem]">
-                    {item.name || '—'}
-                  </h2>
-                  <p className="text-[11px] text-slate-400 font-mono mt-1" dir="ltr">
-                    {item.barcode}
-                  </p>
-                  <div className="mt-3 flex items-end justify-between gap-2">
-                    <div>
-                      <p className="text-xs text-slate-500">السعر</p>
-                      <p className="text-2xl font-black text-slate-900 font-currency" lang="en">
-                        ₪ {roundMoney(item.priceAfterDiscount ?? item.price ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-[11px] font-bold px-2 py-1 rounded-lg ${
-                        out ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
-                      }`}
-                    >
-                      {out ? 'غير متوفر' : `متوفر: ${Number(item.stock ?? 0)}`}
+                السابقة
+              </button>
+              {pageTokens.map((token) => {
+                if (typeof token === 'string') {
+                  return (
+                    <span key={token} className="text-[#B0B2C3] text-xs">
+                      ...
                     </span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={out}
-                    onClick={() => addToCart(item)}
-                    className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-indigo-600 to-blue-500 hover:from-indigo-500 hover:to-blue-400 active:scale-[0.98] text-white font-black py-3.5 shadow-lg shadow-indigo-200/60 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none disabled:bg-slate-300 disabled:shadow-none"
-                  >
-                    <Plus size={18} />
-                    {inCart ? `في السلة (${inCart.qty})` : 'أضف للسلة'}
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {filteredItems.length === 0 && (
-          <div className="text-center py-20 text-slate-500 font-bold">لا توجد منتجات مطابقة للتصفية.</div>
-        )}
-
-        {filteredItems.length > PRODUCTS_PER_PAGE && (
-          <div className="flex items-center justify-center gap-2">
-            {pageTokens.map((token) => {
-              if (typeof token === 'string') {
+                  );
+                }
                 return (
-                  <span key={token} className="px-1 text-sm font-black text-slate-400">
-                    ...
-                  </span>
+                  <button
+                    key={token}
+                    type="button"
+                    onClick={() => setCurrentPage(token)}
+                    className={`w-7 h-7 flex items-center justify-center text-[11px] font-mono rounded-lg transition-colors ${
+                      token === currentPageClamped
+                        ? 'text-white bg-[#5B6BF5]'
+                        : 'text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] hover:border-[#5B6BF5]'
+                    }`}
+                  >
+                    {token}
+                  </button>
                 );
-              }
+              })}
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPageClamped >= totalPages}
+                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
+              >
+                التالية
+              </button>
+            </div>
+          )}
 
+          <div ref={productsGridRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {pagedItems.map((item) => (
+              <StoreProductCard
+                key={item.id}
+                item={item}
+                inCart={cartLineById.get(item.id)}
+                onAddToCart={addToCart}
+                scrollAnimate
+              />
+            ))}
+          </div>
+
+          {filteredItems.length === 0 && (
+            <div className="text-center py-20 text-[#6E7278] font-mono text-sm">لا توجد منتجات مطابقة للتصفية.</div>
+          )}
+
+          {filteredItems.length > PRODUCTS_PER_PAGE && (
+            <div className="mt-6 flex items-center justify-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPageClamped <= 1}
+                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
+              >
+                السابقة
+              </button>
+              {pageTokens.map((token) => {
+                if (typeof token === 'string') {
+                  return (
+                    <span key={`bottom-${token}`} className="text-[#B0B2C3] text-xs">
+                      ...
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    key={`bottom-${token}`}
+                    type="button"
+                    onClick={() => setCurrentPage(token)}
+                    className={`w-7 h-7 flex items-center justify-center text-[11px] font-mono rounded-lg transition-colors ${
+                      token === currentPageClamped
+                        ? 'text-white bg-[#5B6BF5]'
+                        : 'text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] hover:border-[#5B6BF5]'
+                    }`}
+                  >
+                    {token}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPageClamped >= totalPages}
+                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
+              >
+                التالية
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Categories grid */}
+      <section id="categories" className="bg-[#F5F5F7] py-14 md:py-20 scroll-mt-20">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex items-center gap-4 mb-10">
+            <div className="flex-1 border-t border-dashed border-slate-300" />
+            <h2 data-section-title className="font-bold text-2xl text-orange-500 whitespace-nowrap">تصفح التصنيفات</h2>
+            <div className="flex-1 border-t border-dashed border-slate-300" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+            {[...STORE_CATEGORY_TILES]
+              .filter((tile) => tile.id !== 'all')
+              .sort((a, b) => {
+                const order = [
+                  'تلفزيونات',
+                  'ثلاجات',
+                  'غسالات',
+                  'نشافات',
+                  'جلايات',
+                  'أفران + ميكرويف',
+                  'غلاية مياه',
+                  'مكانس كهربائية',
+                  'ماكنات قهوة',
+                  'العناية بالشعر',
+                  'خلاطات',
+                  'المقالي الهوائية',
+                ];
+                const rank = (label) => {
+                  const i = order.findIndex((o) => label === o || label.includes(o) || o.includes(label));
+                  return i === -1 ? order.length : i;
+                };
+                return rank(a.label) - rank(b.label);
+              })
+              .map((tile) => {
+              const preview = tilePreviewById[tile.id];
               return (
                 <button
-                  key={token}
+                  key={tile.id}
                   type="button"
-                  onClick={() => setCurrentPage(token)}
-                  className={`h-9 min-w-9 px-2 text-sm font-black transition-all ${
-                    token === currentPageClamped
-                      ? 'rounded-xl bg-gradient-to-l from-indigo-600 to-blue-500 text-white shadow-md shadow-indigo-200'
-                      : 'rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:shadow-md'
-                  }`}
+                  onClick={() => {
+                    setCategoryTile(tile.id);
+                    document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="group flex flex-col items-center bg-white rounded-2xl border border-[#E8E8EC] p-4 hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
                 >
-                  {token}
+                  <div className="w-full aspect-square p-3 flex items-center justify-center overflow-hidden">
+                    {preview ? (
+                      <img src={preview} alt={tile.label} className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-500" loading="lazy" />
+                    ) : (
+                      <Package className="text-[#5B6BF5]/30" size={32} />
+                    )}
+                  </div>
+                  <span className="mt-3 text-[14px] font-bold text-[#0D0E13] text-center line-clamp-2">
+                    {tile.label}
+                  </span>
                 </button>
               );
             })}
           </div>
-        )}
-      </div>
+        </div>
+      </section>
 
-      <footer className="mt-8 border-t border-slate-200 py-6 text-center text-xs text-slate-400">
-        {storeName} — جميع الحقوق محفوظة.
+      {allBrands.length > 0 && (
+        <section className="bg-[#1a1b3d] py-8">
+          <div className="max-w-6xl mx-auto px-4">
+            <h2 data-section-title className="text-center text-white font-bold text-xl mb-6">الماركات</h2>
+            <div className="flex gap-4 overflow-x-auto justify-center flex-wrap pb-2">
+              {allBrands.map((brand) => (
+                <button
+                  key={brand}
+                  type="button"
+                  onClick={() => {
+                    setBrandFilter(brand);
+                    document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="bg-white rounded-xl px-6 py-3 hover:scale-105 transition-all duration-200 cursor-pointer shrink-0"
+                >
+                  <span className="text-[#1a1b3d] font-bold text-sm whitespace-nowrap">{brand}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {items.length > 0 && (
+        <section className="bg-white py-12">
+          <div className="max-w-6xl mx-auto px-4">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="flex-1 border-t border-dotted border-[#D1D5DB]" />
+              <h2 data-section-title className="font-bold text-2xl text-[#0D0E13] whitespace-nowrap">وصل حديثاً</h2>
+              <div className="flex-1 border-t border-dotted border-[#D1D5DB]" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {newArrivals.map((item) => (
+                <StoreProductCard
+                  key={`new-${item.id}`}
+                  item={item}
+                  inCart={cartLineById.get(item.id)}
+                  onAddToCart={addToCart}
+                  showNewBadge
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Brand banner */}
+      <section className="relative overflow-hidden h-[400px] md:h-[500px] shadow-xl group">
+        <img src="/banners/babyliss-banner.jpg" alt="Featured" className="absolute inset-0 w-full h-full object-cover object-bottom group-hover:scale-105 transition-transform duration-700" />
+        <div className="absolute inset-0 bg-gradient-to-l from-[#0D0E13]/70 via-transparent to-transparent" />
+        <div className="absolute bottom-0 right-0 p-6 md:p-10 text-right">
+          <span className="text-[10px] font-mono text-[#5B6BF5] tracking-[0.15em] uppercase block mb-2">Featured Brand</span>
+          <h2 className="text-2xl md:text-4xl font-black text-white mb-1">Babyliss Pro</h2>
+          <p className="text-sm md:text-lg text-[#8b9df5] mb-4">أدوات تصفيف احترافية بجودة عالمية</p>
+          <a href="#products" className="inline-flex items-center gap-2 px-5 py-2 bg-[#5B6BF5] text-white font-mono text-xs rounded-full hover:bg-[#4a59d9] transition-all active:scale-95 hover:shadow-lg">
+            تسوق الآن <ChevronLeft size={14} />
+          </a>
+        </div>
+      </section>
+
+      {bestSellers.length > 0 && (
+        <section className="bg-[#F5F5F7] py-12">
+          <div className="max-w-6xl mx-auto px-4">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="flex-1 border-t border-dotted border-[#D1D5DB]" />
+              <h2 data-section-title className="font-bold text-2xl text-[#0D0E13] whitespace-nowrap">الأكثر مبيعاً</h2>
+              <div className="flex-1 border-t border-dotted border-[#D1D5DB]" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {bestSellers.map((item) => (
+                <StoreProductCard
+                  key={`best-${item.id}`}
+                  item={item}
+                  inCart={cartLineById.get(item.id)}
+                  onAddToCart={addToCart}
+                  showBestSellerBadge
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* TV video showcase */}
+      <section className="bg-[#0D0E13] py-8">
+        <div className="max-w-6xl mx-auto px-4 text-center mb-8">
+          <h2 className="font-bold text-2xl md:text-3xl text-white">تلفزيونات بتقنية عالية</h2>
+          <p className="text-[#8b9df5] text-sm mt-2">شاشات ذكية بجودة 4K وألوان نابضة بالحياة</p>
+        </div>
+        <div className="relative w-full h-[70vh] overflow-hidden">
+          <iframe
+            src="https://www.youtube.com/embed/0fPL6Bq_2JE?autoplay=1&mute=1&loop=1&playlist=0fPL6Bq_2JE&controls=0&modestbranding=1&rel=0&showinfo=0&disablekb=1"
+            title="عرض التلفزيونات"
+            className="absolute inset-0 w-full h-full"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+        <div className="px-4 text-center">
+          <p className="text-[#8b9df5] text-xs mt-3">الفيديو يعمل بدون صوت — اضغط للتشغيل بالصوت</p>
+          <button
+            type="button"
+            onClick={() => {
+              const tvTile = STORE_CATEGORY_TILES.find((t) => t.label === 'تلفزيونات');
+              setCategoryTile(tvTile?.id ?? 'tv');
+              document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="block bg-[#5B6BF5] text-white rounded-full px-6 py-3 mt-6 mx-auto hover:bg-[#4a59d9] transition-all active:scale-95 hover:shadow-lg"
+          >
+            تصفح التلفزيونات
+          </button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-[#E8E8EC] pt-10 pb-6">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div>
+              <div className="text-sm font-bold text-[#1a1b3d] mb-1">{storeName || 'OnElect Company'}</div>
+              <p className="text-[9px] text-[#6E7278] mb-3">منتج المنزليات والكهربائيات عند الاستلام</p>
+              <p className="font-mono text-[10px] text-[#6E7278] leading-relaxed mb-3">
+                وجهتك الأولى للأجهزة المنزلية وأدوات الحلاقة الاحترافية.
+              </p>
+              <div className="flex gap-2">
+                {[Instagram, Facebook].map((Icon, i) => (
+                  <span key={i} className="w-7 h-7 rounded-full bg-[#F5F5F7] flex items-center justify-center text-[#6E7278] hover:text-[#5B6BF5] hover:bg-[#5B6BF5]/10 transition-all cursor-pointer">
+                    <Icon size={12} />
+                  </span>
+                ))}
+              </div>
+            </div>
+            {[
+              { title: 'تسوق', items: ['أحدث المنتجات', 'العروض الخاصة', 'Babyliss', 'الأكثر مبيعاً'] },
+              { title: 'خدمة العملاء', items: ['تواصل معنا', 'الأسئلة الشائعة', 'سياسة الإرجاع', 'الشحن والتوصيل'] },
+              { title: 'عن الشركة', items: ['من نحن', storeName || 'OnElect Company', 'الوظائف', 'الشروط والأحكام'] },
+            ].map((col) => (
+              <div key={col.title}>
+                <h4 className="text-[11px] font-bold text-[#0D0E13] tracking-wider uppercase mb-3">{col.title}</h4>
+                <ul className="space-y-2">
+                  {col.items.map((item) => (
+                    <li key={item}>
+                      <span className="font-mono text-[10px] text-[#6E7278] hover:text-[#5B6BF5] cursor-pointer transition-colors">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="mt-8 pt-4 border-t border-[#E8E8EC] flex flex-col sm:flex-row items-center justify-between gap-2">
+            <p className="font-mono text-[9px] text-[#B0B2C3]">© {new Date().getFullYear()} {storeName || 'OnElect Company'}. جميع الحقوق محفوظة.</p>
+            <div className="flex gap-4">
+              <span className="font-mono text-[9px] text-[#B0B2C3] hover:text-[#6E7278] cursor-pointer">سياسة الخصوصية</span>
+              <span className="font-mono text-[9px] text-[#B0B2C3] hover:text-[#6E7278] cursor-pointer">الشروط والأحكام</span>
+            </div>
+          </div>
+        </div>
       </footer>
 
       {/* Cart drawer */}
@@ -620,39 +1134,39 @@ export default function PublicStorePage() {
             aria-label="إغلاق"
             onClick={() => setCartOpen(false)}
           />
-          <div className="absolute left-0 top-0 h-full w-full max-w-[30rem] border-r border-slate-200 bg-gradient-to-b from-white to-slate-50/80 shadow-2xl flex flex-col">
-            <div className="border-b border-indigo-100 bg-gradient-to-l from-indigo-50 to-white px-4 py-4">
+          <div className="absolute left-0 top-0 h-full w-full max-w-[30rem] border-r border-[#E8E8EC] bg-[#F5F5F7] shadow-2xl flex flex-col">
+            <div className="bg-[#1a1b3d] text-white px-4 py-4">
               <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-xl font-black text-slate-900">عربة السوق</h2>
+                <h2 className="text-xl font-bold text-white">عربة السوق</h2>
                 <button
                   type="button"
                   onClick={() => setCartOpen(false)}
-                  className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                  className="rounded-xl p-2 text-white/70 transition-colors hover:text-white"
                 >
                   <X size={20} />
                 </button>
               </div>
               {cart.length > 0 ? (
-                <p className="text-sm font-bold text-slate-700">
+                <p className="text-sm font-medium text-white/80">
                   تم إضافة "{cart[cart.length - 1]?.item?.name || 'منتج'}" إلى سلة مشترياتك.
                 </p>
               ) : (
-                <p className="text-sm text-slate-500">سلتك فارغة حالياً.</p>
+                <p className="text-sm text-white/70">سلتك فارغة حالياً.</p>
               )}
             </div>
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-sm font-bold text-slate-700">
+            <div className="flex items-center justify-between border-b border-[#E8E8EC] bg-white px-4 py-2 text-sm font-bold text-[#0D0E13]">
               <span>العناصر</span>
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                className="text-xs text-slate-500 underline decoration-slate-300 underline-offset-2"
+                className="text-xs text-[#6E7278] underline decoration-[#E8E8EC] underline-offset-2 hover:text-[#5B6BF5]"
               >
                 إغلاق
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50/60">
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-[#F5F5F7]">
               {cart.length === 0 ? (
-                <p className="py-12 text-center text-slate-500">السلة فارغة</p>
+                <p className="py-12 text-center text-[#6E7278]">السلة فارغة</p>
               ) : (
                 cart.map((line) => {
                   const item = line.item;
@@ -660,46 +1174,46 @@ export default function PublicStorePage() {
                   return (
                     <div
                       key={line.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-3"
+                      className="rounded-xl border border-[#E8E8EC] bg-white p-3"
                     >
                       <div className="flex gap-3">
                         <div className="flex-1 min-w-0">
-                          <p className="line-clamp-2 text-sm font-bold text-slate-900">{name}</p>
-                          <p className="mt-1 text-sm font-black text-[#ff6b00] font-currency" lang="en">
+                          <p className="line-clamp-2 text-sm font-bold text-[#0D0E13]">{name}</p>
+                          <p className="mt-1 text-sm font-bold text-[#5B6BF5] font-currency" lang="en">
                             ₪ {line.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                           <div className="mt-2 flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() => dec(line.id)}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[#E8E8EC] bg-white text-[#0D0E13] hover:border-[#5B6BF5] transition-colors"
                             >
                               <Minus size={15} />
                             </button>
-                            <span className="min-w-6 text-center text-sm font-black text-slate-900 font-currency" lang="en">
+                            <span className="min-w-6 text-center text-sm font-bold text-[#0D0E13] font-currency" lang="en">
                               {line.qty}
                             </span>
                             <button
                               type="button"
                               onClick={() => inc(line.id)}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[#E8E8EC] bg-white text-[#0D0E13] hover:border-[#5B6BF5] transition-colors"
                             >
                               <Plus size={15} />
                             </button>
                             <button
                               type="button"
                               onClick={() => removeLine(line.id)}
-                              className="mr-auto text-xs font-bold text-slate-500 underline underline-offset-2"
+                              className="mr-auto text-xs font-bold text-[#6E7278] hover:text-red-500 transition-colors"
                             >
                               إزالة
                             </button>
                           </div>
                         </div>
-                        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white flex items-center justify-center">
+                        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-[#E8E8EC] bg-white flex items-center justify-center">
                           {getPublicImageUrl(item?.image) ? (
                             <img src={getPublicImageUrl(item.image)} alt="" className="max-h-full max-w-full object-contain" />
                           ) : (
-                            <Package size={24} className="text-slate-300" />
+                            <Package size={24} className="text-[#B0B2C3]" />
                           )}
                         </div>
                       </div>
@@ -708,30 +1222,10 @@ export default function PublicStorePage() {
                 })
               )}
             </div>
-            <div className="border-t border-slate-200 bg-white p-4 space-y-3">
-              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 font-bold text-slate-700"
-                >
-                  <span className="text-base" aria-hidden>
-                    📝
-                  </span>
-                  ملاحظة
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 font-bold text-slate-700"
-                >
-                  <span className="text-base" aria-hidden>
-                    🎟️
-                  </span>
-                  كوبون
-                </button>
-              </div>
-              <div className="flex justify-between items-center text-slate-900 font-black">
+            <div className="border-t border-[#E8E8EC] bg-white p-4 space-y-3">
+              <div className="flex justify-between items-center text-[#0D0E13] font-bold">
                 <span>الإجمالي</span>
-                <span className="text-[#ff6b00] font-currency text-2xl" lang="en">
+                <span className="text-[#5B6BF5] font-currency text-2xl font-bold" lang="en">
                   ₪ {cartTotals.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -742,21 +1236,21 @@ export default function PublicStorePage() {
                   setCartOpen(false);
                   setCheckoutOpen(true);
                 }}
-                className="w-full rounded-2xl bg-gradient-to-l from-indigo-700 to-blue-600 py-3 text-sm font-black text-white shadow-lg disabled:opacity-40"
+                className="w-full rounded-xl bg-[#1a1b3d] hover:bg-[#5B6BF5] py-3 text-sm font-bold text-white transition-all active:scale-95 hover:shadow-lg disabled:opacity-40"
               >
                 إتمام الطلب
               </button>
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+                className="w-full rounded-xl border border-[#E8E8EC] bg-white py-2.5 text-sm font-bold text-[#0D0E13] hover:border-[#5B6BF5] transition-colors"
               >
                 إضافة منتجات أخرى للطلب
               </button>
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                className="w-full text-center text-sm font-bold text-slate-900 underline decoration-slate-300 underline-offset-2"
+                className="w-full text-center text-sm font-bold text-[#6E7278] underline decoration-[#E8E8EC] underline-offset-2 hover:text-[#5B6BF5]"
               >
                 عرض السلة
               </button>
@@ -834,7 +1328,7 @@ export default function PublicStorePage() {
                    type="submit"
                    onClick={() => setUseElectronicPayment(false)}
                    disabled={submitting || cart.length === 0}
-                   className="w-full rounded-2xl bg-gradient-to-l from-amber-500 to-orange-400 hover:from-amber-400 hover:to-orange-300 text-slate-950 font-black py-3.5 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/30 disabled:opacity-50"
+                   className="w-full rounded-2xl bg-gradient-to-l from-amber-500 to-orange-400 hover:from-amber-400 hover:to-orange-300 text-slate-950 font-black py-3.5 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/30 transition-all active:scale-95 hover:shadow-xl disabled:opacity-50"
                  >
                    {submitting && !useElectronicPayment ? <Loader2 className="animate-spin" size={22} /> : null}
                    تأكيد الطلب (الدفع عند الاستلام)
@@ -845,7 +1339,7 @@ export default function PublicStorePage() {
                       type="submit"
                       onClick={() => setUseElectronicPayment(true)}
                       disabled={submitting || cart.length === 0}
-                      className="w-full rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-black py-3.5 flex items-center justify-center gap-2 disabled:opacity-50 border border-violet-400/30"
+                      className="w-full rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-black py-3.5 flex items-center justify-center gap-2 transition-all active:scale-95 hover:shadow-lg disabled:opacity-50 border border-violet-400/30"
                     >
                       {submitting && useElectronicPayment ? <Loader2 className="animate-spin" size={22} /> : null}
                       تأكيد الطلب والدفع إلكترونياً

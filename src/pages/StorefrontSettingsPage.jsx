@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Copy, Check, Store, ExternalLink, ChevronLeft, Settings, Upload, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Copy, Check, Store, ExternalLink, ChevronLeft, Settings, Upload, Image as ImageIcon, Instagram, Facebook } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$/;
+
+function TikTokIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z" />
+    </svg>
+  );
+}
 
 export default function StorefrontSettingsPage() {
   const { store, loading: storeLoading } = useStore();
@@ -24,6 +32,9 @@ export default function StorefrontSettingsPage() {
   const [logoUrl, setLogoUrl] = useState('');
   const [uploadingHero, setUploadingHero] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [facebookUrl, setFacebookUrl] = useState('');
+  const [tiktokUrl, setTiktokUrl] = useState('');
 
   useEffect(() => {
     if (storeLoading) return;
@@ -37,7 +48,7 @@ export default function StorefrontSettingsPage() {
       setError(null);
       const { data, error: qErr } = await supabase
         .from('stores')
-        .select('public_slug, public_catalog_enabled, hero_image, logo_url')
+        .select('public_slug, public_catalog_enabled, hero_image, logo_url, instagram_url, facebook_url, tiktok_url')
         .eq('id', store.id)
         .single();
       if (cancelled) return;
@@ -56,6 +67,9 @@ export default function StorefrontSettingsPage() {
       setEnabled(Boolean(data?.public_catalog_enabled));
       setHeroImage((data?.hero_image ?? '').toString().trim());
       setLogoUrl((data?.logo_url ?? '').toString().trim());
+      setInstagramUrl((data?.instagram_url ?? '').toString().trim());
+      setFacebookUrl((data?.facebook_url ?? '').toString().trim());
+      setTiktokUrl((data?.tiktok_url ?? '').toString().trim());
       try {
           const lPay = localStorage.getItem(`store-payment-config-${store.id}`);
           if (lPay) setPaymentLink(lPay);
@@ -91,6 +105,9 @@ export default function StorefrontSettingsPage() {
         .update({
           public_slug: enabled && t ? t : null,
           public_catalog_enabled: enabled && !!t,
+          instagram_url: instagramUrl.trim() || null,
+          facebook_url: facebookUrl.trim() || null,
+          tiktok_url: tiktokUrl.trim() || null,
         })
         .eq('id', store.id);
       if (uErr) throw uErr;
@@ -247,6 +264,61 @@ export default function StorefrontSettingsPage() {
                 </button>
               </div>
             ) : null}
+
+            <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+              <h3 className="text-sm font-black text-slate-800 dark:text-white">روابط التواصل الاجتماعي</h3>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Instagram size={14} />
+                    رابط Instagram
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  value={instagramUrl}
+                  onChange={(e) => setInstagramUrl(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                  placeholder="https://instagram.com/your_page"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Facebook size={14} />
+                    رابط Facebook
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  value={facebookUrl}
+                  onChange={(e) => setFacebookUrl(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                  placeholder="https://facebook.com/your_page"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <TikTokIcon />
+                    رابط TikTok
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  value={tiktokUrl}
+                  onChange={(e) => setTiktokUrl(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                  placeholder="https://tiktok.com/@your_page"
+                  dir="ltr"
+                />
+              </div>
+            </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
                 <div>
