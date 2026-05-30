@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sun,
@@ -12,6 +12,10 @@ import {
   ScanLine,
   Keyboard,
   Puzzle,
+  Loader2,
+  Download,
+  Upload,
+  X,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { useStore } from '../context/StoreContext';
@@ -19,6 +23,39 @@ import { applyExplicitTheme, applySystemTheme, getStoredTheme } from '../lib/the
 import { getBarcodeInputMode, setBarcodeInputMode } from '../lib/barcodeInputPrefs';
 import { isModuleEnabled } from '../utils/storeEntitlements';
 import { BRAND_THEME_EVENT } from '../constants/brand.js';
+import {
+  EXPORT_ORDER,
+  TABLE_LABELS_AR,
+  downloadJsonBackup,
+  exportStoreBackup,
+  getBackupSummary,
+  importStoreBackup,
+  parseBackupFile,
+  sanitizeBackupFileName,
+} from '../utils/storeBackup';
+
+function DatabaseBackupIcon({ size = 20, className = '' }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+      <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+      <path d="M12 14v7" />
+      <path d="m15 18 3 3 3-3" />
+    </svg>
+  );
+}
 
 function themeModeFromStorage() {
   const s = getStoredTheme();
@@ -33,6 +70,12 @@ export default function SystemSettingsPage() {
     typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
   );
   const [barcodeMode, setBarcodeMode] = useState(() => getBarcodeInputMode());
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [backupError, setBackupError] = useState(null);
+  const [importSuccess, setImportSuccess] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     const sync = () => {
@@ -66,6 +109,61 @@ export default function SystemSettingsPage() {
   };
 
   const storefrontOn = isModuleEnabled(store, 'storefront');
+
+  const handleExportBackup = async () => {
+    if (!store?.id) return;
+    setExportLoading(true);
+    setBackupError(null);
+    setImportSuccess(null);
+    try {
+      const payload = await exportStoreBackup(store.id, store.name);
+      downloadJsonBackup(payload, sanitizeBackupFileName(store.name));
+    } catch (err) {
+      setBackupError(err.message || 'تعذّر تنزيل النسخة الاحتياطية.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBackupError(null);
+    setImportSuccess(null);
+    try {
+      const text = await file.text();
+      const backup = parseBackupFile(text);
+      const counts = getBackupSummary(backup);
+      setImportPreview({
+        storeName: backup.storeName || '—',
+        exportedAt: backup.exportedAt
+          ? new Date(backup.exportedAt).toLocaleString('ar', { dateStyle: 'medium', timeStyle: 'short' })
+          : '—',
+        counts,
+        raw: backup,
+      });
+    } catch (err) {
+      setBackupError(err.message || 'تعذّر قراءة ملف النسخة الاحتياطية.');
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!store?.id || !importPreview?.raw) return;
+    setImportLoading(true);
+    setBackupError(null);
+    setImportSuccess(null);
+    try {
+      const results = await importStoreBackup(store.id, importPreview.raw);
+      const total = Object.values(results).reduce((a, b) => a + b, 0);
+      setImportSuccess(`تم استرجاع ${total.toLocaleString('ar')} سجل بنجاح.`);
+      setImportPreview(null);
+    } catch (err) {
+      setBackupError(err.message || 'تعذّر استرجاع النسخة الاحتياطية.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   return (
     <DashboardLayout
@@ -293,6 +391,153 @@ export default function SystemSettingsPage() {
             </Link>
           </div>
         </section>
+
+        {/* النسخ الاحتياطي والاسترجاع */}
+        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900/70">
+          <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-4 dark:border-slate-700/60 dark:bg-white/[0.04]">
+            <div className="flex items-center gap-2">
+              <DatabaseBackupIcon className="text-emerald-600 dark:text-emerald-400" />
+              <h2 className="text-base font-black text-slate-900 dark:text-white">النسخ الاحتياطي والاسترجاع</h2>
+            </div>
+            <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+              تنزيل نسخة JSON من بيانات متجرك أو استرجاعها بأمان عبر upsert.
+            </p>
+          </div>
+          <div className="p-5 space-y-4">
+            {backupError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+                {backupError}
+              </div>
+            ) : null}
+            {importSuccess ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {importSuccess}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void handleExportBackup()}
+                disabled={!store?.id || exportLoading || importLoading}
+                className="flex flex-col items-center gap-2 rounded-2xl border-2 border-emerald-200 bg-gradient-to-b from-emerald-50/90 to-white px-4 py-5 transition-all hover:border-emerald-400 hover:shadow-md disabled:opacity-50 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-transparent dark:hover:border-emerald-500/50"
+              >
+                {exportLoading ? (
+                  <Loader2 size={26} className="animate-spin text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <Download size={26} className="text-emerald-600 dark:text-emerald-400" />
+                )}
+                <span className="text-sm font-black text-slate-900 dark:text-white">تنزيل نسخة احتياطية</span>
+                <span className="text-center text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  JSON يشمل المنتجات، المبيعات، الموردين، والقيود
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+                disabled={!store?.id || exportLoading || importLoading}
+                className="flex flex-col items-center gap-2 rounded-2xl border-2 border-amber-200 bg-gradient-to-b from-amber-50/90 to-white px-4 py-5 transition-all hover:border-amber-400 hover:shadow-md disabled:opacity-50 dark:border-amber-900/40 dark:from-amber-950/30 dark:to-transparent dark:hover:border-amber-500/50"
+              >
+                {importLoading ? (
+                  <Loader2 size={26} className="animate-spin text-amber-600 dark:text-amber-400" />
+                ) : (
+                  <Upload size={26} className="text-amber-600 dark:text-amber-400" />
+                )}
+                <span className="text-sm font-black text-slate-900 dark:text-white">استرجاع من نسخة احتياطية</span>
+                <span className="text-center text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  ملف .json — يدمج البيانات عبر upsert دون حذف
+                </span>
+              </button>
+            </div>
+
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => void handleImportFile(e)}
+            />
+
+            <p className="text-center text-[11px] font-bold text-slate-500 dark:text-slate-400">
+              يُنصح بتنزيل نسخة قبل الاسترجاع. الاستيراد يحدّث السجلات الموجودة ويضيف الجديدة فقط.
+            </p>
+          </div>
+        </section>
+
+        {importPreview ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">
+            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-gray-900">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">تأكيد استرجاع النسخة</h3>
+                <button
+                  type="button"
+                  onClick={() => !importLoading && setImportPreview(null)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                  aria-label="إغلاق"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm font-bold text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                  سيتم دمج البيانات في متجرك الحالي عبر upsert. لن تُحذف السجلات الحالية.
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/[0.04]">
+                    <p className="text-[10px] font-bold text-slate-500">المتجر في الملف</p>
+                    <p className="font-black text-slate-900 dark:text-white">{importPreview.storeName}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/[0.04]">
+                    <p className="text-[10px] font-bold text-slate-500">تاريخ النسخة</p>
+                    <p className="font-black text-slate-900 dark:text-white">{importPreview.exportedAt}</p>
+                  </div>
+                </div>
+                <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-100 dark:border-white/10">
+                  <table className="w-full text-right text-[11px]">
+                    <thead className="sticky top-0 bg-slate-50 dark:bg-white/[0.04]">
+                      <tr>
+                        <th className="px-3 py-2 font-black text-slate-600 dark:text-slate-300">الجدول</th>
+                        <th className="px-3 py-2 font-black text-slate-600 dark:text-slate-300">السجلات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {EXPORT_ORDER.filter((key) => (importPreview.counts[key] || 0) > 0).map((key) => (
+                        <tr key={key} className="border-t border-slate-100 dark:border-white/[0.06]">
+                          <td className="px-3 py-2 font-bold text-slate-800 dark:text-slate-200">
+                            {TABLE_LABELS_AR[key] || key}
+                          </td>
+                          <td className="px-3 py-2 font-mono font-black text-slate-900 dark:text-white">
+                            {importPreview.counts[key].toLocaleString('ar')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmImport()}
+                    disabled={importLoading}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-3 text-sm font-black text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {importLoading ? <Loader2 size={18} className="animate-spin" /> : null}
+                    تأكيد الاسترجاع
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportPreview(null)}
+                    disabled={importLoading}
+                    className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/5"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </DashboardLayout>
   );
