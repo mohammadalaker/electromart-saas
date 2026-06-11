@@ -45,7 +45,152 @@ function mapRpcError(msg) {
   return m || 'تعذّر إرسال الطلب.';
 }
 
-function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false }) {
+function ProductCardSkeleton() {
+  return (
+    <div className="bg-white rounded-xl border border-[#E8E8EC] overflow-hidden p-3 animate-pulse">
+      <div className="aspect-square bg-slate-100 rounded-lg mb-3" />
+      <div className="h-3 bg-slate-100 rounded-full w-1/2 mx-auto mb-2" />
+      <div className="h-3 bg-slate-100 rounded-full w-3/4 mx-auto mb-2" />
+      <div className="h-3 bg-slate-100 rounded-full w-1/2 mx-auto mb-3" />
+      <div className="h-9 bg-slate-100 rounded-lg w-full" />
+    </div>
+  );
+}
+
+function ProductModal({ item, inCart, onAddToCart, onClose }) {
+  const img = getPublicImageUrl(item.image);
+  const out = isInventoryOutOfStock(item);
+  const fullPrice = roundMoney(item.price ?? 0);
+  const salePrice = roundMoney(item.priceAfterDiscount ?? item.price ?? 0);
+  const discountPercent =
+    fullPrice > 0 && salePrice < fullPrice
+      ? Math.round(((fullPrice - salePrice) / fullPrice) * 100)
+      : 0;
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handler);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4"
+      dir="rtl"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Modal */}
+      <div className="relative z-10 w-full sm:max-w-2xl bg-white sm:rounded-2xl overflow-hidden shadow-2xl max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8E8EC]">
+          <h2 className="text-base font-bold text-[#0D0E13] line-clamp-1">{item.name}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-[#F5F5F7] hover:bg-[#E8E8EC] transition-colors"
+          >
+            <X size={16} className="text-[#0D0E13]" />
+          </button>
+        </div>
+        {/* Content */}
+        <div className="overflow-y-auto flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2">
+            {/* صورة */}
+            <div className="bg-white p-8 flex items-center justify-center min-h-[260px] relative">
+              {discountPercent > 0 && (
+                <span className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
+                  -{discountPercent}%
+                </span>
+              )}
+              {img ? (
+                <img
+                  src={img}
+                  alt={item.name}
+                  className="max-w-full max-h-[220px] object-contain"
+                />
+              ) : (
+                <Package className="text-[#5B6BF5]/20" size={80} />
+              )}
+            </div>
+            {/* تفاصيل */}
+            <div className="p-5 flex flex-col gap-4">
+              {item.group && (
+                <span className="text-xs font-bold text-[#5B6BF5] bg-[#5B6BF5]/10 px-3 py-1 rounded-full w-fit">
+                  {item.group}
+                </span>
+              )}
+              <div>
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-2xl font-black text-[#5B6BF5]" dir="ltr">
+                    ₪ {salePrice.toFixed(2)}
+                  </span>
+                  {discountPercent > 0 && (
+                    <span className="text-sm text-[#B0B2C3] line-through" dir="ltr">
+                      ₪ {fullPrice.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                {out && (
+                  <span className="text-xs font-bold text-red-500 mt-1 block">نفذ من المخزن</span>
+                )}
+              </div>
+              {/* مواصفات */}
+              <div className="space-y-2 text-sm">
+                {item.barcode && (
+                  <div className="flex justify-between text-[#6E7278]">
+                    <span>باركود</span>
+                    <span className="font-mono text-[#0D0E13]" dir="ltr">{item.barcode}</span>
+                  </div>
+                )}
+                {item.reference && (
+                  <div className="flex justify-between text-[#6E7278]">
+                    <span>مرجع</span>
+                    <span className="font-mono text-[#0D0E13]" dir="ltr">{item.reference}</span>
+                  </div>
+                )}
+                {item.stock != null && (
+                  <div className="flex justify-between text-[#6E7278]">
+                    <span>المخزون</span>
+                    <span className={`font-bold ${item.stock > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {item.stock > 0 ? `${item.stock} قطعة` : 'نفذ'}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {item.name && item.name.length > 40 && (
+                <p className="text-sm text-[#6E7278] leading-relaxed border-t border-[#E8E8EC] pt-3">
+                  {item.name}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-[#E8E8EC] bg-white">
+          <button
+            type="button"
+            disabled={out}
+            onClick={() => { onAddToCart(item); onClose(); }}
+            className="w-full bg-[#1a1b3d] text-white rounded-xl py-3 text-sm font-bold hover:bg-[#5B6BF5] transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ShoppingCart size={18} />
+            {inCart ? `إضافة مرة أخرى (${inCart.qty} في السلة)` : 'إضافة إلى السلة'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick }) {
   const img = getPublicImageUrl(item.image);
   const out = isInventoryOutOfStock(item);
   const fullPrice = roundMoney(item.price ?? 0);
@@ -58,7 +203,8 @@ function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, sho
   return (
     <article
       {...(scrollAnimate ? { 'data-product-card': true } : {})}
-      className="group relative bg-white rounded-xl border border-[#E8E8EC] overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 p-3"
+      onClick={onClick}
+      className="group relative bg-white rounded-xl border border-[#E8E8EC] overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 p-3 cursor-pointer"
     >
       <div className="relative aspect-square bg-[#F5F5F7] p-3 flex items-center justify-center">
         {discountPercent > 0 ? (
@@ -101,7 +247,7 @@ function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, sho
       <button
         type="button"
         disabled={out}
-        onClick={() => onAddToCart(item)}
+        onClick={(e) => { e.stopPropagation(); onAddToCart(item); }}
         className="mt-3 w-full bg-[#1a1b3d] text-white rounded-lg py-2.5 text-sm font-bold hover:bg-[#5B6BF5] transition-all active:scale-95 hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-30 disabled:pointer-events-none"
       >
         <ShoppingCart size={16} />
@@ -126,17 +272,22 @@ export default function PublicStorePage() {
   const [logoUrl, setLogoUrl] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [productsReady, setProductsReady] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [brandFilter, setBrandFilter] = useState('');
+  const [sortBy, setSortBy] = useState('default');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
   const [categoryTile, setCategoryTile] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
 
   const [cart, setCart] = useState(() => []);
   const [cartOpen, setCartOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [custName, setCustName] = useState('');
@@ -195,14 +346,19 @@ export default function PublicStorePage() {
         const normalized = (products || []).map(normalizeItemFromSupabase).filter(Boolean);
         if (cancelled) return;
         setItems(normalized);
+        setTimeout(() => setProductsReady(true), 300);
       } catch (err) {
         if (!cancelled) {
           console.error(err);
           setLoadError(err.message || 'تعذّر تحميل المتجر');
           setItems([]);
+          setProductsReady(true);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setTimeout(() => setProductsReady(true), 300);
+        }
       }
     })();
     return () => {
@@ -285,12 +441,33 @@ export default function PublicStorePage() {
           (i.group || '').toLowerCase().includes(q)
       );
     }
+    const min = parseFloat(priceMin);
+    const max = parseFloat(priceMax);
+    if (!isNaN(min) && min > 0) {
+      list = list.filter((i) => roundMoney(i.priceAfterDiscount ?? i.price ?? 0) >= min);
+    }
+    if (!isNaN(max) && max > 0) {
+      list = list.filter((i) => roundMoney(i.priceAfterDiscount ?? i.price ?? 0) <= max);
+    }
+    if (sortBy === 'price_asc') {
+      list = [...list].sort((a, b) => roundMoney(a.priceAfterDiscount ?? a.price ?? 0) - roundMoney(b.priceAfterDiscount ?? b.price ?? 0));
+    } else if (sortBy === 'price_desc') {
+      list = [...list].sort((a, b) => roundMoney(b.priceAfterDiscount ?? b.price ?? 0) - roundMoney(a.priceAfterDiscount ?? a.price ?? 0));
+    } else if (sortBy === 'name_asc') {
+      list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    } else if (sortBy === 'discount') {
+      list = [...list].sort((a, b) => {
+        const discA = roundMoney(a.price ?? 0) - roundMoney(a.priceAfterDiscount ?? a.price ?? 0);
+        const discB = roundMoney(b.price ?? 0) - roundMoney(b.priceAfterDiscount ?? b.price ?? 0);
+        return discB - discA;
+      });
+    }
     return list;
-  }, [items, search, brandFilter, categoryTile]);
+  }, [items, search, brandFilter, categoryTile, sortBy, priceMin, priceMax]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [items.length, search, brandFilter, categoryTile]);
+  }, [items.length, search, brandFilter, categoryTile, sortBy, priceMin, priceMax]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PRODUCTS_PER_PAGE));
   const currentPageClamped = Math.min(currentPage, totalPages);
@@ -782,9 +959,10 @@ export default function PublicStorePage() {
           </div>
 
           {/* Search + brand filter */}
-          <div className="bg-white rounded-xl border border-[#E8E8EC] p-3 mb-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="relative">
+          <div className="bg-white rounded-xl border border-[#E8E8EC] p-3 mb-6 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* بحث */}
+              <div className="relative sm:col-span-2 lg:col-span-1">
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-[#B0B2C3]" size={16} />
                 <input
                   type="search"
@@ -794,6 +972,7 @@ export default function PublicStorePage() {
                   className="w-full rounded-lg border border-[#E8E8EC] bg-[#F5F5F7] pl-3 pr-10 py-2.5 text-sm placeholder:text-[#B0B2C3] focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5] transition-all"
                 />
               </div>
+              {/* ماركة */}
               <select
                 value={brandFilter}
                 onChange={(e) => setBrandFilter(e.target.value)}
@@ -801,12 +980,54 @@ export default function PublicStorePage() {
               >
                 <option value="">كل الماركات</option>
                 {allBrands.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
+                  <option key={b} value={b}>{b}</option>
                 ))}
               </select>
+              {/* ترتيب */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="rounded-lg border border-[#E8E8EC] bg-[#F5F5F7] px-3 py-2.5 text-sm text-[#0D0E13] focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5] transition-all"
+              >
+                <option value="default">الترتيب الافتراضي</option>
+                <option value="price_asc">السعر: الأرخص أولاً</option>
+                <option value="price_desc">السعر: الأغلى أولاً</option>
+                <option value="name_asc">الاسم: أ-ي</option>
+                <option value="discount">الأكثر خصماً</option>
+              </select>
+              {/* فلتر السعر */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                  placeholder="سعر من"
+                  min="0"
+                  className="w-full rounded-lg border border-[#E8E8EC] bg-[#F5F5F7] px-3 py-2.5 text-sm placeholder:text-[#B0B2C3] focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5] transition-all"
+                  dir="ltr"
+                />
+                <span className="text-[#B0B2C3] text-sm shrink-0">—</span>
+                <input
+                  type="number"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                  placeholder="إلى"
+                  min="0"
+                  className="w-full rounded-lg border border-[#E8E8EC] bg-[#F5F5F7] px-3 py-2.5 text-sm placeholder:text-[#B0B2C3] focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5] transition-all"
+                  dir="ltr"
+                />
+              </div>
             </div>
+            {/* reset filters */}
+            {(search || brandFilter || sortBy !== 'default' || priceMin || priceMax) && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setBrandFilter(''); setSortBy('default'); setPriceMin(''); setPriceMax(''); }}
+                className="text-xs font-bold text-[#5B6BF5] hover:underline"
+              >
+                مسح كل الفلاتر ✕
+              </button>
+            )}
           </div>
 
           {filteredItems.length > PRODUCTS_PER_PAGE && (
@@ -854,15 +1075,21 @@ export default function PublicStorePage() {
           )}
 
           <div ref={productsGridRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {pagedItems.map((item) => (
-              <StoreProductCard
-                key={item.id}
-                item={item}
-                inCart={cartLineById.get(item.id)}
-                onAddToCart={addToCart}
-                scrollAnimate
-              />
-            ))}
+            {!productsReady
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <ProductCardSkeleton key={`sk-${i}`} />
+                ))
+              : pagedItems.map((item) => (
+                  <StoreProductCard
+                    key={item.id}
+                    item={item}
+                    inCart={cartLineById.get(item.id)}
+                    onAddToCart={addToCart}
+                    scrollAnimate
+                    onClick={() => setSelectedProduct(item)}
+                  />
+                ))
+            }
           </div>
 
           {filteredItems.length === 0 && (
@@ -1008,15 +1235,21 @@ export default function PublicStorePage() {
               <div className="flex-1 border-t border-dotted border-[#D1D5DB]" />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {newArrivals.map((item) => (
-                <StoreProductCard
-                  key={`new-${item.id}`}
-                  item={item}
-                  inCart={cartLineById.get(item.id)}
-                  onAddToCart={addToCart}
-                  showNewBadge
-                />
-              ))}
+              {!productsReady
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <ProductCardSkeleton key={`sk-new-${i}`} />
+                  ))
+                : newArrivals.map((item) => (
+                    <StoreProductCard
+                      key={`new-${item.id}`}
+                      item={item}
+                      inCart={cartLineById.get(item.id)}
+                      onAddToCart={addToCart}
+                      showNewBadge
+                      onClick={() => setSelectedProduct(item)}
+                    />
+                  ))
+              }
             </div>
           </div>
         </section>
@@ -1045,15 +1278,21 @@ export default function PublicStorePage() {
               <div className="flex-1 border-t border-dotted border-[#D1D5DB]" />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {bestSellers.map((item) => (
-                <StoreProductCard
-                  key={`best-${item.id}`}
-                  item={item}
-                  inCart={cartLineById.get(item.id)}
-                  onAddToCart={addToCart}
-                  showBestSellerBadge
-                />
-              ))}
+              {!productsReady
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <ProductCardSkeleton key={`sk-best-${i}`} />
+                  ))
+                : bestSellers.map((item) => (
+                    <StoreProductCard
+                      key={`best-${item.id}`}
+                      item={item}
+                      inCart={cartLineById.get(item.id)}
+                      onAddToCart={addToCart}
+                      showBestSellerBadge
+                      onClick={() => setSelectedProduct(item)}
+                    />
+                  ))
+              }
             </div>
           </div>
         </section>
@@ -1405,6 +1644,15 @@ export default function PublicStorePage() {
             </form>
           </div>
         </div>
+      )}
+
+      {selectedProduct && (
+        <ProductModal
+          item={selectedProduct}
+          inCart={cartLineById.get(selectedProduct.id)}
+          onAddToCart={addToCart}
+          onClose={() => setSelectedProduct(null)}
+        />
       )}
 
       {whatsappNumber && (
