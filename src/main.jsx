@@ -7,6 +7,7 @@ import App from './App.jsx'
 import SignUp from './pages/SignUp.jsx'
 import SignIn from './pages/SignIn.jsx'
 import SalesMovements from './pages/SalesMovements.jsx'
+import OnlineOrdersPage from './pages/OnlineOrdersPage.jsx'
 import CustomersSuppliers from './pages/CustomersSuppliers.jsx'
 import CustomerProfilePage from './pages/CustomerProfilePage.jsx'
 import CustomerCRMPage from './pages/CustomerCRMPage.jsx'
@@ -94,6 +95,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/pos" element={<EntitlementGuard module="pos"><POSPage /></EntitlementGuard>} />
           <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
           <Route path="/sales" element={<EntitlementGuard module="sales_movements"><SalesMovements /></EntitlementGuard>} />
+          <Route path="/online-orders" element={<OnlineOrdersPage />} />
           <Route path="/sales/preorders" element={<EntitlementGuard module="preorders"><PreOrdersPage /></EntitlementGuard>} />
           <Route path="/purchases/lines" element={<EntitlementGuard module="purchase_lines"><PurchaseInvoiceLinesPage /></EntitlementGuard>} />
           <Route path="/purchases/history" element={<EntitlementGuard module="purchase_history"><PurchaseHistoryPage /></EntitlementGuard>} />

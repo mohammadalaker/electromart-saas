@@ -160,7 +160,8 @@ BEGIN
     notes,
     line_items,
     payment_mode,
-    order_status
+    order_status,
+    is_online_order
   )
   VALUES (
     v_store_id,
@@ -168,7 +169,8 @@ BEGIN
     v_notes,
     v_line_items,
     'cash',
-    'pending_online'
+    'pending_online',
+    true
   )
   RETURNING id INTO v_sale_id;
 

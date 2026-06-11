@@ -45,6 +45,13 @@ function mapRpcError(msg) {
   return m || 'تعذّر إرسال الطلب.';
 }
 
+const STATUS_MAP = {
+  pending:   { label: 'قيد المعالجة', color: 'bg-amber-100 text-amber-700' },
+  confirmed: { label: 'تم التأكيد',   color: 'bg-blue-100 text-blue-700' },
+  delivered: { label: 'تم التسليم',   color: 'bg-emerald-100 text-emerald-700' },
+  cancelled: { label: 'ملغي',         color: 'bg-red-100 text-red-700' },
+};
+
 function ProductCardSkeleton() {
   return (
     <div className="bg-white rounded-xl border border-[#E8E8EC] overflow-hidden p-3 animate-pulse">
@@ -53,6 +60,127 @@ function ProductCardSkeleton() {
       <div className="h-3 bg-slate-100 rounded-full w-3/4 mx-auto mb-2" />
       <div className="h-3 bg-slate-100 rounded-full w-1/2 mx-auto mb-3" />
       <div className="h-9 bg-slate-100 rounded-lg w-full" />
+    </div>
+  );
+}
+
+function TrackOrderModal({ onClose, slug, supabase }) {
+  const [phone, setPhone] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handler);
+    };
+  }, [onClose]);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!phone.trim()) return;
+    setLoading(true);
+    setError(null);
+    setSearched(false);
+    try {
+      const { data, error: err } = await supabase.rpc('get_orders_by_phone', {
+        p_slug: slug,
+        p_phone: phone.trim(),
+      });
+      if (err) throw err;
+      setOrders(data || []);
+      setSearched(true);
+    } catch {
+      setError('تعذّر البحث، تحقق من رقم الهاتف.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" dir="rtl">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full sm:max-w-lg bg-white sm:rounded-2xl overflow-hidden shadow-2xl max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8E8EC]">
+          <div>
+            <h2 className="text-base font-bold text-[#0D0E13]">تتبع طلبك</h2>
+            <p className="text-xs text-[#6E7278] mt-0.5">أدخل رقم هاتفك لعرض طلباتك</p>
+          </div>
+          <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-[#F5F5F7] hover:bg-[#E8E8EC] transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        {/* Search */}
+        <div className="px-5 py-4 border-b border-[#E8E8EC]">
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="05xxxxxxxx"
+              dir="ltr"
+              className="flex-1 rounded-xl border border-[#E8E8EC] bg-[#F5F5F7] px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#5B6BF5]/30 focus:border-[#5B6BF5]"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-5 py-2.5 bg-[#1a1b3d] text-white rounded-xl text-sm font-bold hover:bg-[#5B6BF5] transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              بحث
+            </button>
+          </form>
+          {error && <p className="text-xs text-red-500 mt-2 font-bold">{error}</p>}
+        </div>
+        {/* Results */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
+          {searched && orders.length === 0 && (
+            <div className="text-center py-10 text-[#6E7278]">
+              <Package size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-bold">لا توجد طلبات بهذا الرقم</p>
+            </div>
+          )}
+          {orders.map((order) => {
+            const st = STATUS_MAP[order.status] ?? STATUS_MAP.pending;
+            const date = new Date(order.created_at).toLocaleDateString('ar-EG', {
+              year: 'numeric', month: 'long', day: 'numeric'
+            });
+            return (
+              <div key={order.id} className="rounded-xl border border-[#E8E8EC] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono text-[#6E7278]">{date}</span>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${st.color}`}>
+                    {st.label}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#6E7278]">المبلغ الإجمالي</span>
+                  <span className="text-base font-black text-[#5B6BF5]" dir="ltr">
+                    ₪ {Number(order.total_amount || 0).toFixed(2)}
+                  </span>
+                </div>
+                {order.customer_name && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-[#6E7278]">الاسم</span>
+                    <span className="text-sm font-bold text-[#0D0E13]">{order.customer_name}</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-[#E8E8EC]">
+                  <div className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full ${st.color}`}>
+                    <span>{st.label}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -297,6 +425,7 @@ export default function PublicStorePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [submitDone, setSubmitDone] = useState(false);
+  const [trackModalOpen, setTrackModalOpen] = useState(false);
   const [paymentLink, setPaymentLink] = useState('');
   const [useElectronicPayment, setUseElectronicPayment] = useState(false);
 
@@ -768,6 +897,13 @@ export default function PublicStorePage() {
               aria-label="بحث"
             >
               <Search size={20} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrackModalOpen(true)}
+              className="text-white/80 hover:text-white transition-colors text-[11px] font-mono border border-white/20 rounded-full px-3 py-1 hover:border-white/50"
+            >
+              تتبع طلبي
             </button>
           </div>
           <div className="text-center flex flex-col items-center">
@@ -1652,6 +1788,14 @@ export default function PublicStorePage() {
           inCart={cartLineById.get(selectedProduct.id)}
           onAddToCart={addToCart}
           onClose={() => setSelectedProduct(null)}
+        />
+      )}
+
+      {trackModalOpen && (
+        <TrackOrderModal
+          onClose={() => setTrackModalOpen(false)}
+          slug={slug}
+          supabase={supabase}
         />
       )}
 

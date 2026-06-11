@@ -7,7 +7,7 @@ import {
   Smartphone, Wrench, Bookmark, ShoppingBag, FileQuestion, Tag,
   ClipboardList, FileText, UserCircle, Wallet, Scale, BookOpen,
   ShieldCheck, Building2, Landmark, CalendarClock, CalendarDays,
-  PackageMinus, TrendingUp, Receipt, Banknote, Search,
+  PackageMinus, TrendingUp, Receipt, Banknote, Search, Package,
   Pin, X, LineChart, HeartHandshake, Puzzle, Settings as SettingsIcon,
   Minus, LogOut, Bell,
 } from 'lucide-react';
@@ -86,6 +86,7 @@ const CATEGORIES = [
         icon: DollarSign,
         items: [
           { to: '/sales', icon: ShoppingCart, label: 'المبيعات', module: 'sales_movements' },
+          { to: '/online-orders', icon: Package, label: 'الطلبات الأونلاين' },
           { to: '/sales/preorders', icon: Bookmark, label: 'الحجز المسبق', module: 'preorders' },
           { to: '/purchases', icon: ShoppingBag, label: 'المشتريات', module: 'purchases' },
           { to: '/purchases/rfq', icon: FileQuestion, label: 'طلبات عرض سعر', module: 'purchase_rfq' },

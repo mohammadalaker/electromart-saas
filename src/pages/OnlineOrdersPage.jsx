@@ -1,0 +1,224 @@
+import { useEffect, useState, useMemo } from 'react';
+import { Loader2, Package, Phone, User, MapPin, MessageSquare, ChevronDown } from 'lucide-react';
+import DashboardLayout from '../components/DashboardLayout';
+import { supabase } from '../lib/supabaseClient';
+import { useStore } from '../context/StoreContext';
+
+const STATUS_MAP = {
+  pending:   { label: 'قيد المعالجة', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  confirmed: { label: 'تم التأكيد',   color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  delivered: { label: 'تم التسليم',   color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  cancelled: { label: 'ملغي',         color: 'bg-red-100 text-red-700 border-red-200' },
+};
+
+export default function OnlineOrdersPage() {
+  const { store } = useStore();
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [updatingId, setUpdatingId] = useState(null);
+
+  useEffect(() => {
+    if (!store?.id) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('sales')
+        .select('*')
+        .eq('store_id', store.id)
+        .eq('is_online_order', true)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (!cancelled) {
+        console.log('Online orders query:', { data, error, storeId: store.id });
+        setOrders(error ? [] : (data || []));
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [store?.id]);
+
+  const filtered = useMemo(() => {
+    if (filterStatus === 'all') return orders;
+    return orders.filter((o) => (o.status || 'pending') === filterStatus);
+  }, [orders, filterStatus]);
+
+  const updateStatus = async (id, newStatus) => {
+    setUpdatingId(id);
+    const { error } = await supabase
+      .from('sales')
+      .update({ status: newStatus })
+      .eq('id', id)
+      .eq('store_id', store.id);
+    if (!error) {
+      setOrders((prev) =>
+        prev.map((o) => o.id === id ? { ...o, status: newStatus } : o)
+      );
+    }
+    setUpdatingId(null);
+  };
+
+  const counts = useMemo(() => {
+    const c = { all: orders.length, pending: 0, confirmed: 0, delivered: 0, cancelled: 0 };
+    orders.forEach((o) => { c[o.status || 'pending'] = (c[o.status || 'pending'] || 0) + 1; });
+    return c;
+  }, [orders]);
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center py-24" dir="rtl">
+          <Loader2 className="animate-spin text-violet-500" size={40} />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6" dir="rtl">
+        {/* Header */}
+        <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden dark:bg-gray-900/40 dark:border-white/10">
+          <div className="px-6 py-4 flex items-center gap-3 border-b border-slate-100 bg-gradient-to-l from-violet-50/50 to-white dark:from-violet-950/30 dark:to-gray-900">
+            <div className="h-11 w-11 rounded-xl bg-violet-600 text-white flex items-center justify-center shadow-lg">
+              <Package size={22} />
+            </div>
+            <div>
+              <h1 className="text-lg font-black text-slate-900 dark:text-white">الطلبات الأونلاين</h1>
+              <p className="text-xs text-slate-500 mt-0.5">إدارة طلبات المتجر العام</p>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-x-reverse divide-slate-100 dark:divide-white/5">
+            {[
+              { key: 'all', label: 'الكل' },
+              { key: 'pending', label: 'قيد المعالجة' },
+              { key: 'confirmed', label: 'مؤكدة' },
+              { key: 'delivered', label: 'مسلّمة' },
+              { key: 'cancelled', label: 'ملغية' },
+            ].map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setFilterStatus(s.key)}
+                className={`px-4 py-3 text-center transition-colors ${
+                  filterStatus === s.key
+                    ? 'bg-violet-50 dark:bg-violet-950/30'
+                    : 'hover:bg-slate-50 dark:hover:bg-white/5'
+                }`}
+              >
+                <div className={`text-xl font-black ${filterStatus === s.key ? 'text-violet-600' : 'text-slate-800 dark:text-white'}`}>
+                  {counts[s.key] || 0}
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">{s.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Orders List */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-20 text-slate-400">
+            <Package size={48} className="mx-auto mb-4 opacity-30" />
+            <p className="font-bold">لا توجد طلبات</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((order) => {
+              const st = STATUS_MAP[order.status || 'pending'];
+              const date = new Date(order.created_at).toLocaleDateString('ar-EG', {
+                year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+              });
+              const lines = Array.isArray(order.line_items) ? order.line_items : [];
+
+              return (
+                <div key={order.id} className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden dark:bg-gray-900/40 dark:border-white/10">
+                  {/* Order Header */}
+                  <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-white/5">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${st.color}`}>
+                        {st.label}
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono">{date}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-black text-violet-600" dir="ltr">
+                        ₪ {Number(order.total_amount || 0).toFixed(2)}
+                      </span>
+                      {/* Status Changer */}
+                      <div className="relative">
+                        <select
+                          value={order.status || 'pending'}
+                          onChange={(e) => updateStatus(order.id, e.target.value)}
+                          disabled={updatingId === order.id}
+                          className="appearance-none rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-gray-950 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 pr-7 focus:ring-violet-500 focus:border-violet-500 cursor-pointer disabled:opacity-50"
+                        >
+                          <option value="pending">قيد المعالجة</option>
+                          <option value="confirmed">تم التأكيد</option>
+                          <option value="delivered">تم التسليم</option>
+                          <option value="cancelled">ملغي</option>
+                        </select>
+                        <ChevronDown size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Customer Info */}
+                  <div className="px-5 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/2">
+                    {order.customer_name && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <User size={14} className="text-slate-400 shrink-0" />
+                        <span className="font-bold text-slate-700 dark:text-slate-200">{order.customer_name}</span>
+                      </div>
+                    )}
+                    {order.customer_phone && (
+                      <a href={`tel:${order.customer_phone}`} className="flex items-center gap-2 text-sm hover:text-violet-600 transition-colors">
+                        <Phone size={14} className="text-slate-400 shrink-0" />
+                        <span className="font-mono text-slate-700 dark:text-slate-200" dir="ltr">{order.customer_phone}</span>
+                      </a>
+                    )}
+                    {order.customer_address && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <MapPin size={14} className="text-slate-400 shrink-0" />
+                        <span className="text-slate-700 dark:text-slate-200">{order.customer_address}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Line Items */}
+                  {lines.length > 0 && (
+                    <div className="px-5 py-3 space-y-1.5">
+                      {lines.map((line, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-600 dark:text-slate-300 line-clamp-1">
+                            {line.name || line.barcode || `صنف ${i + 1}`}
+                            <span className="text-slate-400 mr-2">× {line.qty}</span>
+                          </span>
+                          {line.unit_price && (
+                            <span className="font-mono text-slate-700 dark:text-slate-200 shrink-0" dir="ltr">
+                              ₪ {Number(line.unit_price * line.qty).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {order.notes && (
+                    <div className="px-5 py-3 border-t border-slate-100 dark:border-white/5 flex items-start gap-2">
+                      <MessageSquare size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-slate-500 leading-relaxed">{order.notes}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}
