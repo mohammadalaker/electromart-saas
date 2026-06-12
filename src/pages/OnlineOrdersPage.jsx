@@ -26,7 +26,7 @@ export default function OnlineOrdersPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('sales')
-        .select('id, created_at, total_amount, status, notes, customer_name, customer_phone, customer_address, line_items, delivery_company_id, delivery_status, delivery_fee')
+        .select('*')
         .eq('store_id', store.id)
         .eq('is_online_order', true)
         .order('created_at', { ascending: false })
