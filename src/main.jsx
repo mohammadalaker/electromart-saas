@@ -41,6 +41,7 @@ import PurchasePriceHistoryPage from './pages/PurchasePriceHistoryPage.jsx'
 import PublicStoreLanding from './pages/PublicStoreLanding.jsx'
 import PublicStorePage from './pages/PublicStorePage.jsx'
 import StorefrontSettingsPage from './pages/StorefrontSettingsPage.jsx'
+import StoreStatsPage from './pages/StoreStatsPage.jsx'
 import SubscriptionPlanPage from './pages/SubscriptionPlanPage.jsx'
 import SystemSettingsPage from './pages/SystemSettingsPage.jsx'
 import IntegrationsPage from './pages/IntegrationsPage.jsx'
@@ -96,6 +97,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
           <Route path="/sales" element={<EntitlementGuard module="sales_movements"><SalesMovements /></EntitlementGuard>} />
           <Route path="/online-orders" element={<OnlineOrdersPage />} />
+          <Route path="/store-stats" element={<StoreStatsPage />} />
           <Route path="/sales/preorders" element={<EntitlementGuard module="preorders"><PreOrdersPage /></EntitlementGuard>} />
           <Route path="/purchases/lines" element={<EntitlementGuard module="purchase_lines"><PurchaseInvoiceLinesPage /></EntitlementGuard>} />
           <Route path="/purchases/history" element={<EntitlementGuard module="purchase_history"><PurchaseHistoryPage /></EntitlementGuard>} />

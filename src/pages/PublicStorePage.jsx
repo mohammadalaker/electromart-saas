@@ -34,6 +34,11 @@ function cartStorageKey(slug) {
   return brandPublicCartKey(slug);
 }
 
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '91, 107, 245';
+}
+
 function mapRpcError(msg) {
   const m = String(msg || '');
   if (/store_not_found|invalid_slug/i.test(m)) return 'المتجر غير متاح أو الرابط غير صحيح.';
@@ -417,7 +422,7 @@ function ProductModal({ item, inCart, onAddToCart, onClose }) {
   );
 }
 
-function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick, badgeConfig, isWishlisted, onWishlistToggle }) {
+function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick, badgeConfig, isWishlisted, onWishlistToggle, primaryColor }) {
   const img = getPublicImageUrl(item.image);
   const out = isInventoryOutOfStock(item);
   const fullPrice = roundMoney(item.price ?? 0);
@@ -481,7 +486,7 @@ function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, sho
         {item.name || '—'}
       </h3>
       <div className="mt-2 flex items-center justify-center gap-2">
-        <span className="text-[#5B6BF5] font-bold text-base font-currency" lang="en" dir="ltr">
+        <span className="font-bold text-base font-currency" lang="en" dir="ltr" style={{ color: primaryColor ?? '#5B6BF5' }}>
           ₪ {salePrice.toFixed(2)}
         </span>
         {discountPercent > 0 ? (
@@ -494,7 +499,8 @@ function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, sho
         type="button"
         disabled={out}
         onClick={(e) => { e.stopPropagation(); onAddToCart(item); }}
-        className="mt-3 w-full bg-[#1a1b3d] text-white rounded-lg py-2.5 text-sm font-bold hover:bg-[#5B6BF5] transition-all active:scale-95 hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-30 disabled:pointer-events-none"
+        className="mt-3 w-full text-white rounded-lg py-2.5 text-sm font-bold transition-all active:scale-95 hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-30 disabled:pointer-events-none"
+        style={{ backgroundColor: primaryColor ?? '#1a1b3d' }}
       >
         <ShoppingCart size={16} />
         {inCart ? `في السلة (${inCart.qty})` : 'إضافة إلى السلة'}
@@ -526,6 +532,8 @@ export default function PublicStorePage() {
   });
   const [heroImage, setHeroImage] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#5B6BF5');
+  const [headerColor, setHeaderColor] = useState('#1a1b3d');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [productsReady, setProductsReady] = useState(false);
@@ -572,7 +580,7 @@ export default function PublicStorePage() {
       try {
         const { data: st, error: e1 } = await supabase
           .from('stores')
-          .select('id, name, instagram_url, facebook_url, tiktok_url, whatsapp_number, hero_image, logo_url, badge_low_stock_enabled, badge_low_stock_threshold, badge_new_enabled, badge_new_days, badge_limited_enabled, badge_bestseller_enabled, banner_enabled, banner_title, banner_subtitle, banner_cta_text, banner_cta_link, banner_bg_color, banner_text_color')
+          .select('id, name, instagram_url, facebook_url, tiktok_url, whatsapp_number, hero_image, logo_url, badge_low_stock_enabled, badge_low_stock_threshold, badge_new_enabled, badge_new_days, badge_limited_enabled, badge_bestseller_enabled, banner_enabled, banner_title, banner_subtitle, banner_cta_text, banner_cta_link, banner_bg_color, banner_text_color, primary_color, header_color')
           .eq('public_slug', slug)
           .eq('public_catalog_enabled', true)
           .maybeSingle();
@@ -606,6 +614,8 @@ export default function PublicStorePage() {
           bgColor: (st.banner_bg_color ?? '#1a1b3d').toString(),
           textColor: (st.banner_text_color ?? '#ffffff').toString(),
         });
+        setPrimaryColor(st.primary_color ?? '#5B6BF5');
+        setHeaderColor(st.header_color ?? '#1a1b3d');
         setHeroImage((st.hero_image ?? '').toString().trim());
         setLogoUrl((st.logo_url ?? '').toString().trim());
 
@@ -996,7 +1006,7 @@ export default function PublicStorePage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F5F5F7]" dir="rtl" style={{ fontFamily: "'Inter Tight', sans-serif" }}>
-        <Loader2 className="animate-spin text-[#5B6BF5]" size={48} />
+        <Loader2 className="animate-spin" style={{ color: primaryColor }} size={48} />
       </div>
     );
   }
@@ -1006,7 +1016,7 @@ export default function PublicStorePage() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#F5F5F7] text-[#0D0E13]" dir="rtl" style={{ fontFamily: "'Inter Tight', sans-serif" }}>
         <Package className="text-[#6E7278] mb-4" size={48} />
         <p className="text-lg font-bold text-center">{loadError || 'المتجر غير متاح'}</p>
-        <Link to="/" className="mt-6 text-[#5B6BF5] font-bold hover:underline">
+        <Link to="/" className="mt-6 font-bold hover:underline" style={{ color: primaryColor }}>
           العودة
         </Link>
       </div>
@@ -1019,6 +1029,76 @@ export default function PublicStorePage() {
       dir="rtl"
       style={{ fontFamily: "'Inter Tight', sans-serif", backgroundColor: '#F5F5F7' }}
     >
+      <style>{`
+        :root {
+          --store-primary: ${primaryColor || '#5B6BF5'};
+          --store-primary-rgb: ${hexToRgb(primaryColor || '#5B6BF5')};
+          --store-header: ${headerColor || '#1a1b3d'};
+        }
+        
+        /* Override primary bg elements */
+        .bg-\[\#5B6BF5\] {
+          background-color: var(--store-primary) !important;
+        }
+        .bg-\[\#5B6BF5\]\/10 {
+          background-color: rgba(var(--store-primary-rgb), 0.1) !important;
+        }
+        .hover\:bg-\[\#5B6BF5\]:hover {
+          background-color: var(--store-primary) !important;
+        }
+        
+        /* Override primary text elements */
+        .text-\[\#5B6BF5\] {
+          color: var(--store-primary) !important;
+        }
+        .text-\[\#5B6BF5\]\/30 {
+          color: rgba(var(--store-primary-rgb), 0.3) !important;
+        }
+        .text-\[\#5B6BF5\]\/20 {
+          color: rgba(var(--store-primary-rgb), 0.2) !important;
+        }
+        .group-hover\:text-white:hover {
+          color: white !important;
+        }
+        
+        /* Override primary border/focus elements */
+        .border-\[\#5B6BF5\] {
+          border-color: var(--store-primary) !important;
+        }
+        .hover\:border-\[\#5B6BF5\]:hover {
+          border-color: var(--store-primary) !important;
+        }
+        .focus\:border-\[\#5B6BF5\]:focus {
+          border-color: var(--store-primary) !important;
+        }
+        .focus\:ring-\[\#5B6BF5\]:focus {
+          --tw-ring-color: var(--store-primary) !important;
+        }
+        .focus\:ring-\[\#5B6BF5\]\/30:focus {
+          --tw-ring-color: rgba(var(--store-primary-rgb), 0.3) !important;
+        }
+        
+        /* Gradient backgrounds */
+        .from-\[\#5B6BF5\] {
+          --tw-gradient-from: var(--store-primary) !important;
+          --tw-gradient-to: rgba(var(--store-primary-rgb), 0) !important;
+          --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+        }
+        .to-\[\#8B9DF5\] {
+          --tw-gradient-to: rgba(var(--store-primary-rgb), 0.8) !important;
+        }
+        
+        /* Override header background/borders */
+        .bg-\[\#1a1b3d\] {
+          background-color: var(--store-header) !important;
+        }
+        .border-\[\#2a2b50\] {
+          border-color: rgba(255, 255, 255, 0.15) !important;
+        }
+        .decoration-\[\#E8E8EC\] {
+          text-decoration-color: rgba(var(--store-primary-rgb), 0.2) !important;
+        }
+      `}</style>
       {/* SocialBar */}
       <div className="w-full bg-[#1a1b3d] text-white text-[11px] font-mono py-1.5">
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
@@ -1046,7 +1126,10 @@ export default function PublicStorePage() {
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#1a1b3d] border-b border-[#2a2b50] backdrop-blur-sm">
+      <header
+        className="sticky top-0 z-50 border-b backdrop-blur-sm"
+        style={{ backgroundColor: headerColor, borderColor: headerColor + '80' }}
+      >
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -1176,7 +1259,10 @@ export default function PublicStorePage() {
         </div>
       ) : null}
 
-      <nav className="bg-[#252654] border-b border-[#2a2b50]">
+      <nav
+        className="border-b"
+        style={{ backgroundColor: headerColor + 'dd', borderColor: headerColor + '60' }}
+      >
         <div className="max-w-7xl mx-auto px-4 py-2.5">
           <div className="hidden sm:flex gap-1 overflow-x-auto justify-center [scrollbar-width:none]">
             {STORE_CATEGORY_TILES.map((tile) => {
@@ -1443,6 +1529,7 @@ export default function PublicStorePage() {
                     badgeConfig={badgeConfig}
                     isWishlisted={isInWishlist(item.id)}
                     onWishlistToggle={toggleWishlist}
+                    primaryColor={primaryColor}
                   />
                 ))
             }
@@ -1606,6 +1693,7 @@ export default function PublicStorePage() {
                       badgeConfig={badgeConfig}
                       isWishlisted={isInWishlist(item.id)}
                       onWishlistToggle={toggleWishlist}
+                      primaryColor={primaryColor}
                     />
                   ))
               }
@@ -1652,6 +1740,7 @@ export default function PublicStorePage() {
                       badgeConfig={badgeConfig}
                       isWishlisted={isInWishlist(item.id)}
                       onWishlistToggle={toggleWishlist}
+                      primaryColor={primaryColor}
                     />
                   ))
               }

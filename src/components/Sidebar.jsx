@@ -87,6 +87,7 @@ const CATEGORIES = [
         items: [
           { to: '/sales', icon: ShoppingCart, label: 'المبيعات', module: 'sales_movements' },
           { to: '/online-orders', icon: Package, label: 'الطلبات الأونلاين' },
+          { to: '/store-stats', icon: TrendingUp, label: 'إحصائيات المتجر' },
           { to: '/sales/preorders', icon: Bookmark, label: 'الحجز المسبق', module: 'preorders' },
           { to: '/purchases', icon: ShoppingBag, label: 'المشتريات', module: 'purchases' },
           { to: '/purchases/rfq', icon: FileQuestion, label: 'طلبات عرض سعر', module: 'purchase_rfq' },

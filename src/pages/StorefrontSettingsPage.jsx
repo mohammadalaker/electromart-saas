@@ -49,6 +49,8 @@ export default function StorefrontSettingsPage() {
   const [bannerCtaLink, setBannerCtaLink] = useState('');
   const [bannerBgColor, setBannerBgColor] = useState('#1a1b3d');
   const [bannerTextColor, setBannerTextColor] = useState('#ffffff');
+  const [primaryColor, setPrimaryColor] = useState('#5B6BF5');
+  const [headerColor, setHeaderColor] = useState('#1a1b3d');
 
   useEffect(() => {
     if (storeLoading) return;
@@ -62,7 +64,7 @@ export default function StorefrontSettingsPage() {
       setError(null);
       const { data, error: qErr } = await supabase
         .from('stores')
-        .select('public_slug, public_catalog_enabled, hero_image, logo_url, instagram_url, facebook_url, tiktok_url, whatsapp_number, badge_low_stock_enabled, badge_low_stock_threshold, badge_new_enabled, badge_new_days, badge_limited_enabled, badge_bestseller_enabled, banner_enabled, banner_title, banner_subtitle, banner_cta_text, banner_cta_link, banner_bg_color, banner_text_color')
+        .select('public_slug, public_catalog_enabled, hero_image, logo_url, instagram_url, facebook_url, tiktok_url, whatsapp_number, badge_low_stock_enabled, badge_low_stock_threshold, badge_new_enabled, badge_new_days, badge_limited_enabled, badge_bestseller_enabled, banner_enabled, banner_title, banner_subtitle, banner_cta_text, banner_cta_link, banner_bg_color, banner_text_color, primary_color, header_color')
         .eq('id', store.id)
         .single();
       if (cancelled) return;
@@ -98,6 +100,8 @@ export default function StorefrontSettingsPage() {
       setBannerCtaLink((data?.banner_cta_link ?? '').toString());
       setBannerBgColor((data?.banner_bg_color ?? '#1a1b3d').toString());
       setBannerTextColor((data?.banner_text_color ?? '#ffffff').toString());
+      setPrimaryColor(data?.primary_color ?? '#5B6BF5');
+      setHeaderColor(data?.header_color ?? '#1a1b3d');
       try {
           const lPay = localStorage.getItem(`store-payment-config-${store.id}`);
           if (lPay) setPaymentLink(lPay);
@@ -150,6 +154,8 @@ export default function StorefrontSettingsPage() {
           banner_cta_link: bannerCtaLink.trim() || null,
           banner_bg_color: bannerBgColor || '#1a1b3d',
           banner_text_color: bannerTextColor || '#ffffff',
+          primary_color: primaryColor,
+          header_color: headerColor,
         })
         .eq('id', store.id);
       if (uErr) throw uErr;
@@ -588,6 +594,82 @@ export default function StorefrontSettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">🎨 ألوان المتجر</h3>
+                <p className="text-xs text-slate-400 mt-0.5">تطبّق على الأزرار والأسعار والهيدر</p>
+              </div>
+
+              {/* Preview */}
+              <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-white/10">
+                <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: headerColor }}>
+                  <span className="text-white text-sm font-bold">اسم المتجر</span>
+                  <div className="flex gap-2">
+                    <div className="w-6 h-6 rounded-full bg-white/20" />
+                    <div className="w-6 h-6 rounded-full bg-white/20" />
+                  </div>
+                </div>
+                <div className="p-4 bg-white flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-lg bg-slate-100" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 bg-slate-100 rounded w-3/4" />
+                    <div className="h-3 rounded w-1/3" style={{ backgroundColor: primaryColor + '40' }} />
+                    <div className="h-7 rounded-lg w-full mt-2 flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: primaryColor }}>
+                      إضافة للسلة
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">اللون الرئيسي (أزرار وأسعار)</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={primaryColor}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                      className="h-10 w-14 rounded-lg border border-slate-200 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={primaryColor}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                      className="flex-1 rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">لون الهيدر</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={headerColor}
+                      onChange={(e) => setHeaderColor(e.target.value)}
+                      className="h-10 w-14 rounded-lg border border-slate-200 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={headerColor}
+                      onChange={(e) => setHeaderColor(e.target.value)}
+                      className="flex-1 rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Reset */}
+              <button
+                type="button"
+                onClick={() => { setPrimaryColor('#5B6BF5'); setHeaderColor('#1a1b3d'); }}
+                className="text-xs text-slate-400 hover:text-violet-600 transition-colors"
+              >
+                إعادة تعيين الألوان الافتراضية
+              </button>
             </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
