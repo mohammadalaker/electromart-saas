@@ -43,6 +43,8 @@ import PublicStorePage from './pages/PublicStorePage.jsx'
 import StorefrontSettingsPage from './pages/StorefrontSettingsPage.jsx'
 import StoreStatsPage from './pages/StoreStatsPage.jsx'
 import CouponsPage from './pages/CouponsPage.jsx'
+import DeliveryZonesPage from './pages/DeliveryZonesPage.jsx'
+import DeliveryAccountPage from './pages/DeliveryAccountPage.jsx'
 import SubscriptionPlanPage from './pages/SubscriptionPlanPage.jsx'
 import SystemSettingsPage from './pages/SystemSettingsPage.jsx'
 import IntegrationsPage from './pages/IntegrationsPage.jsx'
@@ -118,6 +120,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/settings/integrations" element={<IntegrationsPage />} />
           <Route path="/settings/storefront" element={<EntitlementGuard module="storefront"><StorefrontSettingsPage /></EntitlementGuard>} />
           <Route path="/coupons" element={<CouponsPage />} />
+          <Route path="/delivery-zones" element={<DeliveryZonesPage />} />
+          <Route path="/delivery-account" element={<DeliveryAccountPage />} />
           </Route>
           <Route path="/:slug" element={<PublicStorePage />} />
         </Routes>

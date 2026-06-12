@@ -554,6 +554,8 @@ export default function PublicStorePage() {
   const [wishlistOpen, setWishlistOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [deliveryZones, setDeliveryZones] = useState([]);
+  const [selectedZone, setSelectedZone] = useState(null);
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [custName, setCustName] = useState('');
@@ -636,6 +638,14 @@ export default function PublicStorePage() {
         const normalized = (products || []).map(normalizeItemFromSupabase).filter(Boolean);
         if (cancelled) return;
         setItems(normalized);
+        const { data: zones } = await supabase
+          .from('store_delivery_zones')
+          .select('*')
+          .eq('store_id', st.id)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+        if (cancelled) return;
+        setDeliveryZones(zones || []);
         setTimeout(() => setProductsReady(true), 300);
       } catch (err) {
         if (!cancelled) {
@@ -815,8 +825,15 @@ export default function PublicStorePage() {
       const q = Math.max(1, Number(line.qty) || 1);
       sub += unit * q;
     }
-    return { subtotal: roundMoney(sub) };
-  }, [cart]);
+    const deliveryFee = selectedZone ? roundMoney(selectedZone.fee ?? 0) : 0;
+    const discount = couponResult?.valid ? roundMoney(couponResult.discount_amount ?? 0) : 0;
+    return {
+      subtotal: roundMoney(sub),
+      deliveryFee,
+      discount,
+      total: roundMoney(sub + deliveryFee - discount),
+    };
+  }, [cart, selectedZone, couponResult]);
 
   const toggleWishlist = useCallback((item) => {
     setWishlist((prev) => {
@@ -2101,6 +2118,29 @@ export default function PublicStorePage() {
                   className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white resize-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                 />
               </label>
+              {deliveryZones.length > 0 && (
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-400">
+                    منطقة التوصيل <span className="text-red-500">*</span>
+                  </span>
+                  <select
+                    value={selectedZone?.id ?? ''}
+                    onChange={(e) => {
+                      const zone = deliveryZones.find((z) => z.id === e.target.value);
+                      setSelectedZone(zone || null);
+                    }}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
+                    required
+                  >
+                    <option value="" className="bg-slate-950 text-white">اختر المنطقة...</option>
+                    {deliveryZones.map((z) => (
+                      <option key={z.id} value={z.id} className="bg-slate-950 text-white">
+                        {z.name} {z.fee > 0 ? `— ₪${z.fee}` : '— توصيل مجاني'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="block">
                 <span className="text-xs font-bold text-slate-400">ملاحظات (اختياري)</span>
                 <textarea
@@ -2149,6 +2189,12 @@ export default function PublicStorePage() {
                   <span>المجموع</span>
                   <span className="font-bold" dir="ltr">₪ {cartTotals.subtotal.toFixed(2)}</span>
                 </div>
+                {cartTotals.deliveryFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>رسوم التوصيل ({selectedZone?.name})</span>
+                    <span className="font-bold" dir="ltr">+ ₪ {cartTotals.deliveryFee.toFixed(2)}</span>
+                  </div>
+                )}
                 {couponResult?.valid && (
                   <div className="flex justify-between text-sm">
                     <span className="text-emerald-400">خصم الكوبون</span>
@@ -2158,7 +2204,7 @@ export default function PublicStorePage() {
                 <div className="flex justify-between text-sm font-black border-t border-white/5 pt-1.5 text-white">
                   <span>الإجمالي</span>
                   <span style={{ color: primaryColor ?? '#5B6BF5' }} dir="ltr">
-                    ₪ {couponResult?.valid ? couponResult.final_amount.toFixed(2) : cartTotals.subtotal.toFixed(2)}
+                    ₪ {cartTotals.total.toFixed(2)}
                   </span>
                 </div>
               </div>

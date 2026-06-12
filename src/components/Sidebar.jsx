@@ -89,6 +89,8 @@ const CATEGORIES = [
           { to: '/online-orders', icon: Package, label: 'الطلبات الأونلاين' },
           { to: '/store-stats', icon: TrendingUp, label: 'إحصائيات المتجر' },
           { to: '/coupons', label: 'كوبونات الخصم', icon: Tag },
+          { to: '/delivery-zones', label: 'مناطق التوصيل', icon: Truck },
+          { to: '/delivery-account', label: 'كشف حساب التوصيل', icon: DollarSign },
           { to: '/sales/preorders', icon: Bookmark, label: 'الحجز المسبق', module: 'preorders' },
           { to: '/purchases', icon: ShoppingBag, label: 'المشتريات', module: 'purchases' },
           { to: '/purchases/rfq', icon: FileQuestion, label: 'طلبات عرض سعر', module: 'purchase_rfq' },

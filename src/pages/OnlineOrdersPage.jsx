@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Loader2, Package, Phone, User, MapPin, MessageSquare, ChevronDown } from 'lucide-react';
+import { Loader2, Package, Phone, User, MapPin, MessageSquare, ChevronDown, Truck } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -17,6 +17,7 @@ export default function OnlineOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [updatingId, setUpdatingId] = useState(null);
+  const [companies, setCompanies] = useState([]);
 
   useEffect(() => {
     if (!store?.id) return;
@@ -25,14 +26,20 @@ export default function OnlineOrdersPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('sales')
-        .select('*')
+        .select('id, created_at, total_amount, status, notes, customer_name, customer_phone, customer_address, line_items, delivery_company_id, delivery_status, delivery_fee')
         .eq('store_id', store.id)
         .eq('is_online_order', true)
         .order('created_at', { ascending: false })
         .limit(200);
+      const { data: comp } = await supabase
+        .from('store_delivery_companies')
+        .select('id, name')
+        .eq('store_id', store.id)
+        .eq('is_active', true);
       if (!cancelled) {
         console.log('Online orders query:', { data, error, storeId: store.id });
         setOrders(error ? [] : (data || []));
+        setCompanies(comp || []);
         setLoading(false);
       }
     })();
@@ -57,6 +64,19 @@ export default function OnlineOrdersPage() {
       );
     }
     setUpdatingId(null);
+  };
+
+  const assignCompany = async (orderId, companyId) => {
+    await supabase.from('sales').update({
+      delivery_company_id: companyId || null,
+      delivery_status: companyId ? 'assigned' : 'pending',
+      delivery_assigned_at: companyId ? new Date().toISOString() : null,
+    }).eq('id', orderId);
+    setOrders((prev) => prev.map((o) => o.id === orderId ? {
+      ...o,
+      delivery_company_id: companyId || null,
+      delivery_status: companyId ? 'assigned' : 'pending',
+    } : o));
   };
 
   const counts = useMemo(() => {
@@ -162,6 +182,39 @@ export default function OnlineOrdersPage() {
                         </select>
                         <ChevronDown size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                       </div>
+
+                      {/* تعيين شركة التوصيل */}
+                      {companies.length > 0 && (
+                        <div className="relative">
+                          <select
+                            value={order.delivery_company_id ?? ''}
+                            onChange={(e) => assignCompany(order.id, e.target.value)}
+                            className="appearance-none rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-gray-950 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 pr-7 focus:ring-violet-500 focus:border-violet-500 cursor-pointer"
+                          >
+                            <option value="">🚚 بدون شركة</option>
+                            {companies.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                          <Truck size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        </div>
+                      )}
+
+                      {order.delivery_company_id && (
+                        <select
+                          value={order.delivery_status ?? 'assigned'}
+                          onChange={async (e) => {
+                            await supabase.from('sales').update({ delivery_status: e.target.value }).eq('id', order.id);
+                            setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, delivery_status: e.target.value } : o));
+                          }}
+                          className="appearance-none rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-gray-950 px-3 py-1.5 text-xs font-bold cursor-pointer"
+                        >
+                          <option value="assigned">📦 معيّن</option>
+                          <option value="picked_up">🚚 استلمته الشركة</option>
+                          <option value="delivered">✅ وصل للزبون</option>
+                          <option value="returned">↩️ مرجّع</option>
+                        </select>
+                      )}
                     </div>
                   </div>
 
