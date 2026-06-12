@@ -560,6 +560,10 @@ export default function PublicStorePage() {
   const [custPhone, setCustPhone] = useState('');
   const [custAddress, setCustAddress] = useState('');
   const [custNotes, setCustNotes] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponResult, setCouponResult] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [submitDone, setSubmitDone] = useState(false);
@@ -864,6 +868,30 @@ export default function PublicStorePage() {
 
   const removeLine = (id) => setCart((prev) => prev.filter((x) => x.id !== id));
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    setCouponError(null);
+    setCouponResult(null);
+    try {
+      const { data, error } = await supabase.rpc('validate_coupon', {
+        p_slug: slug,
+        p_code: couponCode.trim(),
+        p_order_amount: cartTotals.subtotal,
+      });
+      if (error) throw error;
+      if (data?.valid) {
+        setCouponResult(data);
+      } else {
+        setCouponError(data?.error || 'كوبون غير صالح');
+      }
+    } catch (err) {
+      setCouponError(err.message || 'خطأ في التحقق');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
     if (!slug || cart.length === 0) return;
@@ -880,10 +908,20 @@ export default function PublicStorePage() {
         p_customer_name: custName.trim(),
         p_customer_phone: custPhone.trim(),
         p_customer_address: custAddress.trim(),
-        p_notes: custNotes.trim() || null,
+        p_notes: couponResult?.valid
+          ? `${custNotes.trim()}\n[كوبون الخصم: ${couponCode} - تم تطبيق خصم ₪${couponResult.discount_amount}]`
+          : custNotes.trim() || null,
       });
       if (error) throw error;
       if (!data) throw new Error('لم يُرجع الخادم رقم الطلب');
+
+      if (couponResult?.valid) {
+        await supabase.rpc('increment_coupon_usage', {
+          p_store_id: storeId,
+          p_code: couponCode.trim(),
+        });
+      }
+
       setSubmitDone(true);
       setCart([]);
       try {
@@ -896,6 +934,9 @@ export default function PublicStorePage() {
       setCustPhone('');
       setCustAddress('');
       setCustNotes('');
+      setCouponCode('');
+      setCouponResult(null);
+      setCouponError(null);
 
       if (useElectronicPayment && paymentLink) {
          window.location.href = paymentLink;
@@ -2069,6 +2110,59 @@ export default function PublicStorePage() {
                   className="mt-1 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white resize-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                 />
               </label>
+
+              {/* كوبون الخصم */}
+              <div>
+                <label className="block text-sm font-bold text-slate-400 mb-1.5">كوبون الخصم (اختياري)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponResult(null); setCouponError(null); }}
+                    className="flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm font-mono uppercase focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500"
+                    placeholder="SAVE20"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={couponLoading || !couponCode.trim()}
+                    className="px-4 py-2.5 bg-[#1a1b3d] text-white rounded-xl text-sm font-bold hover:bg-[#5B6BF5] transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {couponLoading ? <Loader2 size={14} className="animate-spin" /> : 'تطبيق'}
+                  </button>
+                </div>
+                {couponError && <p className="text-xs text-red-500 font-bold mt-1.5">{couponError}</p>}
+                {couponResult?.valid && (
+                  <div className="mt-2 rounded-xl bg-emerald-950/30 border border-emerald-500/30 px-3 py-2 flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-400">
+                      ✅ خصم ₪{couponResult.discount_amount} مطبّق!
+                    </span>
+                    <button type="button" onClick={() => { setCouponResult(null); setCouponCode(''); }} className="text-xs text-emerald-400 hover:underline">إزالة</button>
+                  </div>
+                )}
+              </div>
+
+              {/* ملخص السعر */}
+              <div className="rounded-xl bg-slate-800/40 p-3 space-y-1.5 text-slate-300">
+                <div className="flex justify-between text-sm">
+                  <span>المجموع</span>
+                  <span className="font-bold" dir="ltr">₪ {cartTotals.subtotal.toFixed(2)}</span>
+                </div>
+                {couponResult?.valid && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-emerald-400">خصم الكوبون</span>
+                    <span className="font-bold text-emerald-400" dir="ltr">- ₪ {couponResult.discount_amount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-black border-t border-white/5 pt-1.5 text-white">
+                  <span>الإجمالي</span>
+                  <span style={{ color: primaryColor ?? '#5B6BF5' }} dir="ltr">
+                    ₪ {couponResult?.valid ? couponResult.final_amount.toFixed(2) : cartTotals.subtotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
               <div className="flex flex-col gap-2 pt-2">
                  <button
                    type="submit"
