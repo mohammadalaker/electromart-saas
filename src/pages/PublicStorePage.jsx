@@ -547,7 +547,8 @@ export default function PublicStorePage() {
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const [categoryTile, setCategoryTile] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(24);
+  const loadMoreRef = useRef(null);
 
   const [cart, setCart] = useState(() => []);
   const [wishlist, setWishlist] = useState(() => []);
@@ -784,35 +785,25 @@ export default function PublicStorePage() {
   }, [items, search, brandFilter, categoryTile, sortBy, priceMin, priceMax]);
 
   useEffect(() => {
-    setCurrentPage(1);
+    setVisibleCount(24);
   }, [items.length, search, brandFilter, categoryTile, sortBy, priceMin, priceMax]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PRODUCTS_PER_PAGE));
-  const currentPageClamped = Math.min(currentPage, totalPages);
-  const pagedItems = useMemo(() => {
-    const start = (currentPageClamped - 1) * PRODUCTS_PER_PAGE;
-    return filteredItems.slice(start, start + PRODUCTS_PER_PAGE);
-  }, [filteredItems, currentPageClamped]);
-  const pageTokens = useMemo(() => {
-    if (totalPages <= 7) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
+  const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount]);
+  const hasMore = visibleCount < filteredItems.length;
 
-    const tokens = new Set([1, totalPages]);
-    const start = Math.max(2, currentPageClamped - 1);
-    const end = Math.min(totalPages - 1, currentPageClamped + 1);
-    for (let p = start; p <= end; p += 1) tokens.add(p);
-
-    const sorted = [...tokens].sort((a, b) => a - b);
-    const withDots = [];
-    for (let i = 0; i < sorted.length; i += 1) {
-      const cur = sorted[i];
-      const prev = sorted[i - 1];
-      if (i > 0 && cur - prev > 1) withDots.push(`dots-${prev}-${cur}`);
-      withDots.push(cur);
-    }
-    return withDots;
-  }, [totalPages, currentPageClamped]);
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          setVisibleCount((prev) => prev + 24);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, visibleCount]);
 
   const cartLineById = useMemo(() => new Map(cart.map((c) => [c.id, c])), [cart]);
   const newArrivals = items.slice(0, 5);
@@ -1026,7 +1017,7 @@ export default function PublicStorePage() {
         t.kill();
       });
     };
-  }, [storeId, pagedItems]);
+  }, [storeId, visibleItems]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -1448,11 +1439,9 @@ export default function PublicStorePage() {
               <h2 className="text-2xl md:text-3xl font-bold text-[#0D0E13]">منتجاتنا</h2>
               <p className="font-mono text-xs text-[#6E7278] mt-1">أفضل الماركات العالمية بأفضل الأسعار</p>
             </div>
-            {filteredItems.length > PRODUCTS_PER_PAGE && (
-              <span className="font-mono text-[10px] text-[#5B6BF5] bg-[#5B6BF5]/8 px-2 py-1 rounded-full">
-                صفحة {currentPageClamped} من {totalPages}
-              </span>
-            )}
+            <span className="font-mono text-[10px] text-[#5B6BF5] bg-[#5B6BF5]/8 px-2 py-1 rounded-full">
+              {visibleItems.length} من {filteredItems.length} منتج
+            </span>
           </div>
 
           {/* Search + brand filter */}
@@ -1527,118 +1516,44 @@ export default function PublicStorePage() {
             )}
           </div>
 
-          {filteredItems.length > PRODUCTS_PER_PAGE && (
-            <div className="mb-6 flex items-center justify-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPageClamped <= 1}
-                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
-              >
-                السابقة
-              </button>
-              {pageTokens.map((token) => {
-                if (typeof token === 'string') {
-                  return (
-                    <span key={token} className="text-[#B0B2C3] text-xs">
-                      ...
-                    </span>
-                  );
-                }
-                return (
-                  <button
-                    key={token}
-                    type="button"
-                    onClick={() => setCurrentPage(token)}
-                    className={`w-7 h-7 flex items-center justify-center text-[11px] font-mono rounded-lg transition-colors ${
-                      token === currentPageClamped
-                        ? 'text-white bg-[#5B6BF5]'
-                        : 'text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] hover:border-[#5B6BF5]'
-                    }`}
-                  >
-                    {token}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPageClamped >= totalPages}
-                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
-              >
-                التالية
-              </button>
-            </div>
-          )}
-
           <div ref={productsGridRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {!productsReady
               ? Array.from({ length: 6 }).map((_, i) => (
                   <ProductCardSkeleton key={`sk-${i}`} />
                 ))
-              : pagedItems.map((item) => (
+              : visibleItems.map((item) => (
                   <StoreProductCard
                     key={item.id}
                     item={item}
                     inCart={cartLineById.get(item.id)}
                     onAddToCart={addToCart}
-                    scrollAnimate
                     onClick={() => setSelectedProduct(item)}
                     badgeConfig={badgeConfig}
+                    primaryColor={primaryColor}
                     isWishlisted={isInWishlist(item.id)}
                     onWishlistToggle={toggleWishlist}
-                    primaryColor={primaryColor}
+                    scrollAnimate
                   />
                 ))
             }
           </div>
 
-          {filteredItems.length === 0 && (
-            <div className="text-center py-20 text-[#6E7278] font-mono text-sm">لا توجد منتجات مطابقة للتصفية.</div>
+          {/* Load More Trigger */}
+          {productsReady && (
+            <div ref={loadMoreRef} className="py-6 flex justify-center">
+              {hasMore ? (
+                <div className="flex items-center gap-2 text-sm text-[#6E7278]">
+                  <Loader2 size={16} className="animate-spin text-[#5B6BF5]" />
+                  <span>جاري التحميل...</span>
+                </div>
+              ) : filteredItems.length > 24 ? (
+                <p className="text-xs text-[#B0B2C3]">تم عرض كل المنتجات ({filteredItems.length})</p>
+              ) : null}
+            </div>
           )}
 
-          {filteredItems.length > PRODUCTS_PER_PAGE && (
-            <div className="mt-6 flex items-center justify-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPageClamped <= 1}
-                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
-              >
-                السابقة
-              </button>
-              {pageTokens.map((token) => {
-                if (typeof token === 'string') {
-                  return (
-                    <span key={`bottom-${token}`} className="text-[#B0B2C3] text-xs">
-                      ...
-                    </span>
-                  );
-                }
-                return (
-                  <button
-                    key={`bottom-${token}`}
-                    type="button"
-                    onClick={() => setCurrentPage(token)}
-                    className={`w-7 h-7 flex items-center justify-center text-[11px] font-mono rounded-lg transition-colors ${
-                      token === currentPageClamped
-                        ? 'text-white bg-[#5B6BF5]'
-                        : 'text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] hover:border-[#5B6BF5]'
-                    }`}
-                  >
-                    {token}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPageClamped >= totalPages}
-                className="px-3 py-1.5 text-[11px] font-mono text-[#6E7278] bg-[#F5F5F7] border border-[#E8E8EC] rounded-lg hover:border-[#5B6BF5] transition-colors disabled:opacity-40"
-              >
-                التالية
-              </button>
-            </div>
+          {filteredItems.length === 0 && (
+            <div className="text-center py-20 text-[#6E7278] font-mono text-sm">لا توجد منتجات مطابقة للتصفية.</div>
           )}
         </div>
       </section>
