@@ -36,6 +36,19 @@ export default function StorefrontSettingsPage() {
   const [facebookUrl, setFacebookUrl] = useState('');
   const [tiktokUrl, setTiktokUrl] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [badgeLowStockEnabled, setBadgeLowStockEnabled] = useState(true);
+  const [badgeLowStockThreshold, setBadgeLowStockThreshold] = useState(3);
+  const [badgeNewEnabled, setBadgeNewEnabled] = useState(true);
+  const [badgeNewDays, setBadgeNewDays] = useState(30);
+  const [badgeLimitedEnabled, setBadgeLimitedEnabled] = useState(false);
+  const [badgeBestsellerEnabled, setBadgeBestsellerEnabled] = useState(true);
+  const [bannerEnabled, setBannerEnabled] = useState(false);
+  const [bannerTitle, setBannerTitle] = useState('');
+  const [bannerSubtitle, setBannerSubtitle] = useState('');
+  const [bannerCtaText, setBannerCtaText] = useState('');
+  const [bannerCtaLink, setBannerCtaLink] = useState('');
+  const [bannerBgColor, setBannerBgColor] = useState('#1a1b3d');
+  const [bannerTextColor, setBannerTextColor] = useState('#ffffff');
 
   useEffect(() => {
     if (storeLoading) return;
@@ -49,7 +62,7 @@ export default function StorefrontSettingsPage() {
       setError(null);
       const { data, error: qErr } = await supabase
         .from('stores')
-        .select('public_slug, public_catalog_enabled, hero_image, logo_url, instagram_url, facebook_url, tiktok_url, whatsapp_number')
+        .select('public_slug, public_catalog_enabled, hero_image, logo_url, instagram_url, facebook_url, tiktok_url, whatsapp_number, badge_low_stock_enabled, badge_low_stock_threshold, badge_new_enabled, badge_new_days, badge_limited_enabled, badge_bestseller_enabled, banner_enabled, banner_title, banner_subtitle, banner_cta_text, banner_cta_link, banner_bg_color, banner_text_color')
         .eq('id', store.id)
         .single();
       if (cancelled) return;
@@ -72,6 +85,19 @@ export default function StorefrontSettingsPage() {
       setFacebookUrl((data?.facebook_url ?? '').toString().trim());
       setTiktokUrl((data?.tiktok_url ?? '').toString().trim());
       setWhatsappNumber((data?.whatsapp_number ?? '').toString().trim());
+      setBadgeLowStockEnabled(data?.badge_low_stock_enabled ?? true);
+      setBadgeLowStockThreshold(data?.badge_low_stock_threshold ?? 3);
+      setBadgeNewEnabled(data?.badge_new_enabled ?? true);
+      setBadgeNewDays(data?.badge_new_days ?? 30);
+      setBadgeLimitedEnabled(data?.badge_limited_enabled ?? false);
+      setBadgeBestsellerEnabled(data?.badge_bestseller_enabled ?? true);
+      setBannerEnabled(Boolean(data?.banner_enabled));
+      setBannerTitle((data?.banner_title ?? '').toString());
+      setBannerSubtitle((data?.banner_subtitle ?? '').toString());
+      setBannerCtaText((data?.banner_cta_text ?? '').toString());
+      setBannerCtaLink((data?.banner_cta_link ?? '').toString());
+      setBannerBgColor((data?.banner_bg_color ?? '#1a1b3d').toString());
+      setBannerTextColor((data?.banner_text_color ?? '#ffffff').toString());
       try {
           const lPay = localStorage.getItem(`store-payment-config-${store.id}`);
           if (lPay) setPaymentLink(lPay);
@@ -111,6 +137,19 @@ export default function StorefrontSettingsPage() {
           facebook_url: facebookUrl.trim() || null,
           tiktok_url: tiktokUrl.trim() || null,
           whatsapp_number: whatsappNumber.trim() || null,
+          badge_low_stock_enabled: badgeLowStockEnabled,
+          badge_low_stock_threshold: Number(badgeLowStockThreshold),
+          badge_new_enabled: badgeNewEnabled,
+          badge_new_days: Number(badgeNewDays),
+          badge_limited_enabled: badgeLimitedEnabled,
+          badge_bestseller_enabled: badgeBestsellerEnabled,
+          banner_enabled: bannerEnabled,
+          banner_title: bannerTitle.trim() || null,
+          banner_subtitle: bannerSubtitle.trim() || null,
+          banner_cta_text: bannerCtaText.trim() || null,
+          banner_cta_link: bannerCtaLink.trim() || null,
+          banner_bg_color: bannerBgColor || '#1a1b3d',
+          banner_text_color: bannerTextColor || '#ffffff',
         })
         .eq('id', store.id);
       if (uErr) throw uErr;
@@ -342,6 +381,213 @@ export default function StorefrontSettingsPage() {
                 />
                 <p className="mt-1 text-[11px] text-slate-400">مثال: 970591234567 — بدون + أو مسافات</p>
               </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+              <h3 className="text-sm font-black text-slate-800 dark:text-white">شارات المنتجات</h3>
+              <p className="text-xs text-slate-400">تظهر على بطاقات المنتجات في المتجر العام</p>
+
+              {/* آخر قطعة */}
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">🔴 شارة "آخر قطعة"</span>
+                    <p className="text-xs text-slate-400 mt-0.5">تظهر لما المخزون أقل من الحد</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={badgeLowStockEnabled}
+                    onChange={(e) => setBadgeLowStockEnabled(e.target.checked)}
+                    className="h-5 w-5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                  />
+                </div>
+                {badgeLowStockEnabled && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-slate-500 shrink-0">الحد الأقصى للمخزون</label>
+                    <input
+                      type="number"
+                      value={badgeLowStockThreshold}
+                      onChange={(e) => setBadgeLowStockThreshold(e.target.value)}
+                      min="1" max="20"
+                      className="w-20 rounded-lg border border-slate-200 dark:border-white/10 px-3 py-1.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500"
+                      dir="ltr"
+                    />
+                    <span className="text-xs text-slate-400">قطعة أو أقل</span>
+                  </div>
+                )}
+              </div>
+
+              {/* جديد */}
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">🆕 شارة "جديد"</span>
+                    <p className="text-xs text-slate-400 mt-0.5">تظهر على المنتجات المضافة حديثاً</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={badgeNewEnabled}
+                    onChange={(e) => setBadgeNewEnabled(e.target.checked)}
+                    className="h-5 w-5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                  />
+                </div>
+                {badgeNewEnabled && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-slate-500 shrink-0">خلال آخر</label>
+                    <input
+                      type="number"
+                      value={badgeNewDays}
+                      onChange={(e) => setBadgeNewDays(e.target.value)}
+                      min="1" max="365"
+                      className="w-20 rounded-lg border border-slate-200 dark:border-white/10 px-3 py-1.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500"
+                      dir="ltr"
+                    />
+                    <span className="text-xs text-slate-400">يوم</span>
+                  </div>
+                )}
+              </div>
+
+              {/* عرض محدود */}
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">⚡ شارة "عرض محدود"</span>
+                    <p className="text-xs text-slate-400 mt-0.5">تظهر على كل المنتجات التي عليها خصم</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={badgeLimitedEnabled}
+                    onChange={(e) => setBadgeLimitedEnabled(e.target.checked)}
+                    className="h-5 w-5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                  />
+                </div>
+              </div>
+
+              {/* الأكثر مبيعاً */}
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">🔥 شارة "الأكثر مبيعاً"</span>
+                    <p className="text-xs text-slate-400 mt-0.5">تظهر على أعلى 5 منتجات بالمبيعات</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={badgeBestsellerEnabled}
+                    onChange={(e) => setBadgeBestsellerEnabled(e.target.checked)}
+                    className="h-5 w-5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 dark:text-white">بانر إعلاني</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">شريط ترويجي يظهر أعلى المتجر العام</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={bannerEnabled}
+                  onChange={(e) => setBannerEnabled(e.target.checked)}
+                  className="h-5 w-5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                />
+              </div>
+
+              {bannerEnabled && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1.5">العنوان الرئيسي</label>
+                    <input
+                      type="text"
+                      value={bannerTitle}
+                      onChange={(e) => setBannerTitle(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                      placeholder="مثال: خصم 20% على كل المنتجات"
+                      maxLength={80}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1.5">النص الفرعي (اختياري)</label>
+                    <input
+                      type="text"
+                      value={bannerSubtitle}
+                      onChange={(e) => setBannerSubtitle(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                      placeholder="مثال: العرض ساري حتى نهاية الشهر"
+                      maxLength={120}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">نص الزر (اختياري)</label>
+                      <input
+                        type="text"
+                        value={bannerCtaText}
+                        onChange={(e) => setBannerCtaText(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                        placeholder="تسوق الآن"
+                        maxLength={30}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">رابط الزر</label>
+                      <input
+                        type="text"
+                        value={bannerCtaLink}
+                        onChange={(e) => setBannerCtaLink(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 dark:border-white/10 px-3 py-2.5 text-sm bg-white dark:bg-gray-950 focus:ring-violet-500 focus:border-violet-500"
+                        placeholder="#products"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">لون الخلفية</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={bannerBgColor}
+                          onChange={(e) => setBannerBgColor(e.target.value)}
+                          className="h-10 w-14 rounded-lg border border-slate-200 dark:border-white/10 cursor-pointer bg-white dark:bg-gray-950 p-1"
+                        />
+                        <span className="font-mono text-xs text-slate-500" dir="ltr">{bannerBgColor}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">لون النص</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={bannerTextColor}
+                          onChange={(e) => setBannerTextColor(e.target.value)}
+                          className="h-10 w-14 rounded-lg border border-slate-200 dark:border-white/10 cursor-pointer bg-white dark:bg-gray-950 p-1"
+                        />
+                        <span className="font-mono text-xs text-slate-500" dir="ltr">{bannerTextColor}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* معاينة */}
+                  <div
+                    className="rounded-xl px-4 py-3 flex flex-wrap items-center justify-center gap-3 text-center"
+                    style={{ backgroundColor: bannerBgColor, color: bannerTextColor }}
+                  >
+                    <div>
+                      <p className="text-sm font-black">{bannerTitle || 'العنوان الرئيسي'}</p>
+                      {bannerSubtitle && <p className="text-xs opacity-80 mt-0.5">{bannerSubtitle}</p>}
+                    </div>
+                    {bannerCtaText && (
+                      <span
+                        className="text-xs font-bold px-4 py-1.5 rounded-full"
+                        style={{ backgroundColor: bannerTextColor, color: bannerBgColor }}
+                      >
+                        {bannerCtaText}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">

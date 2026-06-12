@@ -318,7 +318,7 @@ function ProductModal({ item, inCart, onAddToCart, onClose }) {
   );
 }
 
-function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick }) {
+function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick, badgeConfig }) {
   const img = getPublicImageUrl(item.image);
   const out = isInventoryOutOfStock(item);
   const fullPrice = roundMoney(item.price ?? 0);
@@ -340,6 +340,16 @@ function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, sho
             -{discountPercent}%
           </span>
         ) : null}
+        {badgeConfig?.lowStockEnabled && item.stock > 0 && item.stock <= (badgeConfig.lowStockThreshold ?? 3) && (
+          <span className="absolute bottom-2 right-2 bg-rose-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md z-10 animate-pulse">
+            آخر {item.stock} قطعة!
+          </span>
+        )}
+        {badgeConfig?.limitedEnabled && discountPercent > 0 && (
+          <span className="absolute bottom-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md z-10">
+            ⚡ عرض محدود
+          </span>
+        )}
         {showNewBadge ? (
           <span className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] px-2 py-0.5 rounded-md z-10">
             جديد
@@ -396,6 +406,16 @@ export default function PublicStorePage() {
   const [facebookUrl, setFacebookUrl] = useState('');
   const [tiktokUrl, setTiktokUrl] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [badgeConfig, setBadgeConfig] = useState({
+    lowStockEnabled: true, lowStockThreshold: 3,
+    newEnabled: true, newDays: 30,
+    limitedEnabled: false, bestsellerEnabled: true,
+  });
+  const [bannerConfig, setBannerConfig] = useState({
+    enabled: false, title: '', subtitle: '',
+    ctaText: '', ctaLink: '',
+    bgColor: '#1a1b3d', textColor: '#ffffff',
+  });
   const [heroImage, setHeroImage] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
   const [items, setItems] = useState([]);
@@ -442,7 +462,7 @@ export default function PublicStorePage() {
       try {
         const { data: st, error: e1 } = await supabase
           .from('stores')
-          .select('id, name, instagram_url, facebook_url, tiktok_url, whatsapp_number, hero_image, logo_url')
+          .select('id, name, instagram_url, facebook_url, tiktok_url, whatsapp_number, hero_image, logo_url, badge_low_stock_enabled, badge_low_stock_threshold, badge_new_enabled, badge_new_days, badge_limited_enabled, badge_bestseller_enabled, banner_enabled, banner_title, banner_subtitle, banner_cta_text, banner_cta_link, banner_bg_color, banner_text_color')
           .eq('public_slug', slug)
           .eq('public_catalog_enabled', true)
           .maybeSingle();
@@ -459,6 +479,23 @@ export default function PublicStorePage() {
         setFacebookUrl((st.facebook_url ?? '').toString().trim());
         setTiktokUrl((st.tiktok_url ?? '').toString().trim());
         setWhatsappNumber((st.whatsapp_number ?? '').toString().trim());
+        setBadgeConfig({
+          lowStockEnabled: st.badge_low_stock_enabled ?? true,
+          lowStockThreshold: st.badge_low_stock_threshold ?? 3,
+          newEnabled: st.badge_new_enabled ?? true,
+          newDays: st.badge_new_days ?? 30,
+          limitedEnabled: st.badge_limited_enabled ?? false,
+          bestsellerEnabled: st.badge_bestseller_enabled ?? true,
+        });
+        setBannerConfig({
+          enabled: Boolean(st.banner_enabled),
+          title: (st.banner_title ?? '').toString().trim(),
+          subtitle: (st.banner_subtitle ?? '').toString().trim(),
+          ctaText: (st.banner_cta_text ?? '').toString().trim(),
+          ctaLink: (st.banner_cta_link ?? '').toString().trim(),
+          bgColor: (st.banner_bg_color ?? '#1a1b3d').toString(),
+          textColor: (st.banner_text_color ?? '#ffffff').toString(),
+        });
         setHeroImage((st.hero_image ?? '').toString().trim());
         setLogoUrl((st.logo_url ?? '').toString().trim());
 
@@ -1023,6 +1060,35 @@ export default function PublicStorePage() {
         </div>
       )}
 
+      {/* Promo banner */}
+      {bannerConfig.enabled && bannerConfig.title && (
+        <div
+          className="w-full px-4 py-3"
+          style={{ backgroundColor: bannerConfig.bgColor, color: bannerConfig.textColor }}
+        >
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-center">
+            <div>
+              <p className="text-sm sm:text-base font-black">{bannerConfig.title}</p>
+              {bannerConfig.subtitle && (
+                <p className="text-xs opacity-80 mt-0.5">{bannerConfig.subtitle}</p>
+              )}
+            </div>
+            {bannerConfig.ctaText && bannerConfig.ctaLink && (
+              <a
+                href={bannerConfig.ctaLink}
+                {...(/^https?:\/\//i.test(bannerConfig.ctaLink)
+                  ? { target: '_blank', rel: 'noopener noreferrer' }
+                  : {})}
+                className="text-xs font-bold px-4 py-1.5 rounded-full transition-transform hover:scale-105 active:scale-95"
+                style={{ backgroundColor: bannerConfig.textColor, color: bannerConfig.bgColor }}
+              >
+                {bannerConfig.ctaText}
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Hero */}
       <section className="relative z-10 overflow-x-hidden">
         <div className="relative h-[85vh] w-full overflow-hidden">
@@ -1223,6 +1289,7 @@ export default function PublicStorePage() {
                     onAddToCart={addToCart}
                     scrollAnimate
                     onClick={() => setSelectedProduct(item)}
+                    badgeConfig={badgeConfig}
                   />
                 ))
             }
@@ -1383,6 +1450,7 @@ export default function PublicStorePage() {
                       onAddToCart={addToCart}
                       showNewBadge
                       onClick={() => setSelectedProduct(item)}
+                      badgeConfig={badgeConfig}
                     />
                   ))
               }
@@ -1426,6 +1494,7 @@ export default function PublicStorePage() {
                       onAddToCart={addToCart}
                       showBestSellerBadge
                       onClick={() => setSelectedProduct(item)}
+                      badgeConfig={badgeConfig}
                     />
                   ))
               }
