@@ -185,6 +185,105 @@ function TrackOrderModal({ onClose, slug, supabase }) {
   );
 }
 
+function WishlistDrawer({ wishlist, onClose, onAddToCart, onRemove, cartLineById }) {
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handler);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex justify-start" dir="rtl">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm bg-white h-full flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8E8EC]">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">❤️</span>
+            <h2 className="text-base font-bold text-[#0D0E13]">المفضلة</h2>
+            <span className="text-xs font-bold bg-[#5B6BF5]/10 text-[#5B6BF5] px-2 py-0.5 rounded-full">
+              {wishlist.length}
+            </span>
+          </div>
+          <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-[#F5F5F7] hover:bg-[#E8E8EC]">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Items */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          {wishlist.length === 0 ? (
+            <div className="text-center py-16 text-[#6E7278]">
+              <span className="text-5xl block mb-3">❤️</span>
+              <p className="text-sm font-bold">قائمة المفضلة فارغة</p>
+              <p className="text-xs mt-1 opacity-60">اضغط على ❤️ على أي منتج لإضافته</p>
+            </div>
+          ) : (
+            wishlist.map((w) => {
+              const img = getPublicImageUrl(w.image);
+              const inCart = cartLineById.get(w.id);
+              return (
+                <div key={w.id} className="flex items-center gap-3 bg-[#F5F5F7] rounded-xl p-3">
+                  <div className="w-16 h-16 bg-white rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                    {img ? (
+                      <img src={img} alt={w.name} className="max-w-full max-h-full object-contain" />
+                    ) : (
+                      <Package size={24} className="text-[#5B6BF5]/30" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-[#0D0E13] line-clamp-2">{w.name}</p>
+                    <p className="text-[#5B6BF5] font-black text-sm mt-0.5" dir="ltr">₪ {w.price.toFixed(2)}</p>
+                  </div>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => { onAddToCart(w.item); }}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#1a1b3d] text-white hover:bg-[#5B6BF5] transition-colors"
+                      title="إضافة للسلة"
+                    >
+                      <ShoppingCart size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemove(w.id)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                      title="إزالة"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        {wishlist.length > 0 && (
+          <div className="px-4 py-4 border-t border-[#E8E8EC] space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                wishlist.forEach((w) => onAddToCart(w.item));
+                onClose();
+              }}
+              className="w-full bg-[#1a1b3d] text-white rounded-xl py-3 text-sm font-bold hover:bg-[#5B6BF5] transition-all flex items-center justify-center gap-2"
+            >
+              <ShoppingCart size={16} />
+              إضافة الكل للسلة
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProductModal({ item, inCart, onAddToCart, onClose }) {
   const img = getPublicImageUrl(item.image);
   const out = isInventoryOutOfStock(item);
@@ -318,7 +417,7 @@ function ProductModal({ item, inCart, onAddToCart, onClose }) {
   );
 }
 
-function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick, badgeConfig }) {
+function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, showBestSellerBadge = false, scrollAnimate = false, onClick, badgeConfig, isWishlisted, onWishlistToggle }) {
   const img = getPublicImageUrl(item.image);
   const out = isInventoryOutOfStock(item);
   const fullPrice = roundMoney(item.price ?? 0);
@@ -335,8 +434,17 @@ function StoreProductCard({ item, inCart, onAddToCart, showNewBadge = false, sho
       className="group relative bg-white rounded-xl border border-[#E8E8EC] overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 p-3 cursor-pointer"
     >
       <div className="relative aspect-square bg-[#F5F5F7] p-3 flex items-center justify-center">
+        {onWishlistToggle && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onWishlistToggle(item); }}
+            className="absolute top-2 left-2 z-20 w-7 h-7 flex items-center justify-center rounded-full bg-white shadow-sm hover:scale-110 transition-transform"
+          >
+            <span className="text-sm">{isWishlisted ? '❤️' : '🤍'}</span>
+          </button>
+        )}
         {discountPercent > 0 ? (
-          <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md z-10 group-hover:animate-pulse">
+          <span className={`absolute ${onWishlistToggle ? 'top-11' : 'top-2'} left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md z-10 group-hover:animate-pulse`}>
             -{discountPercent}%
           </span>
         ) : null}
@@ -434,6 +542,8 @@ export default function PublicStorePage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const [cart, setCart] = useState(() => []);
+  const [wishlist, setWishlist] = useState(() => []);
+  const [wishlistOpen, setWishlistOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
@@ -565,6 +675,24 @@ export default function PublicStorePage() {
   }, [cart, slug]);
 
   useEffect(() => {
+    if (!slug || typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(`wishlist-${slug}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setWishlist(parsed);
+      }
+    } catch { /* ignore */ }
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(`wishlist-${slug}`, JSON.stringify(wishlist));
+    } catch { /* ignore */ }
+  }, [wishlist, slug]);
+
+  useEffect(() => {
     if (storeName) {
       document.title = storeName;
     }
@@ -675,6 +803,16 @@ export default function PublicStorePage() {
     }
     return { subtotal: roundMoney(sub) };
   }, [cart]);
+
+  const toggleWishlist = useCallback((item) => {
+    setWishlist((prev) => {
+      const exists = prev.find((x) => x.id === item.id);
+      if (exists) return prev.filter((x) => x.id !== item.id);
+      return [...prev, { id: item.id, name: item.name, price: roundMoney(item.priceAfterDiscount ?? item.price ?? 0), image: item.image, item }];
+    });
+  }, []);
+
+  const isInWishlist = useCallback((id) => wishlist.some((x) => x.id === id), [wishlist]);
 
   const addToCart = useCallback((item) => {
     if (!isUuid(String(item.id))) return;
@@ -926,6 +1064,19 @@ export default function PublicStorePage() {
                   {cartCount}
                 </span>
               ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={() => setWishlistOpen(true)}
+              className="relative text-white/80 hover:text-white transition-colors"
+              aria-label="المفضلة"
+            >
+              <span className="text-lg">❤️</span>
+              {wishlist.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[1rem] h-4 px-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold">
+                  {wishlist.length}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -1290,6 +1441,8 @@ export default function PublicStorePage() {
                     scrollAnimate
                     onClick={() => setSelectedProduct(item)}
                     badgeConfig={badgeConfig}
+                    isWishlisted={isInWishlist(item.id)}
+                    onWishlistToggle={toggleWishlist}
                   />
                 ))
             }
@@ -1451,6 +1604,8 @@ export default function PublicStorePage() {
                       showNewBadge
                       onClick={() => setSelectedProduct(item)}
                       badgeConfig={badgeConfig}
+                      isWishlisted={isInWishlist(item.id)}
+                      onWishlistToggle={toggleWishlist}
                     />
                   ))
               }
@@ -1495,6 +1650,8 @@ export default function PublicStorePage() {
                       showBestSellerBadge
                       onClick={() => setSelectedProduct(item)}
                       badgeConfig={badgeConfig}
+                      isWishlisted={isInWishlist(item.id)}
+                      onWishlistToggle={toggleWishlist}
                     />
                   ))
               }
@@ -1865,6 +2022,16 @@ export default function PublicStorePage() {
           onClose={() => setTrackModalOpen(false)}
           slug={slug}
           supabase={supabase}
+        />
+      )}
+
+      {wishlistOpen && (
+        <WishlistDrawer
+          wishlist={wishlist}
+          onClose={() => setWishlistOpen(false)}
+          onAddToCart={addToCart}
+          onRemove={(id) => setWishlist((prev) => prev.filter((x) => x.id !== id))}
+          cartLineById={cartLineById}
         />
       )}
 
