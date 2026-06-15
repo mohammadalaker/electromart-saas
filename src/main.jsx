@@ -24,8 +24,13 @@ import CashFlowPage from './pages/CashFlowPage.jsx'
 import FinancialOverviewPage from './pages/FinancialOverviewPage.jsx'
 import FinancialCenterPage from './pages/FinancialCenterPage.jsx'
 import FundAccountsPage from './pages/FundAccountsPage.jsx'
-import JournalEntriesPage from './pages/JournalEntriesPage.jsx'
-import TrialBalancePage from './pages/TrialBalancePage.jsx'
+import JournalEntriesPage from './pages/accounting/JournalEntriesPage.jsx'
+import ChartOfAccountsPage from './pages/accounting/ChartOfAccountsPage.jsx'
+import GeneralLedgerPage from './pages/accounting/GeneralLedgerPage.jsx'
+import TrialBalancePage from './pages/accounting/TrialBalancePage.jsx'
+import ProfitLossPage from './pages/accounting/ProfitLossPage.jsx'
+import BalanceSheetPage from './pages/accounting/BalanceSheetPage.jsx'
+import AccountingDashboardPage from './pages/accounting/AccountingDashboardPage.jsx'
 import ActivityLogPage from './pages/ActivityLogPage.jsx'
 import DebtAgingReportPage from './pages/DebtAgingReportPage.jsx'
 import PromotionsAdminPage from './pages/PromotionsAdminPage.jsx'
@@ -87,7 +92,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/finance/center" element={<EntitlementGuard module="financial_center"><FinancialCenterPage /></EntitlementGuard>} />
           <Route path="/finance/funds" element={<EntitlementGuard module="funds"><FundAccountsPage /></EntitlementGuard>} />
           <Route path="/finance/journal" element={<EntitlementGuard module="journal_entries"><JournalEntriesPage /></EntitlementGuard>} />
+          <Route path="/finance/accounts" element={<EntitlementGuard module="journal_entries"><ChartOfAccountsPage /></EntitlementGuard>} />
+          <Route path="/finance/ledger" element={<EntitlementGuard module="journal_entries"><GeneralLedgerPage /></EntitlementGuard>} />
           <Route path="/finance/trial-balance" element={<EntitlementGuard module="trial_balance"><TrialBalancePage /></EntitlementGuard>} />
+          <Route path="/finance/profit-loss" element={<EntitlementGuard module="journal_entries"><ProfitLossPage /></EntitlementGuard>} />
+          <Route path="/finance/balance-sheet" element={<EntitlementGuard module="journal_entries"><BalanceSheetPage /></EntitlementGuard>} />
+          <Route path="/finance/accounting" element={<EntitlementGuard module="journal_entries"><AccountingDashboardPage /></EntitlementGuard>} />
           <Route path="/finance/activity-log" element={<EntitlementGuard module="activity_log"><ActivityLogPage /></EntitlementGuard>} />
           <Route path="/finance" element={<EntitlementGuard module="finance_overview"><FinancialOverviewPage /></EntitlementGuard>} />
           <Route path="/finance/cashflow" element={<EntitlementGuard module="finance_overview"><CashFlowPage /></EntitlementGuard>} />
