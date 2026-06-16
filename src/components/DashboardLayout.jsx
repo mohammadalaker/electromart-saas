@@ -3,8 +3,10 @@ import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import PurchaseCreditDueAlerts from './PurchaseCreditDueAlerts';
 import SystemAlerts from './SystemAlerts';
+import NotificationsSystem from './NotificationsSystem';
 import { useStore } from '../context/StoreContext';
 import { supabase } from '../lib/supabaseClient';
+import AIAssistant from './AIAssistant';
 
 import { brandStorageKey } from '../constants/brand.js';
 
@@ -83,9 +85,9 @@ export default function DashboardLayout({ actions, children }) {
           }`}
         >
           {/* Welcome — SaaS hero */}
-          <header className="group relative mb-4 flex flex-col gap-4 overflow-hidden rounded-3xl border border-white/50 bg-white/80 p-6 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.1)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] sm:flex-row sm:items-center sm:justify-between sm:p-7 dark:border-white/10 dark:bg-gray-900/65 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.45)] dark:hover:shadow-[0_16px_48px_-12px_rgba(0,0,0,0.55)]">
+          <header className="group relative z-30 mb-4 flex flex-col gap-4 rounded-3xl border border-white/50 bg-white/80 p-6 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.1)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] sm:flex-row sm:items-center sm:justify-between sm:p-7 dark:border-white/10 dark:bg-gray-900/65 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.45)] dark:hover:shadow-[0_16px_48px_-12px_rgba(0,0,0,0.55)]">
             <div
-              className="pointer-events-none absolute inset-0 bg-gradient-to-l from-indigo-50/90 via-white to-white dark:from-indigo-950/40 dark:via-gray-900/30 dark:to-gray-900/20"
+              className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-l from-indigo-50/90 via-white to-white dark:from-indigo-950/40 dark:via-gray-900/30 dark:to-gray-900/20"
               aria-hidden
             />
             <div className="relative z-[1] flex min-w-0 flex-1 items-start gap-3">
@@ -134,6 +136,7 @@ export default function DashboardLayout({ actions, children }) {
             </div>
             <div className="relative flex flex-wrap shrink-0 items-center gap-3 mt-4 sm:mt-0">
               {actions}
+              <NotificationsSystem />
               <SystemAlerts />
             </div>
           </header>
@@ -143,6 +146,7 @@ export default function DashboardLayout({ actions, children }) {
           {children}
         </div>
       </main>
+      <AIAssistant />
     </div>
   );
 }

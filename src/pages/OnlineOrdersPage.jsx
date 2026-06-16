@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Loader2, Package, Phone, User, MapPin, MessageSquare, ChevronDown, Truck } from 'lucide-react';
+import { Loader2, Package, Phone, User, MapPin, MessageSquare, ChevronDown, Truck, FileText } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
+import { generateInvoicePDF } from '../utils/generatePDF';
 
 const STATUS_MAP = {
   pending:   { label: 'قيد المعالجة', color: 'bg-amber-100 text-amber-700 border-amber-200' },
@@ -238,6 +239,16 @@ export default function OnlineOrdersPage() {
                           واتساب
                         </a>
                       )}
+
+                      <button
+                        type="button"
+                        onClick={() => void generateInvoicePDF(order, store)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-gray-950 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-all duration-200"
+                        title="تحميل فاتورة PDF"
+                      >
+                        <FileText size={14} className="text-violet-600 dark:text-violet-400" />
+                        <span>تحميل PDF</span>
+                      </button>
                     </div>
                   </div>
 

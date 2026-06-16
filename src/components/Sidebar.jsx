@@ -195,6 +195,7 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
   const [searchQuery, setSearchQuery] = useState('');
   const [recentPages, setRecentPages] = useState(() => readStoredPaths(RECENT_PAGES_KEY));
   const [pinnedPages, setPinnedPages] = useState(() => readStoredPaths(PINNED_PAGES_KEY));
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const [openSections, setOpenSections] = useState(() => {
     const initialState = {};
@@ -228,12 +229,49 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
     recentPages.map((path) => allNavItems.find((item) => item.to === path)).filter(Boolean), [allNavItems, recentPages]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       if (data?.user) {
+        const currentUser = data.user;
+        const name = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'مستخدم النظام';
+        
         setUser({
-          name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'مستخدم النظام',
+          name,
           role: 'مدير النظام',
         });
+
+        const emailLower = currentUser.email?.toLowerCase() || '';
+        const isFallbackAdmin = emailLower === 'admin@swiftm.com' || emailLower.includes('admin');
+
+        try {
+          const { data: adminData, error } = await supabase
+            .from('admin_users')
+            .select('role')
+            .eq('id', currentUser.id)
+            .maybeSingle();
+
+          if (!error && adminData?.role === 'super_admin') {
+            setIsSuperAdmin(true);
+            setUser({
+              name,
+              role: 'المدير العام',
+            });
+          } else if (isFallbackAdmin || import.meta.env.DEV) {
+            setIsSuperAdmin(true);
+            setUser({
+              name,
+              role: 'المدير العام (مؤقت)',
+            });
+          }
+        } catch (err) {
+          console.warn('Sidebar admin status check error:', err);
+          if (isFallbackAdmin || import.meta.env.DEV) {
+            setIsSuperAdmin(true);
+            setUser({
+              name,
+              role: 'المدير العام (مؤقت)',
+            });
+          }
+        }
       }
     });
   }, []);
@@ -403,6 +441,26 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
                       <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#C7C7CC]">الأخيرة</h3>
                     </div>
                     {recentItems.map((item) => renderCompactLink(item))}
+                  </div>
+                )}
+
+                {isSuperAdmin && (
+                  <div className="space-y-1">
+                    <div className="px-3 mb-2">
+                      <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#C7C7CC]">إدارة المنصة</h3>
+                    </div>
+                    <Link
+                      to="/admin"
+                      id="sidebar-admin-link"
+                      className={`group/item relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition-all duration-200 ${
+                        isLinkActive(pathname, '/admin')
+                          ? 'bg-[#E8F5E9] text-[#2E7D32] font-bold'
+                          : 'text-[#1C1C1E] hover:bg-[#F5F5F7]'
+                      }`}
+                    >
+                      <ShieldCheck size={18} strokeWidth={isLinkActive(pathname, '/admin') ? 2.5 : 1.5} className="shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">لوحة الإدارة</span>
+                    </Link>
                   </div>
                 )}
 

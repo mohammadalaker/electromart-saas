@@ -11,6 +11,7 @@ import { normalizeItemFromSupabase, roundMoney } from '../utils/productModel';
 import { computeWarrantyStatus, formatWarrantyEndDate } from '../utils/warranty';
 import { confirmPendingOnlineSale, cancelPendingOnlineSale } from '../utils/onlineOrderConfirm';
 import { getPublicImageUrl } from '../utils/storageImageUrl';
+import { generateInvoicePDF } from '../utils/generatePDF';
 
 function parseLineItems(raw) {
   if (raw == null) return [];
@@ -250,6 +251,68 @@ export default function SalesMovements() {
       });
     },
     [productLookup, store?.name]
+  );
+
+  const handleDownloadPDF = useCallback(
+    async (sale) => {
+      // 1. Resolve customer details
+      let customerName = '';
+      if (sale.contact_id) {
+        customerName = contactsMap.get(String(sale.contact_id)) || '';
+      }
+      const notes = sale.notes ? String(sale.notes).trim() : '';
+      const customerMatch = notes.match(/الزبون:\s*([^\n]+)/);
+      const customerFromNotes = customerMatch ? customerMatch[1].trim() : null;
+      if (!customerName && customerFromNotes) {
+        customerName = customerFromNotes;
+      }
+
+      const phoneMatch = notes.match(/(?:الهاتف|تلفون|جوال|رقم):\s*([^\n]+)/);
+      const customerPhone = phoneMatch ? phoneMatch[1].trim() : undefined;
+
+      const addressMatch = notes.match(/(?:العنوان|عنوان):\s*([^\n]+)/);
+      const customerAddress = addressMatch ? addressMatch[1].trim() : undefined;
+
+      // 2. Resolve line items
+      const resolvedLineItems = parseLineItems(sale.line_items).map((line, idx) => {
+        const barcode = line.barcode != null ? String(line.barcode) : '';
+        const productId = line.product_id != null ? String(line.product_id) : '';
+        const product = productLookup.byId.get(productId) || productLookup.byBarcode.get(barcode);
+        const qty = Math.max(1, Number(line.qty ?? line.quantity ?? 1) || 1);
+        const unitPrice = roundMoney(Number(line.unit_price ?? line.unitPrice ?? 0));
+        const lineTotal = roundMoney(Number(line.line_total ?? line.lineTotal ?? unitPrice * qty));
+        const originalPrice = roundMoney(
+          Number(line.original_price ?? line.originalPrice ?? product?.price ?? unitPrice)
+        );
+        const discountPercent =
+          originalPrice > 0 && unitPrice < originalPrice
+            ? Math.round(((originalPrice - unitPrice) / originalPrice) * 100)
+            : 0;
+
+        return {
+          name: line.name || line.product_name || product?.name || (barcode ? `باركود ${barcode}` : `صنف ${idx + 1}`),
+          barcode: barcode || product?.barcode,
+          qty,
+          unitPrice,
+          lineTotal,
+          originalPrice,
+          discountPercent,
+          imageUrl: getPublicImageUrl(line.image_url || line.image || product?.image),
+          serial: line.serial_numbers ? String(line.serial_numbers).trim() : undefined,
+        };
+      });
+
+      const augmentedSale = {
+        ...sale,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        customer_address: customerAddress,
+        line_items: resolvedLineItems,
+      };
+
+      await generateInvoicePDF(augmentedSale, store);
+    },
+    [contactsMap, productLookup, store]
   );
 
   const filteredRows = useMemo(() => {
@@ -637,14 +700,24 @@ export default function SalesMovements() {
                         <td className="py-3.5 px-5 text-center">
                           {isPendingOnline ? (
                             <div className="flex flex-col gap-2 items-center">
-                              <button
-                                type="button"
-                                onClick={() => handlePrint(row)}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:scale-110 dark:text-slate-400 dark:hover:text-indigo-400 transition-all duration-200"
-                                title="طباعة الفاتورة"
-                              >
-                                <Printer size={16} />
-                              </button>
+                              <div className="flex gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrint(row)}
+                                  className="p-1.5 text-slate-500 hover:text-indigo-600 hover:scale-110 dark:text-slate-400 dark:hover:text-indigo-400 transition-all duration-200"
+                                  title="طباعة الفاتورة"
+                                >
+                                  <Printer size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadPDF(row)}
+                                  className="p-1.5 text-slate-500 hover:text-indigo-600 hover:scale-110 dark:text-slate-400 dark:hover:text-indigo-400 transition-all duration-200"
+                                  title="تحميل فاتورة PDF"
+                                >
+                                  <FileText size={16} />
+                                </button>
+                              </div>
                               <button
                                 type="button"
                                 disabled={onlineActionBusyId === row.id}
@@ -706,6 +779,14 @@ export default function SalesMovements() {
                                 title="طباعة الفاتورة"
                               >
                                 <Printer size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadPDF(row)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:scale-110 dark:text-slate-400 dark:hover:text-indigo-400 transition-all duration-200"
+                                title="تحميل فاتورة PDF"
+                              >
+                                <FileText size={16} />
                               </button>
                               <button
                                 type="button"

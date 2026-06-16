@@ -46,6 +46,7 @@ import PurchasePriceHistoryPage from './pages/PurchasePriceHistoryPage.jsx'
 import PublicStoreLanding from './pages/PublicStoreLanding.jsx'
 import LandingPage from './pages/LandingPage.jsx'
 import PublicStorePage from './pages/PublicStorePage.jsx'
+import SuperAdminPage from './pages/admin/SuperAdminPage.jsx'
 import StorefrontSettingsPage from './pages/StorefrontSettingsPage.jsx'
 import StoreStatsPage from './pages/StoreStatsPage.jsx'
 import CouponsPage from './pages/CouponsPage.jsx'
@@ -80,6 +81,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/signin" element={<SignIn />} />
           <Route path="/login" element={<SignIn />} />
           <Route path="/" element={<LandingPage />} />
+          <Route path="/admin" element={<SuperAdminPage />} />
           <Route element={<RequireAuth />}>
           <Route path="/overview" element={<ExecutiveDashboardPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
