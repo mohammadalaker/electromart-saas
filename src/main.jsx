@@ -44,6 +44,7 @@ import WarehouseLocationsPage from './pages/WarehouseLocationsPage.jsx'
 import PurchaseRfqPage from './pages/PurchaseRfqPage.jsx'
 import PurchasePriceHistoryPage from './pages/PurchasePriceHistoryPage.jsx'
 import PublicStoreLanding from './pages/PublicStoreLanding.jsx'
+import LandingPage from './pages/LandingPage.jsx'
 import PublicStorePage from './pages/PublicStorePage.jsx'
 import StorefrontSettingsPage from './pages/StorefrontSettingsPage.jsx'
 import StoreStatsPage from './pages/StoreStatsPage.jsx'
@@ -75,8 +76,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <StoreProvider>
         <Routes>
           <Route path="/signup" element={<SignUp />} />
+          <Route path="/register" element={<SignUp />} />
           <Route path="/signin" element={<SignIn />} />
-          <Route path="/" element={<PublicStoreLanding />} />
+          <Route path="/login" element={<SignIn />} />
+          <Route path="/" element={<LandingPage />} />
           <Route element={<RequireAuth />}>
           <Route path="/overview" element={<ExecutiveDashboardPage />} />
           <Route path="/alerts" element={<AlertsPage />} />

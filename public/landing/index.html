@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سويفتم | منصة إدارة الأعمال الذكية - Swiftm SaaS</title>
+    <meta name="description" content="أدِر متجرك وحساباتك من مكان واحد مع سويفتم. منصة سحابية ذكية ومبتكرة لإدارة نقاط البيع، المخزون، الحسابات، والتقارير المالية للشركات والمتاجر.">
+    
+    <!-- Google Fonts: Tajawal for Arabic, Inter for English -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Modern Reset and CSS Custom Variables */
+        :root {
+            --font-ar: 'Tajawal', sans-serif;
+            --font-en: 'Inter', sans-serif;
+            
+            /* Primary Colors: Indigo/Violet Gradients */
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --secondary: #7c3aed;
+            --secondary-hover: #6d28d9;
+            --accent: #4f46e5;
+            
+            /* Dark Theme Variables (Hero, Testimonials, Footer) */
+            --dark-bg: #090c15;
+            --dark-bg-alt: #0e1322;
+            --dark-card: #151c30;
+            --dark-text: #f8fafc;
+            --dark-text-muted: #94a3b8;
+            --dark-border: rgba(255, 255, 255, 0.08);
+            
+            /* Light Theme Variables (Features, FAQ, Pricing) */
+            --light-bg: #ffffff;
+            --light-bg-alt: #f8fafc;
+            --light-card: #ffffff;
+            --light-text: #0f172a;
+            --light-text-muted: #64748b;
+            --light-border: #e2e8f0;
+            
+            /* Shadows and Glassmorphism */
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.08);
+            --shadow-primary: 0 10px 20px -5px rgba(99, 102, 241, 0.4);
+            
+            --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-normal: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            
+            --border-radius-sm: 8px;
+            --border-radius-md: 12px;
+            --border-radius-lg: 20px;
+            --border-radius-full: 9999px;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        body {
+            font-family: var(--font-ar);
+            background-color: var(--light-bg);
+            color: var(--light-text);
+            line-height: 1.6;
+            overflow-x: hidden;
+            transition: var(--transition-normal);
+        }
+        
+        [dir="ltr"] body {
+            font-family: var(--font-en);
+        }
+        
+        a {
+            text-decoration: none;
+            color: inherit;
+            transition: var(--transition-fast);
+        }
+        
+        ul {
+            list-style: none;
+        }
+        
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        button, input {
+            font-family: inherit;
+        }
+        
+        /* Container utility */
+        .container {
+            width: 100%;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+        
+        /* Typography */
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 700;
+            line-height: 1.25;
+        }
+        
+        /* Gradients & Background Blobs */
+        .bg-indigo-gradient {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+        
+        .glowing-blob {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, rgba(99, 102, 241, 0.05) 50%, rgba(0,0,0,0) 100%);
+            border-radius: var(--border-radius-full);
+            filter: blur(50px);
+            z-index: 0;
+            pointer-events: none;
+        }
+        
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 28px;
+            border-radius: var(--border-radius-md);
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: var(--transition-normal);
+            border: 2px solid transparent;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: #ffffff;
+            box-shadow: var(--shadow-primary);
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -5px rgba(99, 102, 241, 0.5);
+        }
+        
+        .btn-secondary {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+        }
+        
+        .btn-secondary:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        
+        .btn-outline:hover {
+            background-color: var(--primary);
+            color: #ffffff;
+            transform: translateY(-2px);
+        }
+        
+        /* Sticky Glassmorphic Navbar */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            z-index: 1000;
+            transition: var(--transition-normal);
+            border-bottom: 1px solid transparent;
+        }
+        
+        .navbar.scrolled {
+            background-color: rgba(9, 12, 21, 0.85);
+            backdrop-filter: blur(12px);
+            height: 70px;
+            border-bottom: 1px solid var(--dark-border);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .navbar.scrolled-light {
+            background-color: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            height: 70px;
+            border-bottom: 1px solid var(--light-border);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .nav-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+        
+        /* Logo */
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            direction: ltr;
+        }
+        
+        .navbar.scrolled-light .logo {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .logo-icon {
+            width: 34px;
+            height: 34px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+        
+        .logo-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: white;
+            stroke-width: 2.5;
+        }
+        
+        .logo-text {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .logo-ar {
+            font-family: var(--font-ar);
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        
+        /* Navigation Links */
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+        
+        .nav-link {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--dark-text-muted);
+            position: relative;
+            padding: 8px 0;
+        }
+        
+        .navbar.scrolled-light .nav-link {
+            color: var(--light-text-muted);
+        }
+        
+        .nav-link:hover, .navbar.scrolled-light .nav-link:hover {
+            color: var(--primary);
+        }
+        
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background-color: var(--primary);
+            transition: var(--transition-normal);
+        }
+        
+        .nav-link:hover::after {
+            width: 100%;
+        }
+        
+        /* Action buttons in Navbar */
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        /* Language switcher */
+        .lang-switch {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--dark-text);
+            padding: 8px 16px;
+            border-radius: var(--border-radius-full);
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition-fast);
+        }
+        
+        .navbar.scrolled-light .lang-switch {
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            color: var(--light-text);
+        }
+        
+        .lang-switch:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: var(--primary);
+        }
+        
+        .navbar.scrolled-light .lang-switch:hover {
+            background: rgba(0, 0, 0, 0.08);
+            color: var(--primary);
+        }
+        
+        /* Mobile Menu Hamburger */
+        .menu-toggle {
+            display: none;
+            flex-direction: column;
+            justify-content: space-between;
+            width: 30px;
+            height: 21px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            z-index: 1001;
+        }
+        
+        .menu-toggle span {
+            width: 100%;
+            height: 3px;
+            background-color: #ffffff;
+            border-radius: 3px;
+            transition: var(--transition-normal);
+        }
+        
+        .navbar.scrolled-light .menu-toggle span {
+            background-color: var(--light-text);
+        }
+        
+        .menu-toggle.active span:nth-child(1) {
+            transform: translateY(9px) rotate(45deg);
+        }
+        
+        .menu-toggle.active span:nth-child(2) {
+            opacity: 0;
+        }
+        
+        .menu-toggle.active span:nth-child(3) {
+            transform: translateY(-9px) rotate(-45deg);
+        }
+        
+        /* HERO SECTION */
+        .hero {
+            background-color: var(--dark-bg);
+            color: var(--dark-text);
+            position: relative;
+            padding: 160px 0 100px 0;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            min-height: 90vh;
+        }
+        
+        /* Background Glows */
+        .hero .glowing-blob-1 {
+            top: -10%;
+            right: -10%;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, rgba(124, 58, 237, 0.05) 60%, rgba(0,0,0,0) 100%);
+        }
+        
+        .hero .glowing-blob-2 {
+            bottom: -10%;
+            left: -10%;
+            background: radial-gradient(circle, rgba(124, 58, 237, 0.2) 0%, rgba(99, 102, 241, 0.05) 60%, rgba(0,0,0,0) 100%);
+        }
+        
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 48px;
+            align-items: center;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .hero-content {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background-color: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+            border-radius: var(--border-radius-full);
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.05);
+            animation: pulse-glow 3s infinite alternate;
+        }
+        
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.05); border-color: rgba(99, 102, 241, 0.2); }
+            100% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.5); }
+        }
+        
+        .hero-title {
+            font-size: 3.2rem;
+            font-weight: 900;
+            margin-bottom: 20px;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #ffffff 60%, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        [dir="ltr"] .hero-title {
+            font-size: 3rem;
+            line-height: 1.2;
+        }
+        
+        .hero-desc {
+            font-size: 1.15rem;
+            color: var(--dark-text-muted);
+            margin-bottom: 36px;
+            max-width: 540px;
+        }
+        
+        .hero-actions {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 48px;
+            flex-wrap: wrap;
+        }
+        
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            width: 100%;
+            border-top: 1px solid var(--dark-border);
+            padding-top: 32px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #ffffff;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--dark-text-muted);
+        }
+        
+        /* Dashboard Mockup in Hero */
+        .hero-visual {
+            position: relative;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .dashboard-mockup {
+            width: 100%;
+            max-width: 500px;
+            height: 380px;
+            background-color: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-xl), 0 0 50px rgba(99, 102, 241, 0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: float-mockup 6s ease-in-out infinite;
+        }
+        
+        @keyframes float-mockup {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .mockup-header {
+            height: 40px;
+            background-color: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            justify-content: space-between;
+            direction: ltr; /* Keeps macOS dots standard left to right */
+        }
+        
+        .mockup-dots {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .mockup-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: var(--border-radius-full);
+        }
+        
+        .dot-red { background-color: #ef4444; }
+        .dot-yellow { background-color: #f59e0b; }
+        .dot-green { background-color: #10b981; }
+        
+        .mockup-title {
+            font-size: 0.75rem;
+            color: var(--dark-text-muted);
+            font-weight: 500;
+        }
+        
+        .mockup-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .mockup-sidebar {
+            width: 60px;
+            background-color: rgba(255, 255, 255, 0.01);
+            border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 16px;
+            gap: 20px;
+        }
+        
+        .sidebar-item {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--border-radius-sm);
+            background-color: rgba(255, 255, 255, 0.03);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .sidebar-item.active {
+            background-color: var(--primary);
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
+        
+        .sidebar-item svg {
+            width: 16px;
+            height: 16px;
+            stroke: #ffffff;
+            opacity: 0.5;
+            fill: none;
+            stroke-width: 2;
+        }
+        
+        .sidebar-item.active svg {
+            opacity: 1;
+        }
+        
+        .mockup-content {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+        }
+        
+        .mockup-widgets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        
+        .widget {
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: var(--border-radius-sm);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .widget-label {
+            font-size: 0.65rem;
+            color: var(--dark-text-muted);
+        }
+        
+        .widget-val {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        
+        .widget-trend {
+            font-size: 0.6rem;
+            color: #10b981;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        
+        .mockup-chart-container {
+            flex: 1;
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: var(--border-radius-md);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 140px;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .chart-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        
+        .chart-legend {
+            display: flex;
+            gap: 8px;
+            font-size: 0.6rem;
+            color: var(--dark-text-muted);
+        }
+        
+        .legend-color {
+            width: 8px;
+            height: 8px;
+            background-color: var(--primary);
+            border-radius: var(--border-radius-full);
+            display: inline-block;
+        }
+        
+        .chart-svg {
+            flex: 1;
+            width: 100%;
+            height: 80px;
+            margin-top: 8px;
+        }
+        
+        .mockup-table {
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: var(--border-radius-sm);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .table-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.65rem;
+            padding-bottom: 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .table-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        
+        .col-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .col-avatar {
+            width: 18px;
+            height: 18px;
+            background-color: rgba(99, 102, 241, 0.2);
+            border-radius: var(--border-radius-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.5rem;
+            color: var(--primary);
+            font-weight: 700;
+        }
+        
+        .col-status {
+            padding: 2px 6px;
+            border-radius: var(--border-radius-full);
+            font-size: 0.55rem;
+            font-weight: 600;
+        }
+        
+        .status-success {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+        
+        /* SECTION TITLE UTILITY */
+        .section-header {
+            text-align: center;
+            margin-bottom: 64px;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .section-subtitle {
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            display: block;
+        }
+        
+        .section-title {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: var(--light-text);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .dark-section .section-title {
+            color: var(--dark-text);
+            background: linear-gradient(135deg, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        /* FEATURES SECTION */
+        .features {
+            background-color: var(--light-bg);
+            padding: 100px 0;
+            position: relative;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .feature-card {
+            background-color: var(--light-card);
+            border: 1px solid var(--light-border);
+            border-radius: var(--border-radius-lg);
+            padding: 32px;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition-normal);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-8px);
+            box-shadow: var(--shadow-xl);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
+        
+        .feature-icon {
+            width: 56px;
+            height: 56px;
+            background: rgba(99, 102, 241, 0.06);
+            border-radius: var(--border-radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            color: var(--primary);
+            transition: var(--transition-normal);
+        }
+        
+        .feature-card:hover .feature-icon {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #ffffff;
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.3);
+        }
+        
+        .feature-icon svg {
+            width: 28px;
+            height: 28px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 12px;
+            color: var(--light-text);
+        }
+        
+        .feature-card p {
+            font-size: 0.95rem;
+            color: var(--light-text-muted);
+            line-height: 1.6;
+        }
+        
+        /* PRICING SECTION */
+        .pricing {
+            background-color: var(--light-bg-alt);
+            padding: 100px 0;
+            position: relative;
+        }
+        
+        /* Billing Toggle */
+        .billing-toggle-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 48px;
+        }
+        
+        .billing-label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--light-text-muted);
+            cursor: pointer;
+            transition: var(--transition-fast);
+        }
+        
+        .billing-label.active {
+            color: var(--primary);
+        }
+        
+        .billing-toggle {
+            width: 52px;
+            height: 28px;
+            background-color: var(--primary);
+            border-radius: var(--border-radius-full);
+            position: relative;
+            cursor: pointer;
+            transition: var(--transition-normal);
+        }
+        
+        .toggle-knob {
+            width: 20px;
+            height: 20px;
+            background-color: white;
+            border-radius: var(--border-radius-full);
+            position: absolute;
+            top: 4px;
+            left: 4px; /* default for active yearly or monthly */
+            transition: var(--transition-normal);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        [dir="rtl"] .toggle-knob {
+            left: auto;
+            right: 4px;
+        }
+        
+        /* Toggle checked classes (using state classes applied via JS) */
+        .billing-toggle.monthly .toggle-knob {
+            transform: translateX(24px);
+        }
+        
+        [dir="rtl"] .billing-toggle.monthly .toggle-knob {
+            transform: translateX(-24px);
+        }
+        
+        .discount-badge {
+            background-color: #10b981;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: var(--border-radius-full);
+        }
+        
+        /* Pricing Cards Grid */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+            align-items: stretch;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .pricing-card {
+            background-color: var(--light-card);
+            border: 1px solid var(--light-border);
+            border-radius: var(--border-radius-lg);
+            padding: 40px 32px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition-normal);
+        }
+        
+        .pricing-card:hover {
+            transform: translateY(-8px);
+            box-shadow: var(--shadow-xl);
+        }
+        
+        /* Popular Business Plan Styling */
+        .pricing-card.popular {
+            background-color: var(--dark-card);
+            border-color: var(--secondary);
+            color: var(--dark-text);
+            box-shadow: 0 15px 30px rgba(124, 58, 237, 0.15);
+            transform: scale(1.03);
+            z-index: 20;
+        }
+        
+        .pricing-card.popular:hover {
+            transform: scale(1.03) translateY(-8px);
+            box-shadow: 0 20px 40px rgba(124, 58, 237, 0.25);
+        }
+        
+        .popular-badge {
+            position: absolute;
+            top: 20px;
+            left: 32px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #ffffff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: var(--border-radius-full);
+            text-transform: uppercase;
+        }
+        
+        [dir="rtl"] .popular-badge {
+            left: auto;
+            right: 32px;
+        }
+        
+        .pricing-header {
+            margin-bottom: 24px;
+        }
+        
+        .pricing-name {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--light-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            display: block;
+        }
+        
+        .pricing-card.popular .pricing-name {
+            color: var(--primary);
+        }
+        
+        .pricing-price {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--light-text);
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+        
+        .pricing-card.popular .pricing-price {
+            color: var(--dark-text);
+        }
+        
+        .pricing-price span {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--light-text-muted);
+        }
+        
+        .pricing-card.popular .pricing-price span {
+            color: var(--dark-text-muted);
+        }
+        
+        .pricing-divider {
+            height: 1px;
+            background-color: var(--light-border);
+            margin: 24px 0;
+            border: none;
+        }
+        
+        .pricing-card.popular .pricing-divider {
+            background-color: var(--dark-border);
+        }
+        
+        .pricing-features {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 40px;
+            flex: 1;
+        }
+        
+        .pricing-feature {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.95rem;
+        }
+        
+        .pricing-feature-icon {
+            width: 20px;
+            height: 20px;
+            color: #10b981;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .pricing-card.popular .pricing-feature-icon {
+            color: var(--primary);
+        }
+        
+        .pricing-feature-icon svg {
+            width: 18px;
+            height: 18px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.5;
+        }
+        
+        .pricing-btn {
+            width: 100%;
+        }
+        
+        .pricing-card.popular .pricing-btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            box-shadow: var(--shadow-primary);
+        }
+        
+        .pricing-card.popular .pricing-btn:hover {
+            background-color: var(--primary-hover);
+        }
+        
+        /* TESTIMONIALS SECTION */
+        .testimonials {
+            background-color: var(--dark-bg-alt);
+            color: var(--dark-text);
+            padding: 100px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .testimonials .glowing-blob {
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
+        }
+        
+        .testimonials-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .testimonial-card {
+            background-color: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: var(--border-radius-lg);
+            padding: 36px;
+            transition: var(--transition-normal);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        
+        .testimonial-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(99, 102, 241, 0.2);
+            box-shadow: 0 12px 24px -10px rgba(0,0,0,0.5);
+        }
+        
+        .testimonial-stars {
+            display: flex;
+            gap: 4px;
+            color: #fbbf24;
+            margin-bottom: 20px;
+        }
+        
+        .testimonial-stars svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+        
+        .testimonial-text {
+            font-size: 1rem;
+            line-height: 1.7;
+            color: var(--dark-text-muted);
+            margin-bottom: 24px;
+            font-style: italic;
+        }
+        
+        .testimonial-user {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .user-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--border-radius-full);
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: #ffffff;
+            font-size: 1rem;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+        
+        .user-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .user-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #ffffff;
+        }
+        
+        .user-role {
+            font-size: 0.8rem;
+            color: var(--dark-text-muted);
+        }
+        
+        /* FAQ SECTION */
+        .faq {
+            background-color: var(--light-bg);
+            padding: 100px 0;
+            position: relative;
+        }
+        
+        .faq-list {
+            max-width: 768px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .faq-item {
+            background-color: var(--light-bg-alt);
+            border: 1px solid var(--light-border);
+            border-radius: var(--border-radius-md);
+            overflow: hidden;
+            transition: var(--transition-normal);
+        }
+        
+        .faq-header {
+            width: 100%;
+            padding: 20px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: none;
+            border: none;
+            cursor: pointer;
+            text-align: start;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--light-text);
+            transition: var(--transition-fast);
+        }
+        
+        .faq-header:hover {
+            color: var(--primary);
+        }
+        
+        .faq-icon-svg {
+            width: 20px;
+            height: 20px;
+            color: var(--light-text-muted);
+            transition: var(--transition-normal);
+            flex-shrink: 0;
+        }
+        
+        .faq-item.active {
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.04);
+        }
+        
+        .faq-item.active .faq-header {
+            color: var(--primary);
+        }
+        
+        .faq-item.active .faq-icon-svg {
+            transform: rotate(180deg);
+            color: var(--primary);
+        }
+        
+        .faq-content {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+            padding: 0 24px;
+        }
+        
+        .faq-item.active .faq-content {
+            max-height: 200px; /* Adjust according to maximum content size */
+            opacity: 1;
+            padding-bottom: 24px;
+        }
+        
+        .faq-content p {
+            color: var(--light-text-muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        
+        /* CTA SECTION */
+        .cta-section {
+            background-color: var(--dark-bg);
+            padding: 100px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .cta-box {
+            position: relative;
+            border-radius: var(--border-radius-lg);
+            padding: 60px 40px;
+            text-align: center;
+            overflow: hidden;
+            box-shadow: var(--shadow-xl);
+            z-index: 10;
+        }
+        
+        .cta-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            opacity: 0.95;
+            z-index: -1;
+        }
+        
+        .cta-box .glowing-blob {
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 70%);
+            width: 400px;
+            height: 400px;
+            top: -50%;
+            left: -50%;
+        }
+        
+        .cta-title {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 16px;
+        }
+        
+        .cta-desc {
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.85);
+            max-width: 600px;
+            margin: 0 auto 36px auto;
+        }
+        
+        .cta-btn-large {
+            background-color: #ffffff;
+            color: var(--primary);
+            font-size: 1.1rem;
+            padding: 16px 36px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            border: none;
+        }
+        
+        .cta-btn-large:hover {
+            background-color: var(--light-bg-alt);
+            color: var(--primary-hover);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+        }
+        
+        .cta-hint {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 16px;
+            display: block;
+        }
+        
+        /* FOOTER */
+        .footer {
+            background-color: var(--dark-bg);
+            color: var(--dark-text);
+            border-top: 1px solid var(--dark-border);
+            padding: 80px 0 40px 0;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr 0.8fr;
+            gap: 48px;
+            margin-bottom: 60px;
+        }
+        
+        .footer-logo {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .footer-tagline {
+            color: var(--dark-text-muted);
+            font-size: 0.95rem;
+            max-width: 300px;
+            margin-bottom: 24px;
+        }
+        
+        .footer-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            position: relative;
+            padding-bottom: 8px;
+        }
+        
+        .footer-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 30px;
+            height: 2px;
+            background-color: var(--primary);
+        }
+        
+        [dir="rtl"] .footer-title::after {
+            left: auto;
+            right: 0;
+        }
+        
+        .footer-links {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        
+        .footer-link {
+            font-size: 0.9rem;
+            color: var(--dark-text-muted);
+        }
+        
+        .footer-link:hover {
+            color: var(--primary);
+            padding-inline-start: 4px;
+        }
+        
+        .footer-socials {
+            display: flex;
+            gap: 16px;
+        }
+        
+        .social-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--border-radius-full);
+            background-color: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--dark-text-muted);
+            transition: var(--transition-fast);
+        }
+        
+        .social-icon:hover {
+            color: #ffffff;
+            background-color: var(--primary);
+            border-color: var(--primary);
+            transform: translateY(-3px);
+        }
+        
+        .social-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+        
+        .footer-bottom {
+            border-top: 1px solid var(--dark-border);
+            padding-top: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            color: var(--dark-text-muted);
+            font-size: 0.85rem;
+        }
+        
+        /* Language and Dir specific overrides */
+        [lang="en"] .logo-ar {
+            display: none;
+        }
+        [lang="ar"] .logo-en {
+            display: none;
+        }
+        
+        /* Mobile responsive drawer navigation styles */
+        .mobile-nav {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: -100%;
+            width: 300px;
+            background-color: var(--dark-bg);
+            border-inline-end: 1px solid var(--dark-border);
+            z-index: 999;
+            padding: 100px 24px 40px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+            transition: var(--transition-slow);
+            box-shadow: var(--shadow-xl);
+        }
+        
+        [dir="rtl"] .mobile-nav {
+            left: auto;
+            right: -100%;
+        }
+        
+        .mobile-nav.active {
+            left: 0;
+        }
+        
+        [dir="rtl"] .mobile-nav.active {
+            right: 0;
+        }
+        
+        .mobile-nav-links {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        
+        .mobile-nav-link {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--dark-text);
+        }
+        
+        .mobile-nav-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: auto;
+        }
+        
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 998;
+            opacity: 0;
+            pointer-events: none;
+            transition: var(--transition-normal);
+        }
+        
+        .overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        /* Fade-in animation on scroll classes */
+        .fade-in-element {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .fade-in-element.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* RESPONSIVE MEDIA QUERIES */
+        @media (max-width: 1024px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+                gap: 60px;
+                text-align: center;
+            }
+            .hero-content {
+                align-items: center;
+            }
+            .hero-desc {
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .hero-actions {
+                justify-content: center;
+            }
+            .hero-stats {
+                max-width: 500px;
+            }
+            .features-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .pricing-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .pricing-card.popular {
+                transform: scale(1);
+                order: -1;
+            }
+            .pricing-card.popular:hover {
+                transform: translateY(-8px);
+            }
+            .testimonials-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .footer-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .nav-links, .nav-actions .btn {
+                display: none;
+            }
+            .menu-toggle {
+                display: flex;
+            }
+            .hero-title {
+                font-size: 2.4rem;
+            }
+            [dir="ltr"] .hero-title {
+                font-size: 2.2rem;
+            }
+            .features-grid, .pricing-grid, .testimonials-grid {
+                grid-template-columns: 1fr;
+            }
+            .footer-grid {
+                grid-template-columns: 1fr;
+                gap: 36px;
+            }
+            .cta-box {
+                padding: 40px 24px;
+            }
+            .cta-title {
+                font-size: 1.8rem;
+            }
+            .cta-btn-large {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Transparent Overlay for mobile drawer -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Sticky Navbar -->
+    <nav class="navbar" id="navbar">
+        <div class="container nav-container">
+            <a href="#" class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor"/>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-en">Swiftm</span>
+                    <span class="logo-ar">سويفتم</span>
+                </div>
+            </a>
+
+            <!-- Desktop Links -->
+            <ul class="nav-links">
+                <li><a href="#features" class="nav-link" data-i18n="nav-features">المميزات</a></li>
+                <li><a href="#pricing" class="nav-link" data-i18n="nav-pricing">الباقات</a></li>
+                <li><a href="#testimonials" class="nav-link" data-i18n="nav-contact">تواصل معنا</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <button class="lang-switch" id="langToggle">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                    <span id="langText">English</span>
+                </button>
+                <a href="#cta" class="btn btn-primary" style="padding: 8px 20px; font-size: 0.9rem;" data-i18n="nav-cta">ابدأ مجاناً</a>
+                
+                <!-- Hamburger menu button -->
+                <button class="menu-toggle" id="menuToggle">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Mobile Drawer Nav -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="mobile-nav-links">
+            <li><a href="#features" class="mobile-nav-link" data-i18n="nav-features">المميزات</a></li>
+            <li><a href="#pricing" class="mobile-nav-link" data-i18n="nav-pricing">الباقات</a></li>
+            <li><a href="#testimonials" class="mobile-nav-link" data-i18n="nav-contact">تواصل معنا</a></li>
+        </ul>
+        <div class="mobile-nav-actions">
+            <a href="#cta" class="btn btn-primary" data-i18n="nav-cta">ابدأ مجاناً</a>
+        </div>
+    </div>
+
+    <!-- HERO SECTION (Dark gradient background) -->
+    <header class="hero">
+        <div class="glowing-blob glowing-blob-1"></div>
+        <div class="glowing-blob glowing-blob-2"></div>
+        <div class="container hero-grid">
+            <div class="hero-content">
+                <div class="badge">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                    </svg>
+                    <span data-i18n="hero-badge">منصة إدارة الأعمال الذكية</span>
+                </div>
+                <h1 class="hero-title" id="heroTitle" data-i18n="hero-title-ar">أدِر متجرك وحساباتك من مكان واحد</h1>
+                <p class="hero-desc" data-i18n="hero-desc">سويفتم هي المنصة السحابية المتكاملة لربط الكاشير والمبيعات والمخازن مع المحاسبة وإصدار الفواتير الإلكترونية وتقارير الأداء بدقة متناهية.</p>
+                <div class="hero-actions">
+                    <a href="#cta" class="btn btn-primary" data-i18n="hero-cta-trial">ابدأ تجربتك المجانية</a>
+                    <a href="#features" class="btn btn-secondary" data-i18n="hero-cta-demo">شاهد كيف يعمل</a>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat-item">
+                        <span class="stat-value" data-i18n="hero-stat-stores">+500 متجر</span>
+                        <span class="stat-label" data-i18n="hero-stat-stores-lbl">متجر نشط حالياً</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" data-i18n="hero-stat-uptime">99.9% وقت تشغيل</span>
+                        <span class="stat-label" data-i18n="hero-stat-uptime-lbl">استقرار سحابي مضمون</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" data-i18n="hero-stat-support">دعم 24/7</span>
+                        <span class="stat-label" data-i18n="hero-stat-support-lbl">استشارات ومساعدة فنية</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Beautiful interactive CSS mockup -->
+            <div class="hero-visual">
+                <div class="dashboard-mockup">
+                    <div class="mockup-header">
+                        <div class="mockup-dots">
+                            <span class="mockup-dot dot-red"></span>
+                            <span class="mockup-dot dot-yellow"></span>
+                            <span class="mockup-dot dot-green"></span>
+                        </div>
+                        <div class="mockup-title">dashboard.swiftm.sa</div>
+                        <div style="width:40px;"></div>
+                    </div>
+                    <div class="mockup-body">
+                        <div class="mockup-sidebar">
+                            <div class="sidebar-item active">
+                                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                            </div>
+                            <div class="sidebar-item">
+                                <svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+                            </div>
+                            <div class="sidebar-item">
+                                <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                            </div>
+                            <div class="sidebar-item">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                            </div>
+                        </div>
+                        <div class="mockup-content">
+                            <div class="mockup-widgets">
+                                <div class="widget">
+                                    <span class="widget-label" data-i18n="widget-sales">المبيعات اليومية</span>
+                                    <span class="widget-val">₪4,820</span>
+                                    <span class="widget-trend">
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                                        +12%
+                                    </span>
+                                </div>
+                                <div class="widget">
+                                    <span class="widget-label" data-i18n="widget-invoices">الفواتير</span>
+                                    <span class="widget-val">48</span>
+                                    <span class="widget-trend">
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                                        +8%
+                                    </span>
+                                </div>
+                                <div class="widget">
+                                    <span class="widget-label" data-i18n="widget-profit">صافي الربح</span>
+                                    <span class="widget-val" style="color: #10b981;">₪1,950</span>
+                                    <span class="widget-trend">
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                                        +15%
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="mockup-chart-container">
+                                <div class="chart-header">
+                                    <span class="chart-title" data-i18n="widget-chart-title">أداء المبيعات الأسبوعي</span>
+                                    <div class="chart-legend">
+                                        <span class="legend-color"></span>
+                                        <span data-i18n="widget-chart-legend">الإيرادات</span>
+                                    </div>
+                                </div>
+                                <!-- Vector SVG Line Chart -->
+                                <svg class="chart-svg" viewBox="0 0 100 30" preserveAspectRatio="none">
+                                    <defs>
+                                        <linearGradient id="chart-grad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.3"/>
+                                            <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.0"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <path d="M 0 25 Q 20 8 40 18 T 80 5 T 100 12 L 100 30 L 0 30 Z" fill="url(#chart-grad)"/>
+                                    <path d="M 0 25 Q 20 8 40 18 T 80 5 T 100 12" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round"/>
+                                    <circle cx="40" cy="18" r="1.5" fill="var(--secondary)"/>
+                                    <circle cx="80" cy="5" r="1.5" fill="var(--secondary)"/>
+                                </svg>
+                            </div>
+                            <div class="mockup-table">
+                                <div class="table-row">
+                                    <div class="col-left">
+                                        <span class="col-avatar">م أ</span>
+                                        <span class="col-name">محمد أحمد</span>
+                                    </div>
+                                    <span class="col-amount">₪150.00</span>
+                                    <span class="col-status status-success" data-i18n="widget-paid">مدفوعة</span>
+                                </div>
+                                <div class="table-row">
+                                    <div class="col-left">
+                                        <span class="col-avatar" style="background-color:rgba(124, 58, 237, 0.2); color:var(--secondary)">ع خ</span>
+                                        <span class="col-name">عمر خالد</span>
+                                    </div>
+                                    <span class="col-amount">₪320.00</span>
+                                    <span class="col-status status-success" data-i18n="widget-paid">مدفوعة</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- FEATURES SECTION (Light background) -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header fade-in-element">
+                <span class="section-subtitle" data-i18n="features-subtitle">الخصائص والميزات</span>
+                <h2 class="section-title" data-i18n="features-title">كل ما تحتاجه لإدارة وتنمية عملك في مكان واحد</h2>
+            </div>
+            
+            <div class="features-grid">
+                <!-- Feature 1: POS -->
+                <div class="feature-card fade-in-element">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="9" cy="21" r="1"></circle>
+                            <circle cx="20" cy="21" r="1"></circle>
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                        </svg>
+                    </div>
+                    <h3 data-i18n="feature-pos-title">نقطة البيع (POS)</h3>
+                    <p data-i18n="feature-pos-desc">نظام كاشير سريع وموثوق يدعم العمل دون اتصال بالإنترنت مع طباعة فورية للفواتير وإدخال المبيعات.</p>
+                </div>
+                
+                <!-- Feature 2: Inventory -->
+                <div class="feature-card fade-in-element">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                    </div>
+                    <h3 data-i18n="feature-inventory-title">إدارة المخزون</h3>
+                    <p data-i18n="feature-inventory-desc">تتبع مستويات المنتجات والكميات لحظة بلحظة، مع إمكانية إدارة مستودعات متعددة وتنبيهات بنفاد الكمية.</p>
+                </div>
+                
+                <!-- Feature 3: Store -->
+                <div class="feature-card fade-in-element">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                    </div>
+                    <h3 data-i18n="feature-store-title">متجر إلكتروني متكامل</h3>
+                    <p data-i18n="feature-store-desc">أنشئ متجرك الإلكتروني العام بضغطة زر لتمكين عملائك من تصفح البضائع والطلب والدفع المباشر سحابياً.</p>
+                </div>
+                
+                <!-- Feature 4: Accounting -->
+                <div class="feature-card fade-in-element">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24">
+                            <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
+                            <line x1="9" y1="22" x2="9" y2="16"></line>
+                            <line x1="15" y1="22" x2="15" y2="16"></line>
+                            <line x1="9" y1="16" x2="15" y2="16"></line>
+                            <path d="M8 6h8M8 10h8M8 14h3"></path>
+                        </svg>
+                    </div>
+                    <h3 data-i18n="feature-accounting-title">نظام محاسبي كامل</h3>
+                    <p data-i18n="feature-accounting-desc">شجرة حسابات مرنة، قيود يومية تلقائية، وميزان مراجعة وتقارير الأرباح والخسائر والميزانية العمومية بدقة.</p>
+                </div>
+                
+                <!-- Feature 5: Customers -->
+                <div class="feature-card fade-in-element">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </div>
+                    <h3 data-i18n="feature-customers-title">إدارة حسابات العملاء</h3>
+                    <p data-i18n="feature-customers-desc">تتبع ديون وذمم العملاء والمستحقات، مع كشوفات حساب تفصيلية وإرسال تذكيرات تلقائية بالسداد.</p>
+                </div>
+                
+                <!-- Feature 6: Reports -->
+                <div class="feature-card fade-in-element">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                            <path d="M1 20h22"></path>
+                        </svg>
+                    </div>
+                    <h3 data-i18n="feature-reports-title">تقارير وتحليلات ذكية</h3>
+                    <p data-i18n="feature-reports-desc">لوحة تحكم ذكية تعرض مؤشرات الأداء، الأرباح، المنتجات الأكثر مبيعاً لمساعدتك على اتخاذ القرارات الصحيحة.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- PRICING SECTION (Light gray background) -->
+    <section class="pricing" id="pricing">
+        <div class="container">
+            <div class="section-header fade-in-element">
+                <span class="section-subtitle" data-i18n="pricing-subtitle">الخطط والأسعار</span>
+                <h2 class="section-title" data-i18n="pricing-title">باقات مرنة تناسب حجم أعمالك بدون تكاليف خفية</h2>
+            </div>
+            
+            <!-- Monthly/Yearly Toggle -->
+            <div class="billing-toggle-wrapper fade-in-element">
+                <span class="billing-label active" id="labelMonthly" data-i18n="pricing-monthly">شهرياً</span>
+                <div class="billing-toggle" id="billingToggle">
+                    <span class="toggle-knob"></span>
+                </div>
+                <span class="billing-label" id="labelYearly" data-i18n="pricing-yearly">سنوياً</span>
+                <span class="discount-badge" data-i18n="pricing-discount">وفر 20%</span>
+            </div>
+            
+            <div class="pricing-grid">
+                <!-- STARTER Plan -->
+                <div class="pricing-card fade-in-element">
+                    <div class="pricing-header">
+                        <span class="pricing-name" data-i18n="pricing-starter-name">STARTER</span>
+                        <div class="pricing-price" id="priceStarter">
+                            <span class="price-val">49</span>
+                            <span>₪</span>
+                            <span class="price-period" data-i18n="pricing-per-month">/شهرياً</span>
+                        </div>
+                    </div>
+                    <hr class="pricing-divider">
+                    <ul class="pricing-features">
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-starter-feature-1">نقطة البيع (POS)</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-starter-feature-2">إدارة المخزون والكميات</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-starter-feature-3">متجر إلكتروني مدمج</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-starter-feature-4">تقارير المبيعات الأساسية</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-starter-feature-5">دعم فني عبر واتساب</span>
+                        </li>
+                    </ul>
+                    <a href="#cta" class="btn btn-outline pricing-btn" data-i18n="pricing-starter-cta">ابدأ مجاناً 14 يوم</a>
+                </div>
+                
+                <!-- ACCOUNTING Plan -->
+                <div class="pricing-card fade-in-element">
+                    <div class="pricing-header">
+                        <span class="pricing-name" data-i18n="pricing-accounting-name">ACCOUNTING</span>
+                        <div class="pricing-price" id="priceAccounting">
+                            <span class="price-val">69</span>
+                            <span>₪</span>
+                            <span class="price-period" data-i18n="pricing-per-month">/شهرياً</span>
+                        </div>
+                    </div>
+                    <hr class="pricing-divider">
+                    <ul class="pricing-features">
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-accounting-feature-1">دليل الحسابات الشامل</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-accounting-feature-2">القيود اليومية التلقائية</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-accounting-feature-3">دفتر الأستاذ العام</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-accounting-feature-4">ميزان المراجعة الفوري</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-accounting-feature-5">قائمة الدخل والميزانية العمومية</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-accounting-feature-6">دعم فني عبر واتساب</span>
+                        </li>
+                    </ul>
+                    <a href="#cta" class="btn btn-outline pricing-btn" data-i18n="pricing-accounting-cta">ابدأ مجاناً 14 يوم</a>
+                </div>
+                
+                <!-- BUSINESS Plan (Highlighted) -->
+                <div class="pricing-card popular fade-in-element">
+                    <span class="popular-badge" data-i18n="pricing-business-popular">الأكثر شيوعاً</span>
+                    <div class="pricing-header">
+                        <span class="pricing-name" data-i18n="pricing-business-name">BUSINESS</span>
+                        <div class="pricing-price" id="priceBusiness">
+                            <span class="price-val">99</span>
+                            <span>₪</span>
+                            <span class="price-period" data-i18n="pricing-per-month">/شهرياً</span>
+                        </div>
+                    </div>
+                    <hr class="pricing-divider">
+                    <ul class="pricing-features">
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-business-feature-1">كل مميزات باقة Starter</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-business-feature-2">كل مميزات باقة Accounting</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-business-feature-3">أولوية في الدعم الفني 24/7</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-business-feature-4">تقارير متقدمة وتحليلات ذكية</span>
+                        </li>
+                        <li class="pricing-feature">
+                            <span class="pricing-feature-icon">
+                                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </span>
+                            <span data-i18n="pricing-business-feature-5">نسخ احتياطي تلقائي وسحابي</span>
+                        </li>
+                    </ul>
+                    <a href="#cta" class="btn btn-primary pricing-btn" data-i18n="pricing-business-cta">ابدأ مجاناً 14 يوم</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- TESTIMONIALS (Dark background) -->
+    <section class="testimonials dark-section" id="testimonials">
+        <div class="glowing-blob"></div>
+        <div class="container">
+            <div class="section-header fade-in-element">
+                <span class="section-subtitle" data-i18n="testimonials-subtitle">شركاء النجاح</span>
+                <h2 class="section-title" data-i18n="testimonials-title">قصص نجاح ملهمة من عملاء سويفتم الفخورين</h2>
+            </div>
+            
+            <div class="testimonials-grid">
+                <!-- Testimonial 1 -->
+                <div class="testimonial-card fade-in-element">
+                    <div>
+                        <div class="testimonial-stars">
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                        </div>
+                        <p class="testimonial-text" data-i18n="testimonial-1-text">"سويفتم غيّر طريقة إدارتي للمبيعات والمخزون تماماً. نقطة البيع سريعة والمحاسبة أصبحت بسيطة جداً."</p>
+                    </div>
+                    <div class="testimonial-user">
+                        <div class="user-avatar">أ س</div>
+                        <div class="user-info">
+                            <span class="user-name" data-i18n="testimonial-1-name">أحمد السعيد</span>
+                            <span class="user-role" data-i18n="testimonial-1-role">صاحب سوبرماركت البشير</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Testimonial 2 -->
+                <div class="testimonial-card fade-in-element">
+                    <div>
+                        <div class="testimonial-stars">
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                        </div>
+                        <p class="testimonial-text" data-i18n="testimonial-2-text">"المتجر الإلكتروني المرتبط بالمخزون ساعدني في زيادة مبيعاتي والوصول لعملاء جدد دون تعقيد."</p>
+                    </div>
+                    <div class="testimonial-user">
+                        <div class="user-avatar" style="background: linear-gradient(135deg, var(--secondary), var(--primary));">س ك</div>
+                        <div class="user-info">
+                            <span class="user-name" data-i18n="testimonial-2-name">سارة الكردي</span>
+                            <span class="user-role" data-i18n="testimonial-2-role">مؤسسة بوتيك فاشن</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Testimonial 3 -->
+                <div class="testimonial-card fade-in-element">
+                    <div>
+                        <div class="testimonial-stars">
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            <svg viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                        </div>
+                        <p class="testimonial-text" data-i18n="testimonial-3-text">"التقارير الذكية والميزانية العمومية تعطينى صورة واضحة عن وضعنا المالي في أي لحظة. الدعم الفني رائع."</p>
+                    </div>
+                    <div class="testimonial-user">
+                        <div class="user-avatar" style="background: linear-gradient(135deg, var(--primary), var(--secondary));">خ م</div>
+                        <div class="user-info">
+                            <span class="user-name" data-i18n="testimonial-3-name">خالد منصور</span>
+                            <span class="user-role" data-i18n="testimonial-3-role">مدير شركة المنصور التجارية</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ SECTION (Light background) -->
+    <section class="faq" id="faq">
+        <div class="container">
+            <div class="section-header fade-in-element">
+                <span class="section-subtitle" data-i18n="faq-subtitle">الأسئلة الشائعة</span>
+                <h2 class="section-title" data-i18n="faq-title">هل لديك استفسارات؟ إليك إجابات لأكثر الأسئلة شيوعاً</h2>
+            </div>
+            
+            <div class="faq-list">
+                <!-- FAQ 1 -->
+                <div class="faq-item fade-in-element">
+                    <button class="faq-header">
+                        <span data-i18n="faq-1-q">هل يوجد عقد طويل الأمد للاشتراك؟</span>
+                        <svg class="faq-icon-svg" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                    <div class="faq-content">
+                        <p data-i18n="faq-1-a">لا، لا توجد عقود طويلة الأمد أو التزامات مفروضة. يمكنك تغيير باقة اشتراكك، ترقيتها، أو إلغاؤها في أي وقت تريده ودون دفع أي رسوم إضافية.</p>
+                    </div>
+                </div>
+                
+                <!-- FAQ 2 -->
+                <div class="faq-item fade-in-element">
+                    <button class="faq-header">
+                        <span data-i18n="faq-2-q">هل بياناتي آمنة ومحمية على المنصة؟</span>
+                        <svg class="faq-icon-svg" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                    <div class="faq-content">
+                        <p data-i18n="faq-2-a">بكل تأكيد. نحن نأخذ أمن بياناتك على محمل الجد. نقوم بتشفير جميع البيانات وحفظ نسخ احتياطية تلقائية يومياً في خوادم سحابية آمنة ومحمية بأحدث بروتوكولات الأمان العالمية المتقدمة.</p>
+                    </div>
+                </div>
+                
+                <!-- FAQ 3 -->
+                <div class="faq-item fade-in-element">
+                    <button class="faq-header">
+                        <span data-i18n="faq-3-q">هل يمكنني تغيير باقتي أو ترقيتها لاحقاً؟</span>
+                        <svg class="faq-icon-svg" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                    <div class="faq-content">
+                        <p data-i18n="faq-3-c">نعم، يمكنك تعديل باقتك أو ترقيتها أو خفضها مباشرة وبكل سهولة من لوحة تحكم حسابك وسيتم تسوية الفروقات المالية وحسابها تلقائياً.</p>
+                    </div>
+                </div>
+                
+                <!-- FAQ 4 -->
+                <div class="faq-item fade-in-element">
+                    <button class="faq-header">
+                        <span data-i18n="faq-4-q">هل يدعم النظام اللغتين العربية والإنجليزية؟</span>
+                        <svg class="faq-icon-svg" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                    <div class="faq-content">
+                        <p data-i18n="faq-4-a">نعم، سويفتم يدعم اللغتين العربية والإنجليزية دعماً كاملاً بما يتضمن واجهة المستخدم، الفواتير، التقارير والاتجاهات اللغوية (RTL/LTR) للعمل بمرونة تامة.</p>
+                    </div>
+                </div>
+                
+                <!-- FAQ 5 -->
+                <div class="faq-item fade-in-element">
+                    <button class="faq-header">
+                        <span data-i18n="faq-5-q">ما هي طرق الدفع المتاحة للاشتراك بالخدمة؟</span>
+                        <svg class="faq-icon-svg" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                    <div class="faq-content">
+                        <p data-i18n="faq-5-a">نقبل الدفع عبر بطاقات الائتمان الرئيسية (فيزا، ماستركارد)، تحويلات بنكية مباشرة، والعديد من بوابات ومحافظ الدفع المحلية المعتمدة لتسهيل عملية الاشتراك.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA SECTION (Indigo Gradient) -->
+    <section class="cta-section" id="cta">
+        <div class="container">
+            <div class="cta-box fade-in-element">
+                <div class="glowing-blob"></div>
+                <h2 class="cta-title" data-i18n="cta-title">جاهز لبدء تنظيم وتطوير أعمالك اليوم؟</h2>
+                <p class="cta-desc" data-i18n="cta-desc-full">سجل الآن وابدأ تجربتك المجانية لمدة 14 يوماً. استمتع بكل الميزات والتقارير ولا تتردد، فلن نطلب منك بيانات بطاقة الائتمان للتجربة.</p>
+                <a href="/register" class="btn btn-secondary cta-btn-large" data-i18n="cta-btn">ابدأ تجربتك المجانية - 14 يوم بدون بطاقة ائتمان</a>
+                <span class="cta-hint" data-i18n="cta-hint">سهل الإعداد • بدون التزامات • دعم مستمر</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER (Dark background) -->
+    <footer class="footer" id="footer">
+        <div class="container footer-grid">
+            <div>
+                <div class="footer-logo logo">
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor"/>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <span class="logo-en">Swiftm</span>
+                        <span class="logo-ar">سويفتم</span>
+                    </div>
+                </div>
+                <p class="footer-tagline" data-i18n="footer-tagline">منصتك المتكاملة والموثوقة لإدارة متجرك، حساباتك ومخازنك بطرق عصرية، ذكية وآمنة بالكامل.</p>
+                <div class="footer-socials">
+                    <a href="#" class="social-icon" aria-label="Facebook">
+                        <svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg>
+                    </a>
+                    <a href="#" class="social-icon" aria-label="Twitter">
+                        <svg viewBox="0 0 24 24"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path></svg>
+                    </a>
+                    <a href="#" class="social-icon" aria-label="LinkedIn">
+                        <svg viewBox="0 0 24 24"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>
+                    </a>
+                </div>
+            </div>
+            
+            <div>
+                <h3 class="footer-title" data-i18n="footer-nav-title">روابط مهمة</h3>
+                <ul class="footer-links">
+                    <li><a href="#features" class="footer-link" data-i18n="nav-features">المميزات</a></li>
+                    <li><a href="#pricing" class="footer-link" data-i18n="nav-pricing">الباقات</a></li>
+                    <li><a href="#faq" class="footer-link" data-i18n="nav-faq">الأسئلة الشائعة</a></li>
+                </ul>
+            </div>
+            
+            <div>
+                <h3 class="footer-title" data-i18n="footer-legal-title">قانوني</h3>
+                <ul class="footer-links">
+                    <li><a href="#" class="footer-link" data-i18n="footer-privacy">سياسة الخصوصية</a></li>
+                    <li><a href="#" class="footer-link" data-i18n="footer-terms">الشروط والأحكام</a></li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="container footer-bottom">
+            <span data-i18n="footer-copyright">© 2026 Swiftm. جميع الحقوق محفوظة.</span>
+            <span style="direction: ltr;">Made with ♥ by Swiftm Team</span>
+        </div>
+    </footer>
+
+    <!-- Translation and Accordion Interactive JavaScript -->
+    <script>
+        // Dictionary for dynamic translation
+        const translations = {
+            ar: {
+                "nav-features": "المميزات",
+                "nav-pricing": "الباقات",
+                "nav-contact": "تواصل معنا",
+                "nav-faq": "الأسئلة الشائعة",
+                "nav-cta": "ابدأ مجاناً",
+                "hero-badge": "منصة إدارة الأعمال الذكية",
+                "hero-title-ar": "أدِر متجرك وحساباتك من مكان واحد",
+                "hero-desc": "سويفتم هي المنصة السحابية المتكاملة لربط الكاشير والمبيعات والمخازن مع المحاسبة وإصدار الفواتير الإلكترونية وتقارير الأداء بدقة متناهية.",
+                "hero-cta-trial": "ابدأ تجربتك المجانية",
+                "hero-cta-demo": "شاهد كيف يعمل",
+                "hero-stat-stores": "+500 متجر",
+                "hero-stat-stores-lbl": "متجر نشط حالياً",
+                "hero-stat-uptime": "99.9% وقت تشغيل",
+                "hero-stat-uptime-lbl": "استقرار سحابي مضمون",
+                "hero-stat-support": "دعم 24/7",
+                "hero-stat-support-lbl": "استشارات ومساعدة فنية",
+                "widget-sales": "المبيعات اليومية",
+                "widget-invoices": "الفواتير",
+                "widget-profit": "صافي الربح",
+                "widget-chart-title": "أداء المبيعات الأسبوعي",
+                "widget-chart-legend": "الإيرادات",
+                "widget-paid": "مدفوعة",
+                "features-subtitle": "الخصائص والميزات",
+                "features-title": "كل ما تحتاجه لإدارة وتنمية عملك في مكان واحد",
+                "feature-pos-title": "نقطة البيع (POS)",
+                "feature-pos-desc": "نظام كاشير سريع وموثوق يدعم العمل دون اتصال بالإنترنت مع طباعة فورية للفواتير وإدخال المبيعات.",
+                "feature-inventory-title": "إدارة المخزون",
+                "feature-inventory-desc": "تتبع مستويات المنتجات والكميات لحظة بلحظة، مع إمكانية إدارة مستودعات متعددة وتنبيهات بنفاد الكمية.",
+                "feature-store-title": "متجر إلكتروني متكامل",
+                "feature-store-desc": "أنشئ متجرك الإلكتروني العام بضغطة زر لتمكين عملائك من تصفح البضائع والطلب والدفع المباشر سحابياً.",
+                "feature-accounting-title": "نظام محاسبي كامل",
+                "feature-accounting-desc": "شجرة حسابات مرنة، قيود يومية تلقائية، وميزان مراجعة وتقارير الأرباح والخسائر والميزانية العمومية بدقة.",
+                "feature-customers-title": "إدارة حسابات العملاء",
+                "feature-customers-desc": "تتبع ديون وذمم العملاء والمستحقات، مع كشوفات حساب تفصيلية وإرسال تذكيرات تلقائية بالسداد.",
+                "feature-reports-title": "تقارير وتحليلات ذكية",
+                "feature-reports-desc": "لوحة تحكم ذكية تعرض مؤشرات الأداء، الأرباح، المنتجات الأكثر مبيعاً لمساعدتك على اتخاذ القرارات الصحيحة.",
+                "pricing-subtitle": "الخطط والأسعار",
+                "pricing-title": "باقات مرنة تناسب حجم أعمالك بدون تكاليف خفية",
+                "pricing-monthly": "شهرياً",
+                "pricing-yearly": "سنوياً",
+                "pricing-discount": "وفر 20%",
+                "pricing-per-month": "/شهرياً",
+                "pricing-per-year": "/سنوياً",
+                "pricing-starter-name": "STARTER",
+                "pricing-starter-feature-1": "نقطة البيع (POS)",
+                "pricing-starter-feature-2": "إدارة المخزون والكميات",
+                "pricing-starter-feature-3": "متجر إلكتروني مدمج",
+                "pricing-starter-feature-4": "تقارير المبيعات الأساسية",
+                "pricing-starter-feature-5": "دعم فني عبر واتساب",
+                "pricing-starter-cta": "ابدأ مجاناً 14 يوم",
+                "pricing-accounting-name": "ACCOUNTING",
+                "pricing-accounting-feature-1": "دليل الحسابات الشامل",
+                "pricing-accounting-feature-2": "القيود اليومية التلقائية",
+                "pricing-accounting-feature-3": "دفتر الأستاذ العام",
+                "pricing-accounting-feature-4": "ميزان المراجعة الفوري",
+                "pricing-accounting-feature-5": "قائمة الدخل والميزانية العمومية",
+                "pricing-accounting-feature-6": "دعم فني عبر واتساب",
+                "pricing-accounting-cta": "ابدأ مجاناً 14 يوم",
+                "pricing-business-name": "BUSINESS",
+                "pricing-business-popular": "الأكثر شيوعاً",
+                "pricing-business-feature-1": "كل مميزات باقة Starter",
+                "pricing-business-feature-2": "كل مميزات باقة Accounting",
+                "pricing-business-feature-3": "أولوية في الدعم الفني 24/7",
+                "pricing-business-feature-4": "تقارير متقدمة وتحليلات ذكية",
+                "pricing-business-feature-5": "نسخ احتياطي تلقائي وسحابي",
+                "pricing-business-cta": "ابدأ مجاناً 14 يوم",
+                "testimonials-subtitle": "شركاء النجاح",
+                "testimonials-title": "قصص نجاح ملهمة من عملاء سويفتم الفخورين",
+                "testimonial-1-text": "\"سويفتم غيّر طريقة إدارتي للمبيعات والمخزون تماماً. نقطة البيع سريعة والمحاسبة أصبحت بسيطة جداً.\"",
+                "testimonial-1-name": "أحمد السعيد",
+                "testimonial-1-role": "صاحب سوبرماركت البشير",
+                "testimonial-2-text": "\"المتجر الإلكتروني المرتبط بالمخزون ساعدني في زيادة مبيعاتي والوصول لعملاء جدد دون تعقيد.\"",
+                "testimonial-2-name": "سارة الكردي",
+                "testimonial-2-role": "مؤسسة بوتيك فاشن",
+                "testimonial-3-text": "\"التقارير الذكية والميزانية العمومية تعطينى صورة واضحة عن وضعنا المالي في أي لحظة. الدعم الفني رائع.\"",
+                "testimonial-3-name": "خالد منصور",
+                "testimonial-3-role": "مدير شركة المنصور التجارية",
+                "faq-subtitle": "الأسئلة الشائعة",
+                "faq-title": "هل لديك استفسارات؟ إليك إجابات لأكثر الأسئلة شيوعاً",
+                "faq-1-q": "هل يوجد عقد طويل الأمد للاشتراك؟",
+                "faq-1-a": "لا، لا توجد عقود طويلة الأمد أو التزامات مفروضة. يمكنك تغيير باقة اشتراكك، ترقيتها، أو إلغاؤها في أي وقت تريده ودون دفع أي رسوم إضافية.",
+                "faq-2-q": "هل بياناتي آمنة ومحمية على المنصة؟",
+                "faq-2-a": "بكل تأكيد. نحن نأخذ أمن بياناتك على محمل الجد. نقوم بتشفير جميع البيانات وحفظ نسخ احتياطية تلقائية يومياً في خوادم سحابية آمنة ومحمية بأحدث بروتوكولات الأمان العالمية المتقدمة.",
+                "faq-3-q": "هل يمكنني تغيير باقتي أو ترقيتها لاحقاً؟",
+                "faq-3-c": "نعم، يمكنك تعديل باقتك أو ترقيتها أو خفضها مباشرة وبكل سهولة من لوحة تحكم حسابك وسيتم تسوية الفروقات المالية وحسابها تلقائياً.",
+                "faq-4-q": "هل يدعم النظام اللغتين العربية والإنجليزية؟",
+                "faq-4-a": "نعم، سويفتم يدعم اللغتين العربية والإنجليزية دعماً كاملاً بما يتضمن واجهة المستخدم، الفواتير، التقارير والاتجاهات اللغوية (RTL/LTR) للعمل بمرونة تامة.",
+                "faq-5-q": "ما هي طرق الدفع المتاحة للاشتراك بالخدمة؟",
+                "faq-5-a": "نقبل الدفع عبر بطاقات الائتمان الرئيسية (فيزا، ماستركارد)، تحويلات بنكية مباشرة، والعديد من بوابات ومحافظ الدفع المحلية المعتمدة لتسهيل عملية الاشتراك.",
+                "cta-title": "جاهز لبدء تنظيم وتطوير أعمالك اليوم؟",
+                "cta-desc-full": "سجل الآن وابدأ تجربتك المجانية لمدة 14 يوماً. استمتع بكل الميزات والتقارير ولا تتردد، فلن نطلب منك بيانات بطاقة الائتمان للتجربة.",
+                "cta-btn": "ابدأ تجربتك المجانية - 14 يوم بدون بطاقة ائتمان",
+                "cta-hint": "سهل الإعداد • بدون التزامات • دعم مستمر",
+                "footer-tagline": "منصتك المتكاملة والموثوقة لإدارة متجرك، حساباتك ومخازنك بطرق عصرية، ذكية وآمنة بالكامل.",
+                "footer-nav-title": "روابط مهمة",
+                "footer-legal-title": "قانوني",
+                "footer-privacy": "سياسة الخصوصية",
+                "footer-terms": "الشروط والأحكام",
+                "footer-copyright": "© 2026 سويفتم. جميع الحقوق محفوظة."
+            },
+            en: {
+                "nav-features": "Features",
+                "nav-pricing": "Pricing",
+                "nav-contact": "Contact",
+                "nav-faq": "FAQ",
+                "nav-cta": "Get Started",
+                "hero-badge": "Smart Business Management Platform",
+                "hero-title-ar": "Manage Your Store & Accounting in One Place",
+                "hero-desc": "Swiftm is the integrated cloud platform connecting POS, sales, and inventory with accounting, electronic invoicing, and performance reports with extreme accuracy.",
+                "hero-cta-trial": "Start Free Trial",
+                "hero-cta-demo": "Watch How it Works",
+                "hero-stat-stores": "+500 Stores",
+                "hero-stat-stores-lbl": "Currently Active Stores",
+                "hero-stat-uptime": "99.9% Uptime",
+                "hero-stat-uptime-lbl": "Guaranteed Cloud Stability",
+                "hero-stat-support": "24/7 Support",
+                "hero-stat-support-lbl": "Consultations & Tech Help",
+                "widget-sales": "Daily Sales",
+                "widget-invoices": "Invoices",
+                "widget-profit": "Net Profit",
+                "widget-chart-title": "Weekly Sales Performance",
+                "widget-chart-legend": "Revenue",
+                "widget-paid": "Paid",
+                "features-subtitle": "Features & Modules",
+                "features-title": "Everything you need to run your business in one place",
+                "feature-pos-title": "Point of Sale (POS)",
+                "feature-pos-desc": "Fast cashier system working offline with instant invoice printing and sales entry.",
+                "feature-inventory-title": "Inventory Management",
+                "feature-inventory-desc": "Real-time stock and product quantity tracking with multi-warehouse capability and low-stock alerts.",
+                "feature-store-title": "Integrated Online Store",
+                "feature-store-desc": "Launch your public online storefront in one click to enable online orders and cloud payments.",
+                "feature-accounting-title": "Accounting Module",
+                "feature-accounting-desc": "Flexible chart of accounts, automated journals, trial balances, and precise profit/loss reporting.",
+                "feature-customers-title": "Customer CRM",
+                "feature-customers-desc": "Track credit lines, accounts receivables, statements, and send automatic payment reminders.",
+                "feature-reports-title": "Smart Reports",
+                "feature-reports-desc": "Smart dashboard displaying KPIs, profits, and top-selling products to guide your decisions.",
+                "pricing-subtitle": "Plans & Pricing",
+                "pricing-title": "Flexible plans that scale with your business with zero hidden fees",
+                "pricing-monthly": "Monthly",
+                "pricing-yearly": "Yearly",
+                "pricing-discount": "Save 20%",
+                "pricing-per-month": "/month",
+                "pricing-per-year": "/year",
+                "pricing-starter-name": "STARTER",
+                "pricing-starter-feature-1": "Point of Sale (POS)",
+                "pricing-starter-feature-2": "Inventory & Stock Tracking",
+                "pricing-starter-feature-3": "Built-in Online Store",
+                "pricing-starter-feature-4": "Basic Sales Reports",
+                "pricing-starter-feature-5": "WhatsApp Tech Support",
+                "pricing-starter-cta": "Start 14-Day Free Trial",
+                "pricing-accounting-name": "ACCOUNTING",
+                "pricing-accounting-feature-1": "Comprehensive Chart of Accounts",
+                "pricing-accounting-feature-2": "Automated Journal Entries",
+                "pricing-accounting-feature-3": "General Ledger Book",
+                "pricing-accounting-feature-4": "Instant Trial Balance",
+                "pricing-accounting-feature-5": "Income Statement & Balance Sheet",
+                "pricing-accounting-feature-6": "WhatsApp Tech Support",
+                "pricing-accounting-cta": "Start 14-Day Free Trial",
+                "pricing-business-name": "BUSINESS",
+                "pricing-business-popular": "Most Popular",
+                "pricing-business-feature-1": "All Starter Plan Features",
+                "pricing-business-feature-2": "All Accounting Plan Features",
+                "pricing-business-feature-3": "Priority 24/7 Tech Support",
+                "pricing-business-feature-4": "Advanced Reports & Analytics",
+                "pricing-business-feature-5": "Automated Secure Backups",
+                "pricing-business-cta": "Start 14-Day Free Trial",
+                "testimonials-subtitle": "Testimonials",
+                "testimonials-title": "Inspiring success stories from proud Swiftm partners",
+                "testimonial-1-text": "\"Swiftm completely changed how I manage sales and inventory. The POS is fast and accounting became very simple.\"",
+                "testimonial-1-name": "Ahmed Al-Saeed",
+                "testimonial-1-role": "Owner of Al-Basheer Supermarket",
+                "testimonial-2-text": "\"The online store linked to the inventory helped me increase my sales and reach new customers without complexity.\"",
+                "testimonial-2-name": "Sarah Al-Kurdi",
+                "testimonial-2-role": "Founder of Fashion Boutique",
+                "testimonial-3-text": "\"Smart reports and the balance sheet give me a clear picture of our financial situation at any moment. Customer support is outstanding.\"",
+                "testimonial-3-name": "Khaled Mansour",
+                "testimonial-3-role": "Manager of Al-Mansour Trading Co.",
+                "faq-subtitle": "FAQ",
+                "faq-title": "Have questions? Here are answers to common questions",
+                "faq-1-q": "Is there a long-term contract?",
+                "faq-1-a": "No, there are no long-term contracts or commitments. You can change your subscription, upgrade, or cancel at any time with no penalties.",
+                "faq-2-q": "Is my business data safe and secure?",
+                "faq-2-a": "Absolutely. Data security is our top priority. We encrypt all data and take automatic daily backups onto secure cloud servers protected by global security standards.",
+                "faq-3-q": "Can I switch or upgrade plans later?",
+                "faq-3-c": "Yes, you can easily change, upgrade or downgrade your plan directly from your account settings panel, and billing balances adjust automatically.",
+                "faq-4-q": "Does the software support English and Arabic?",
+                "faq-4-a": "Yes, Swiftm supports English and Arabic fully, adapting user interfaces, invoices, financial charts, and text directions (RTL/LTR) smoothly.",
+                "faq-5-q": "What payment methods are supported?",
+                "faq-5-a": "We accept major credit cards (Visa, MasterCard), bank transfers, and several secure local wallets and payment systems to ensure easy setup.",
+                "cta-title": "Ready to scale and manage your business today?",
+                "cta-desc-full": "Register now and start your free 14-day trial. Experience all modules and reports immediately. No credit card required.",
+                "cta-btn": "Start Your Free Trial - 14 Days, No Credit Card Required",
+                "cta-hint": "Easy Setup • No Commitments • Continuous Support",
+                "footer-tagline": "Your modern, integrated, and secure platform to manage stores, cashier registers, inventories, and company accounting.",
+                "footer-nav-title": "Quick Links",
+                "footer-legal-title": "Legal",
+                "footer-privacy": "Privacy Policy",
+                "footer-terms": "Terms & Conditions",
+                "footer-copyright": "© 2026 Swiftm. All rights reserved."
+            }
+        };
+
+        // Monthly / Yearly prices
+        const prices = {
+            monthly: {
+                starter: 49,
+                accounting: 69,
+                business: 99
+            },
+            yearly: {
+                // 20% discount applied: monthly rate * 12 * 0.8
+                starter: Math.round(49 * 0.8),
+                accounting: Math.round(69 * 0.8),
+                business: Math.round(99 * 0.8)
+            }
+        };
+
+        let currentLang = "ar";
+        let billingPeriod = "monthly"; // default
+
+        // Language toggle event listener
+        const langToggle = document.getElementById("langToggle");
+        const langText = document.getElementById("langText");
+        
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem("swiftm_lang", lang);
+            
+            // Set document attributes
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+            
+            // Toggle body font style changes and labels
+            if (lang === "ar") {
+                langText.textContent = "English";
+            } else {
+                langText.textContent = "العربية";
+            }
+            
+            // Translate all elements with data-i18n
+            document.querySelectorAll("[data-i18n]").forEach(element => {
+                const key = element.getAttribute("data-i18n");
+                if (translations[lang] && translations[lang][key]) {
+                    element.innerHTML = translations[lang][key];
+                }
+            });
+
+            // Update page title
+            if (lang === "ar") {
+                document.title = "سويفتم | منصة إدارة الأعمال الذكية - Swiftm SaaS";
+            } else {
+                document.title = "Swiftm | Smart Business Management Platform";
+            }
+
+            // Update prices reflecting current billing and language symbols
+            updatePricingValues();
+        }
+
+        langToggle.addEventListener("click", () => {
+            const nextLang = currentLang === "ar" ? "en" : "ar";
+            setLanguage(nextLang);
+        });
+
+        // Initialize language
+        const savedLang = localStorage.getItem("swiftm_lang");
+        if (savedLang) {
+            setLanguage(savedLang);
+        } else {
+            // Check browser preference
+            const isEnglish = navigator.language.startsWith("en");
+            setLanguage(isEnglish ? "en" : "ar");
+        }
+
+        // Pricing Billing Period toggle
+        const billingToggle = document.getElementById("billingToggle");
+        const labelMonthly = document.getElementById("labelMonthly");
+        const labelYearly = document.getElementById("labelYearly");
+
+        function setBillingPeriod(period) {
+            billingPeriod = period;
+            
+            // Toggle active classes on labels
+            if (period === "monthly") {
+                billingToggle.classList.add("monthly");
+                billingToggle.classList.remove("yearly");
+                labelMonthly.classList.add("active");
+                labelYearly.classList.remove("active");
+            } else {
+                billingToggle.classList.remove("monthly");
+                billingToggle.classList.add("yearly");
+                labelMonthly.classList.remove("active");
+                labelYearly.classList.add("active");
+            }
+            
+            updatePricingValues();
+        }
+
+        function updatePricingValues() {
+            const starterVal = document.querySelector("#priceStarter .price-val");
+            const accountingVal = document.querySelector("#priceAccounting .price-val");
+            const businessVal = document.querySelector("#priceBusiness .price-val");
+            
+            const periodLabels = document.querySelectorAll(".price-period");
+            const periodKey = billingPeriod === "monthly" ? "pricing-per-month" : "pricing-per-year";
+            const periodString = translations[currentLang][periodKey];
+            
+            // Values update with slide animation or text updates
+            starterVal.textContent = prices[billingPeriod].starter;
+            accountingVal.textContent = prices[billingPeriod].accounting;
+            businessVal.textContent = prices[billingPeriod].business;
+            
+            periodLabels.forEach(label => {
+                label.innerHTML = periodString;
+            });
+        }
+
+        billingToggle.addEventListener("click", () => {
+            const nextPeriod = billingPeriod === "monthly" ? "yearly" : "monthly";
+            setBillingPeriod(nextPeriod);
+        });
+        labelMonthly.addEventListener("click", () => setBillingPeriod("monthly"));
+        labelYearly.addEventListener("click", () => setBillingPeriod("yearly"));
+
+        // FAQ Accordion functionality
+        const faqItems = document.querySelectorAll(".faq-item");
+        
+        faqItems.forEach(item => {
+            const header = item.querySelector(".faq-header");
+            header.addEventListener("click", () => {
+                const isActive = item.classList.contains("active");
+                
+                // Close all other open items
+                faqItems.forEach(otherItem => {
+                    otherItem.classList.remove("active");
+                });
+                
+                // Toggle clicked item
+                if (!isActive) {
+                    item.classList.add("active");
+                }
+            });
+        });
+
+        // Sticky Header scroll changes
+        const navbar = document.getElementById("navbar");
+        window.addEventListener("scroll", () => {
+            if (window.scrollY > 50) {
+                navbar.classList.add("scrolled");
+                navbar.classList.remove("scrolled-light");
+                // Check section overlap for glassmorphic navbar styling
+                // For optimal accessibility, as the user scrolls into light sections, we style it scrolled-light
+                const featuresSection = document.getElementById("features");
+                const rect = featuresSection.getBoundingClientRect();
+                
+                // If features is scrolled under navbar, style light
+                if (rect.top <= 70 && rect.bottom >= 70) {
+                    navbar.classList.add("scrolled-light");
+                    navbar.classList.remove("scrolled");
+                }
+                
+                const pricingSection = document.getElementById("pricing");
+                const rectPricing = pricingSection.getBoundingClientRect();
+                if (rectPricing.top <= 70 && rectPricing.bottom >= 70) {
+                    navbar.classList.add("scrolled-light");
+                    navbar.classList.remove("scrolled");
+                }
+
+                const faqSection = document.getElementById("faq");
+                const rectFaq = faqSection.getBoundingClientRect();
+                if (rectFaq.top <= 70 && rectFaq.bottom >= 70) {
+                    navbar.classList.add("scrolled-light");
+                    navbar.classList.remove("scrolled");
+                }
+            } else {
+                navbar.classList.remove("scrolled", "scrolled-light");
+            }
+        });
+
+        // Mobile Hamburger Drawer toggle
+        const menuToggle = document.getElementById("menuToggle");
+        const mobileNav = document.getElementById("mobileNav");
+        const overlay = document.getElementById("overlay");
+        
+        function toggleMobileMenu() {
+            menuToggle.classList.toggle("active");
+            mobileNav.classList.toggle("active");
+            overlay.classList.toggle("active");
+        }
+
+        menuToggle.addEventListener("click", toggleMobileMenu);
+        overlay.addEventListener("click", toggleMobileMenu);
+        
+        // Close menu when clicking nav links
+        const mobileLinks = document.querySelectorAll(".mobile-nav-link");
+        mobileLinks.forEach(link => {
+            link.addEventListener("click", () => {
+                if (mobileNav.classList.contains("active")) {
+                    toggleMobileMenu();
+                }
+            });
+        });
+
+        // Scroll animation using Intersection Observer
+        const fadeElements = document.querySelectorAll(".fade-in-element");
+        
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: "0px 0px -50px 0px"
+        };
+        
+        const observer = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add("visible");
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+        
+        fadeElements.forEach(el => observer.observe(el));
+    </script>
+</body>
+</html>
