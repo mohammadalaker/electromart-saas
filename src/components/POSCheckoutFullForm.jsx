@@ -20,7 +20,7 @@ export default function POSCheckoutFullForm({
   directoryCustomers,
   onPickDirectoryCustomer,
   openNewCustomerModal,
-  creditLimitBlocked,
+  creditLimitWarningPreview,
   loyaltyDerived,
   loyaltyEarnDivisor,
   loyaltyRedeemRate,
@@ -138,12 +138,12 @@ export default function POSCheckoutFullForm({
               يُربط المبلغ بحساب الذمة (المستحق) لهذا الزبون في المتجر.
             </p>
           )}
-          {creditLimitBlocked && (
+          {creditLimitWarningPreview && (
             <p
-              className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] font-black text-rose-700 dark:border-rose-500/50 dark:bg-rose-950/50 dark:text-rose-200"
-              role="alert"
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-black text-amber-800 dark:border-amber-500/50 dark:bg-amber-950/50 dark:text-amber-200"
+              role="status"
             >
-              عذراً، هذا الزبون تجاوز حد الدين المسموح به
+              تنبيه: هذا البيع سيتجاوز الحد الائتماني المسموح — سيُطلب تأكيد قبل الإتمام
             </p>
           )}
         </div>

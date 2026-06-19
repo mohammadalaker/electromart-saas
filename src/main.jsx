@@ -44,6 +44,7 @@ import ChecksDashboardPage from './pages/checks/ChecksDashboardPage.jsx'
 import IncomingChecksPage from './pages/checks/IncomingChecksPage.jsx'
 import OutgoingChecksPage from './pages/checks/OutgoingChecksPage.jsx'
 import ComparisonReportPage from './pages/reports/ComparisonReportPage.jsx'
+import SlowMovingInventoryPage from './pages/reports/SlowMovingInventoryPage.jsx'
 import WarehouseLocationsPage from './pages/WarehouseLocationsPage.jsx'
 import PurchaseRfqPage from './pages/PurchaseRfqPage.jsx'
 import PurchasePriceHistoryPage from './pages/PurchasePriceHistoryPage.jsx'
@@ -97,6 +98,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/warehouse/quick" element={<EntitlementGuard module="quick_inventory"><QuickInventoryPage /></EntitlementGuard>} />
           <Route path="/reports/profit" element={<EntitlementGuard module="profit_reports"><ProfitReportsPage /></EntitlementGuard>} />
           <Route path="/reports/comparison" element={<EntitlementGuard module="profit_reports"><ComparisonReportPage /></EntitlementGuard>} />
+          <Route path="/reports/slow-moving" element={<EntitlementGuard module="profit_reports"><SlowMovingInventoryPage /></EntitlementGuard>} />
           <Route path="/reports/analytics" element={<EntitlementGuard module="profit_reports"><AnalyticsReportsPage /></EntitlementGuard>} />
           <Route path="/reports/eod" element={<EntitlementGuard module="sales_movements"><EndOfDayReportPage /></EntitlementGuard>} />
           <Route path="/finance/center" element={<EntitlementGuard module="financial_center"><FinancialCenterPage /></EntitlementGuard>} />

@@ -1,8 +1,8 @@
--- سقف الدين للزبون: أقصى ذمة مسموح بها (₪)
--- NULL أو غير مُعرَّف = بدون سقف (السلوك القديم)
--- نفّذ بعد store_contacts_payment_columns.sql
+-- الحد الائتماني للزبون (₪)
+-- نفّذ في Supabase SQL Editor
 
 ALTER TABLE public.store_contacts
-  ADD COLUMN IF NOT EXISTS credit_limit numeric(14, 2);
+  ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(15, 2) DEFAULT 0;
 
-COMMENT ON COLUMN public.store_contacts.credit_limit IS 'سقف الذمة بالشيقل — إذا كان > 0 يُمنع البيع بالذمة عند تجاوز (المستحق + فاتورة جديدة)';
+COMMENT ON COLUMN public.store_contacts.credit_limit IS
+  '0 means no limit set, otherwise max allowed debt amount';

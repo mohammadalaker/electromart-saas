@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import {
   Search,
@@ -63,7 +64,8 @@ import InventoryCyclePanel from './components/InventoryCyclePanel';
 import ImportProductsModal from './components/ImportProductsModal';
 import { syncShopLocationStockFromProductRow } from './utils/storeLocations';
 import { applyCashSaleToMainCashFund } from './utils/saleAccounting';
-import { isCreditLimitExceeded, verifyCreditLimitAllowsSale } from './utils/creditLimit';
+import { getCreditLimitWarning, verifyCreditLimitAllowsSale } from './utils/creditLimit';
+import CreditLimitWarningModal from './components/CreditLimitWarningModal';
 
 const PAGE_SIZE = 80;
 
@@ -151,6 +153,8 @@ function amountToArabicWords(amount) {
 function App() {
   const { store, loading: storeLoading } = useStore();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const barcodeDeepLinkHandled = useRef(false);
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -207,6 +211,7 @@ function App() {
   const [directoryCustomers, setDirectoryCustomers] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+  const [creditLimitModal, setCreditLimitModal] = useState(null);
   const [printInvoiceData, setPrintInvoiceData] = useState(null);
   /** مجموع مبيعات اليوم من جدول sales (null = جاري التحميل) */
   const [salesTodayNis, setSalesTodayNis] = useState(null);
@@ -631,7 +636,7 @@ function App() {
    * 2. خصم الكمية من stock_count لكل منتج بشكل متوازٍ
    * 3. طباعة الفاتورة وتفريغ السلة عند النجاح
    */
-  const handleCheckout = async () => {
+  const handleCheckout = async ({ bypassCreditLimit = false } = {}) => {
     if (!store?.id || orderLines.length === 0) return;
     setCheckoutLoading(true);
     setCheckoutError(null);
@@ -644,13 +649,17 @@ function App() {
 
     try {
       if (orderCustomer.salePaymentMode === 'credit' && orderCustomer.contactId) {
-        const v = await verifyCreditLimitAllowsSale(supabase, {
-          storeId: store.id,
-          contactId: orderCustomer.contactId,
-          saleTotal: cartTotals.finalTotal,
-        });
-        if (!v.allowed) {
-          setCheckoutError(v.message);
+        const v = await verifyCreditLimitAllowsSale(
+          supabase,
+          {
+            storeId: store.id,
+            contactId: orderCustomer.contactId,
+            saleTotal: cartTotals.finalTotal,
+          },
+          { bypassWarning: bypassCreditLimit }
+        );
+        if (!v.allowed && v.warning && !bypassCreditLimit) {
+          setCreditLimitModal(v.warning);
           setCheckoutLoading(false);
           return;
         }
@@ -890,11 +899,15 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderLines]);
 
-  const creditLimitBlocked = useMemo(() => {
-    if (orderCustomer.salePaymentMode !== 'credit' || !orderCustomer.contactId) return false;
+  const creditLimitWarningPreview = useMemo(() => {
+    if (orderCustomer.salePaymentMode !== 'credit' || !orderCustomer.contactId) return null;
     const c = directoryCustomers.find((x) => x.id === orderCustomer.contactId);
-    if (!c) return false;
-    return isCreditLimitExceeded(c.outstanding_amount, c.credit_limit, cartTotals.finalTotal);
+    if (!c) return null;
+    return getCreditLimitWarning({
+      outstanding: c.outstanding_amount,
+      creditLimitRaw: c.credit_limit,
+      saleTotal: cartTotals.finalTotal,
+    });
   }, [
     orderCustomer.salePaymentMode,
     orderCustomer.contactId,
@@ -1205,6 +1218,39 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
     });
     setModalOpen(true);
   };
+
+  useEffect(() => {
+    const bc = searchParams.get('barcode')?.trim();
+    if (!bc || barcodeDeepLinkHandled.current || loading || !items.length) return;
+    const item = items.find((i) => String(i.barcode) === bc);
+    if (!item) return;
+    barcodeDeepLinkHandled.current = true;
+    setEditingItem(item);
+    setPendingImageFile(null);
+    setFormData({
+      barcode: item.barcode || '',
+      reference: item.reference ?? '',
+      brand_group: item.group || '',
+      name: item.name || '',
+      product_type: productTypeToFormDisplay(item.productType || ''),
+      appliance_size: item.applianceSize || '',
+      price: item.price != null && item.price !== '' ? String(item.price) : '',
+      price_after_disc:
+        item.priceAfterDiscount != null && item.priceAfterDiscount !== ''
+          ? String(item.priceAfterDiscount)
+          : '',
+      stock_count: item.stock != null && item.stock !== '' ? String(item.stock) : '',
+      warranty_months:
+        item.warrantyMonths != null && item.warrantyMonths !== ''
+          ? String(item.warrantyMonths)
+          : '',
+      image_url: item.image || '',
+    });
+    setModalOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('barcode');
+    setSearchParams(next, { replace: true });
+  }, [items, loading, searchParams, setSearchParams]);
 
   const handleSubmit = async (e, selectedImageFile = pendingImageFile) => {
     e.preventDefault();
@@ -1919,12 +1965,12 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
                     يجب اختيار زبون من الدليل أعلاه؛ يُضاف المطلوب لرصيد ذمته تلقائياً بعد إتمام البيع.
                   </p>
                 )}
-                {creditLimitBlocked && (
+                {creditLimitWarningPreview && (
                   <p
-                    className="text-xs font-black text-rose-700 bg-rose-50 rounded-xl px-3 py-2 border border-rose-200 leading-relaxed"
-                    role="alert"
+                    className="text-xs font-black text-amber-800 bg-amber-50 rounded-xl px-3 py-2 border border-amber-200 leading-relaxed"
+                    role="status"
                   >
-                    عذراً، هذا الزبون تجاوز حد الدين المسموح به
+                    تنبيه: هذا البيع سيتجاوز الحد الائتماني — سيُطلب تأكيد قبل الإتمام
                   </p>
                 )}
               </div>
@@ -1956,16 +2002,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
                   !orderCustomer.name.trim() ||
                   !orderCustomer.phone.trim() ||
                   checkoutLoading ||
-                  (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId) ||
-                  creditLimitBlocked
+                  (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId)
                 }
                 className={`w-full py-5 rounded-[2rem] font-black text-lg shadow-2xl transition-all flex items-center justify-center gap-3
                   ${
                     checkoutLoading ||
                     !orderCustomer.name.trim() ||
                     !orderCustomer.phone.trim() ||
-                    (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId) ||
-                    creditLimitBlocked
+                    (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId)
                       ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                       : 'bg-indigo-600 text-white hover:bg-slate-800 hover:-translate-y-1 active:scale-95 shadow-indigo-200'
                   }`}
@@ -1991,6 +2035,16 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
           </div>
         </div>
       )}
+
+      <CreditLimitWarningModal
+        warning={creditLimitModal}
+        loading={checkoutLoading}
+        onCancel={() => setCreditLimitModal(null)}
+        onProceed={() => {
+          setCreditLimitModal(null);
+          void handleCheckout({ bypassCreditLimit: true });
+        }}
+      />
 
       {selectedItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setSelectedItem(null)}>

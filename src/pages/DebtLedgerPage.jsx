@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import WhatsAppButton from '../components/WhatsAppButton';
 import { buildPaymentReminderMessage } from '../utils/whatsapp';
+import { CreditLimitBadge } from '../components/CreditLimitBadge';
 
 const CONTACTS_TABLE = 'store_contacts';
 
@@ -62,12 +63,21 @@ export default function DebtLedgerPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: qErr } = await supabase
+      let { data, error: qErr } = await supabase
         .from(CONTACTS_TABLE)
-        .select('id, role, name, phone, outstanding_amount, created_at')
+        .select('id, role, name, phone, outstanding_amount, credit_limit, created_at')
         .eq('store_id', store.id)
         .eq('payment_type', 'credit')
         .order('outstanding_amount', { ascending: false });
+
+      if (qErr && /credit_limit|column|schema|PGRST204/i.test(String(qErr.message || ''))) {
+        ({ data, error: qErr } = await supabase
+          .from(CONTACTS_TABLE)
+          .select('id, role, name, phone, outstanding_amount, created_at')
+          .eq('store_id', store.id)
+          .eq('payment_type', 'credit')
+          .order('outstanding_amount', { ascending: false }));
+      }
 
       if (qErr) throw qErr;
       setRows(data || []);
@@ -245,7 +255,15 @@ export default function DebtLedgerPage() {
                 ) : (
                   filteredRows.map((customer) => (
                     <tr key={customer.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
-                      <td className="py-4 px-6 font-medium text-gray-900">{customer.name || '—'}</td>
+                      <td className="py-4 px-6 font-medium text-gray-900">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{customer.name || '—'}</span>
+                          <CreditLimitBadge
+                            outstanding={customer.outstanding_amount}
+                            creditLimit={customer.credit_limit}
+                          />
+                        </div>
+                      </td>
                       <td className="py-4 px-6 text-gray-500 text-sm font-mono" dir="ltr">{customer.phone || '—'}</td>
                       <td className="py-4 px-6 font-medium text-gray-900" dir="ltr">
                         {customer.current > 0 ? customer.current.toFixed(2) : '—'}

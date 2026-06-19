@@ -45,7 +45,8 @@ import PrintInvoice from '../components/PrintInvoice';
 import PrintPosReceiptSimple from '../components/PrintPosReceiptSimple';
 import POSCheckoutFullForm from '../components/POSCheckoutFullForm';
 import { applyCashSaleToMainCashFund } from '../utils/saleAccounting';
-import { isCreditLimitExceeded, verifyCreditLimitAllowsSale } from '../utils/creditLimit';
+import { getCreditLimitWarning, verifyCreditLimitAllowsSale } from '../utils/creditLimit';
+import CreditLimitWarningModal from '../components/CreditLimitWarningModal';
 import WhatsAppButton from '../components/WhatsAppButton';
 import { buildInvoiceWhatsAppMessage, hasValidPhone } from '../utils/whatsapp';
 import {
@@ -267,6 +268,7 @@ export default function POSPage() {
   const [directoryCustomers, setDirectoryCustomers] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+  const [creditLimitModal, setCreditLimitModal] = useState(null);
   const [printInvoiceData, setPrintInvoiceData] = useState(null);
   const shellDark = true;
   const barcodeScannerMode = useBarcodeScannerMode();
@@ -918,11 +920,15 @@ export default function POSPage() {
     loyaltyRedeemRate,
   ]);
 
-  const creditLimitBlocked = useMemo(() => {
-    if (orderCustomer.salePaymentMode !== 'credit' || !orderCustomer.contactId) return false;
+  const creditLimitWarningPreview = useMemo(() => {
+    if (orderCustomer.salePaymentMode !== 'credit' || !orderCustomer.contactId) return null;
     const c = directoryCustomers.find((x) => x.id === orderCustomer.contactId);
-    if (!c) return false;
-    return isCreditLimitExceeded(c.outstanding_amount, c.credit_limit, loyaltyDerived.payable);
+    if (!c) return null;
+    return getCreditLimitWarning({
+      outstanding: c.outstanding_amount,
+      creditLimitRaw: c.credit_limit,
+      saleTotal: loyaltyDerived.payable,
+    });
   }, [
     orderCustomer.salePaymentMode,
     orderCustomer.contactId,
@@ -1225,7 +1231,7 @@ export default function POSPage() {
     }
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = async ({ bypassCreditLimit = false } = {}) => {
     if (!store?.id || orderLines.length === 0) return;
     setCheckoutLoading(true);
     setCheckoutError(null);
@@ -1315,13 +1321,17 @@ export default function POSPage() {
       }
 
       if (orderCustomer.salePaymentMode === 'credit' && orderCustomer.contactId) {
-        const v = await verifyCreditLimitAllowsSale(supabase, {
-          storeId: store.id,
-          contactId: orderCustomer.contactId,
-          saleTotal: payableAmount,
-        });
-        if (!v.allowed) {
-          setCheckoutError(v.message);
+        const v = await verifyCreditLimitAllowsSale(
+          supabase,
+          {
+            storeId: store.id,
+            contactId: orderCustomer.contactId,
+            saleTotal: payableAmount,
+          },
+          { bypassWarning: bypassCreditLimit }
+        );
+        if (!v.allowed && v.warning && !bypassCreditLimit) {
+          setCreditLimitModal(v.warning);
           setCheckoutLoading(false);
           return;
         }
@@ -2622,7 +2632,7 @@ export default function POSPage() {
                 directoryCustomers={directoryCustomers}
                 onPickDirectoryCustomer={onPickDirectoryCustomer}
                 openNewCustomerModal={openNewCustomerModal}
-                creditLimitBlocked={creditLimitBlocked}
+                creditLimitWarningPreview={creditLimitWarningPreview}
                 loyaltyDerived={loyaltyDerived}
                 loyaltyEarnDivisor={loyaltyEarnDivisor}
                 loyaltyRedeemRate={loyaltyRedeemRate}
@@ -2701,14 +2711,12 @@ export default function POSPage() {
                 disabled={
                   checkoutLoading ||
                   orderLines.length === 0 ||
-                  (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId) ||
-                  creditLimitBlocked
+                  (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId)
                 }
                 className={`relative w-full flex items-center justify-center gap-2 rounded-2xl text-white font-black py-4 text-base shadow-xl transition-all ${
                   !checkoutLoading &&
                   orderLines.length > 0 &&
-                  !(orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId) &&
-                  !creditLimitBlocked
+                  !(orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId)
                     ? shellDark
                       ? 'bg-gradient-to-l from-emerald-500 to-teal-600 shadow-emerald-500/40 hover:scale-[1.02] hover:shadow-emerald-500/60 hover:shadow-2xl active:scale-[0.99]'
                       : 'bg-gradient-to-l from-emerald-500 to-teal-600 shadow-emerald-300/60 hover:scale-[1.02] hover:shadow-emerald-400/70 hover:shadow-2xl active:scale-[0.99]'
@@ -2719,8 +2727,7 @@ export default function POSPage() {
                 {!checkoutLoading &&
                   !(
                     orderLines.length === 0 ||
-                    (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId) ||
-                    creditLimitBlocked
+                    (orderCustomer.salePaymentMode === 'credit' && !orderCustomer.contactId)
                   ) && (
                     <span
                       className="absolute inset-0 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
@@ -2741,6 +2748,16 @@ export default function POSPage() {
           </div>
         </div>
       )}
+
+      <CreditLimitWarningModal
+        warning={creditLimitModal}
+        loading={checkoutLoading}
+        onCancel={() => setCreditLimitModal(null)}
+        onProceed={() => {
+          setCreditLimitModal(null);
+          void handleCheckout({ bypassCreditLimit: true });
+        }}
+      />
 
       {successToast && (
         <div

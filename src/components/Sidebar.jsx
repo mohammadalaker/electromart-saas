@@ -147,6 +147,7 @@ const CATEGORIES = [
           { to: '/reports/eod', icon: CalendarDays, label: 'تقرير نهاية اليوم (Z)', module: 'sales_movements' },
           { to: '/reports/analytics', icon: LineChart, label: 'تحليل الأداء التفاعلي', module: 'profit_reports' },
           { to: '/reports/comparison', icon: BarChart2, label: 'مقارنة الفترات', module: 'profit_reports' },
+          { to: '/reports/slow-moving', icon: PackageMinus, label: 'المنتجات الراكدة', module: 'profit_reports' },
           { to: '/reports/profit', icon: TrendingUp, label: 'تقارير الأرباح', module: 'profit_reports' },
         ],
       },

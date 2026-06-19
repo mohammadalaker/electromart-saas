@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import WhatsAppButton from '../components/WhatsAppButton';
 import { buildPaymentReminderMessage } from '../utils/whatsapp';
+import { CreditLimitBadge } from '../components/CreditLimitBadge';
 
 function formatMoney(n) {
   const v = Number(n);
@@ -43,12 +44,21 @@ export default function DebtAgingReportPage() {
     }
     setLoading(true);
     try {
-      const { data: rows, error } = await supabase
+      let { data: rows, error } = await supabase
         .from('store_contacts')
-        .select('id, name, phone, outstanding_amount, created_at, payment_type')
+        .select('id, name, phone, outstanding_amount, credit_limit, created_at, payment_type')
         .eq('store_id', store.id)
         .eq('payment_type', 'credit')
         .order('outstanding_amount', { ascending: false });
+
+      if (error && /credit_limit|column|schema|PGRST204/i.test(String(error.message || ''))) {
+        ({ data: rows, error } = await supabase
+          .from('store_contacts')
+          .select('id, name, phone, outstanding_amount, created_at, payment_type')
+          .eq('store_id', store.id)
+          .eq('payment_type', 'credit')
+          .order('outstanding_amount', { ascending: false }));
+      }
 
       if (error) throw error;
 
@@ -59,6 +69,8 @@ export default function DebtAgingReportPage() {
           id: r.id,
           name: r.name || '—',
           phone: r.phone || '—',
+          outstanding_amount: r.outstanding_amount,
+          credit_limit: r.credit_limit,
           current: age <= 30 ? total : 0,
           days31_60: age > 30 && age <= 60 ? total : 0,
           days61_90: age > 60 && age <= 90 ? total : 0,
@@ -242,7 +254,15 @@ export default function DebtAgingReportPage() {
                 <tbody>
                   {filtered.map((row) => (
                     <tr key={row.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
-                      <td className="py-4 px-6 font-medium text-gray-900">{row.name}</td>
+                      <td className="py-4 px-6 font-medium text-gray-900">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{row.name}</span>
+                          <CreditLimitBadge
+                            outstanding={row.outstanding_amount}
+                            creditLimit={row.credit_limit}
+                          />
+                        </div>
+                      </td>
                       <td className="py-4 px-6 text-gray-500 text-sm font-mono">{row.phone}</td>
                       <td className="py-4 px-6 font-medium text-emerald-700">
                         {row.current > 0 ? formatMoney(row.current) : '—'}

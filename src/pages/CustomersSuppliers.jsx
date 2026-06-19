@@ -46,7 +46,7 @@ const emptyForm = {
   notes: '',
   payment_type: 'cash',
   outstanding_amount: '0',
-  credit_limit: '',
+  credit_limit: '0',
 };
 
 export default function CustomersSuppliers() {
@@ -123,7 +123,7 @@ export default function CustomersSuppliers() {
       credit_limit:
         row.credit_limit != null && row.credit_limit !== ''
           ? String(row.credit_limit)
-          : '',
+          : '0',
     });
     setModalOpen(true);
   };
@@ -151,9 +151,9 @@ export default function CustomersSuppliers() {
       tab === 'customer' && paymentType === 'credit'
         ? (() => {
             const raw = String(form.credit_limit ?? '').trim();
-            if (raw === '') return null;
+            if (raw === '') return 0;
             const n = parseFloat(raw.replace(',', '.'));
-            return Number.isFinite(n) && n > 0 ? n : null;
+            return Number.isFinite(n) ? Math.max(0, n) : 0;
           })()
         : null;
     setSaving(true);
@@ -749,7 +749,7 @@ export default function CustomersSuppliers() {
                         ...p,
                         payment_type: 'cash',
                         outstanding_amount: '0',
-                        credit_limit: '',
+                        credit_limit: '0',
                       }))
                     }
                     className={`flex-1 py-3 rounded-2xl text-sm font-black border-2 transition-all ${
@@ -792,10 +792,10 @@ export default function CustomersSuppliers() {
               {form.payment_type === 'credit' && tab === 'customer' && (
                 <div>
                   <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                    سقف الدين (₪)
+                    الحد الائتماني (شيكل)
                   </label>
                   <p className="text-[11px] text-slate-500 mb-1.5 leading-relaxed dark:text-slate-400">
-                    أقصى ذمة مسموح بها لهذا الزبون. اتركه فارغاً لعدم تفعيل السقف.
+                    اتركه 0 لعدم تحديد حد
                   </p>
                   <input
                     value={form.credit_limit}
@@ -804,7 +804,7 @@ export default function CustomersSuppliers() {
                     dir="ltr"
                     lang="en"
                     inputMode="decimal"
-                    placeholder="بدون سقف"
+                    placeholder="0"
                   />
                 </div>
               )}
