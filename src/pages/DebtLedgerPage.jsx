@@ -3,6 +3,8 @@ import { Calendar, FileText, Loader2, RefreshCw, Search } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
+import WhatsAppButton from '../components/WhatsAppButton';
+import { buildPaymentReminderMessage } from '../utils/whatsapp';
 
 const CONTACTS_TABLE = 'store_contacts';
 
@@ -224,18 +226,19 @@ export default function DebtLedgerPage() {
                   <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">61-90 يوماً</th>
                   <th className="text-right py-4 px-6 text-sm font-semibold text-red-600">أكثر من 90 يوماً</th>
                   <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">الإجمالي</th>
+                  <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="py-20 text-center">
+                    <td colSpan={8} className="py-20 text-center">
                       <Loader2 className="inline animate-spin text-indigo-500" size={36} />
                     </td>
                   </tr>
                 ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-16 text-center text-gray-500">
+                    <td colSpan={8} className="py-16 text-center text-gray-500">
                       لا توجد نتائج مطابقة
                     </td>
                   </tr>
@@ -258,6 +261,20 @@ export default function DebtLedgerPage() {
                       </td>
                       <td className="py-4 px-6 font-bold text-gray-900 text-lg" dir="ltr">
                         {customer.total.toFixed(2)}
+                      </td>
+                      <td className="py-4 px-6">
+                        {customer.total > 0 && (
+                          <WhatsAppButton
+                            phone={customer.phone}
+                            message={buildPaymentReminderMessage({
+                              customerName: customer.name,
+                              storeName: store?.name,
+                              amount: customer.total,
+                            })}
+                          >
+                            تذكير دفع واتساب
+                          </WhatsAppButton>
+                        )}
                       </td>
                     </tr>
                   ))

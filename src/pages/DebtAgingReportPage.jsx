@@ -12,6 +12,8 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
+import WhatsAppButton from '../components/WhatsAppButton';
+import { buildPaymentReminderMessage } from '../utils/whatsapp';
 
 function formatMoney(n) {
   const v = Number(n);
@@ -234,6 +236,7 @@ export default function DebtAgingReportPage() {
                     <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">61-90 يوماً</th>
                     <th className="text-right py-4 px-6 text-sm font-semibold text-red-600">أكثر من 90 يوماً</th>
                     <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">الإجمالي</th>
+                    <th className="text-right py-4 px-6 text-sm font-semibold text-gray-700">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,11 +259,25 @@ export default function DebtAgingReportPage() {
                       <td className="py-4 px-6 font-bold text-gray-900 text-lg">
                         ₪ {formatMoney(row.total)}
                       </td>
+                      <td className="py-4 px-6">
+                        {row.total > 0 && (
+                          <WhatsAppButton
+                            phone={row.phone}
+                            message={buildPaymentReminderMessage({
+                              customerName: row.name,
+                              storeName: store?.name,
+                              amount: row.total,
+                            })}
+                          >
+                            تذكير دفع واتساب
+                          </WhatsAppButton>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="h-32 text-center text-gray-400">
+                      <td colSpan={8} className="h-32 text-center text-gray-400">
                         لا توجد نتائج مطابقة للبحث
                       </td>
                     </tr>

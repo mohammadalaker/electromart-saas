@@ -46,6 +46,8 @@ import PrintPosReceiptSimple from '../components/PrintPosReceiptSimple';
 import POSCheckoutFullForm from '../components/POSCheckoutFullForm';
 import { applyCashSaleToMainCashFund } from '../utils/saleAccounting';
 import { isCreditLimitExceeded, verifyCreditLimitAllowsSale } from '../utils/creditLimit';
+import WhatsAppButton from '../components/WhatsAppButton';
+import { buildInvoiceWhatsAppMessage, hasValidPhone } from '../utils/whatsapp';
 import {
   evaluatePromotions,
   getPromotionSuggestions,
@@ -1632,6 +1634,7 @@ export default function POSPage() {
       setSuccessToast({
         message: 'تم حفظ الفاتورة بنجاح.',
         total: payableAmount,
+        saleId,
         receiptPayload: {
           storeName: store?.name,
           lines: orderLines.map((o) => ({
@@ -2801,6 +2804,24 @@ export default function POSPage() {
                 فاتورة كاملة
               </button>
             </div>
+
+            {hasValidPhone(successToast.fullSnapshot?.orderCustomer?.phone) && (
+              <WhatsAppButton
+                className="mt-3 w-full rounded-2xl py-3 text-sm font-black"
+                phone={successToast.fullSnapshot.orderCustomer.phone}
+                message={buildInvoiceWhatsAppMessage({
+                  customerName:
+                    successToast.receiptPayload?.customerName ||
+                    successToast.fullSnapshot?.orderCustomer?.name ||
+                    '',
+                  storeName: store?.name,
+                  invoiceNumber: String(successToast.saleId || '').slice(0, 8).toUpperCase(),
+                  total: successToast.total,
+                })}
+              >
+                إرسال الفاتورة واتساب
+              </WhatsAppButton>
+            )}
 
             <button
               type="button"
