@@ -40,6 +40,10 @@ import PreOrdersPage from './pages/PreOrdersPage.jsx'
 import QuickInventoryPage from './pages/QuickInventoryPage.jsx'
 import VoucherPage from './components/VoucherPage.jsx'
 import ChecksPage from './pages/ChecksPage.jsx'
+import ChecksDashboardPage from './pages/checks/ChecksDashboardPage.jsx'
+import IncomingChecksPage from './pages/checks/IncomingChecksPage.jsx'
+import OutgoingChecksPage from './pages/checks/OutgoingChecksPage.jsx'
+import ComparisonReportPage from './pages/reports/ComparisonReportPage.jsx'
 import WarehouseLocationsPage from './pages/WarehouseLocationsPage.jsx'
 import PurchaseRfqPage from './pages/PurchaseRfqPage.jsx'
 import PurchasePriceHistoryPage from './pages/PurchasePriceHistoryPage.jsx'
@@ -92,6 +96,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/inventory/locations" element={<EntitlementGuard module="warehouse_locations"><WarehouseLocationsPage /></EntitlementGuard>} />
           <Route path="/warehouse/quick" element={<EntitlementGuard module="quick_inventory"><QuickInventoryPage /></EntitlementGuard>} />
           <Route path="/reports/profit" element={<EntitlementGuard module="profit_reports"><ProfitReportsPage /></EntitlementGuard>} />
+          <Route path="/reports/comparison" element={<EntitlementGuard module="profit_reports"><ComparisonReportPage /></EntitlementGuard>} />
           <Route path="/reports/analytics" element={<EntitlementGuard module="profit_reports"><AnalyticsReportsPage /></EntitlementGuard>} />
           <Route path="/reports/eod" element={<EntitlementGuard module="sales_movements"><EndOfDayReportPage /></EntitlementGuard>} />
           <Route path="/finance/center" element={<EntitlementGuard module="financial_center"><FinancialCenterPage /></EntitlementGuard>} />
@@ -123,6 +128,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/sales/customer-statement" element={<EntitlementGuard module="customer_statement"><CustomerAccountStatementPage /></EntitlementGuard>} />
           <Route path="/vouchers" element={<EntitlementGuard module="vouchers"><VoucherPage /></EntitlementGuard>} />
           <Route path="/finance/checks" element={<EntitlementGuard module="checks"><ChecksPage /></EntitlementGuard>} />
+          <Route path="/checks" element={<EntitlementGuard module="checks"><ChecksDashboardPage /></EntitlementGuard>} />
+          <Route path="/checks/incoming" element={<EntitlementGuard module="checks"><IncomingChecksPage /></EntitlementGuard>} />
+          <Route path="/checks/outgoing" element={<EntitlementGuard module="checks"><OutgoingChecksPage /></EntitlementGuard>} />
           <Route path="/purchases/rfq" element={<EntitlementGuard module="purchase_rfq"><PurchaseRfqPage /></EntitlementGuard>} />
           <Route path="/purchases/price-history" element={<EntitlementGuard module="purchase_price_history"><PurchasePriceHistoryPage /></EntitlementGuard>} />
           <Route path="/purchases" element={<EntitlementGuard module="purchases"><PurchasesPage /></EntitlementGuard>} />

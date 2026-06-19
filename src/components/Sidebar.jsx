@@ -134,6 +134,7 @@ const CATEGORIES = [
           { to: '/finance/income-statement', icon: TrendingUp, label: 'قائمة الدخل', module: 'finance_overview' },
           { to: '/finance/debt-aging', icon: CalendarClock, label: 'أعمار الديون', module: 'debt_aging' },
           { to: '/vouchers', icon: Receipt, label: 'سندات الصرف والقبض', module: 'vouchers' },
+          { to: '/checks', icon: Banknote, label: 'الشيكات والكمبيالات', module: 'checks' },
           { to: '/finance/checks', icon: Banknote, label: 'الشيكات', module: 'checks' },
         ],
       },
@@ -145,6 +146,7 @@ const CATEGORIES = [
         items: [
           { to: '/reports/eod', icon: CalendarDays, label: 'تقرير نهاية اليوم (Z)', module: 'sales_movements' },
           { to: '/reports/analytics', icon: LineChart, label: 'تحليل الأداء التفاعلي', module: 'profit_reports' },
+          { to: '/reports/comparison', icon: BarChart2, label: 'مقارنة الفترات', module: 'profit_reports' },
           { to: '/reports/profit', icon: TrendingUp, label: 'تقارير الأرباح', module: 'profit_reports' },
         ],
       },
