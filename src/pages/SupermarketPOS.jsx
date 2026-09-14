@@ -1216,12 +1216,69 @@ export default function SupermarketPOS() {
       // خصم المخزون للأصناف المرتبطة بمنتج في قاعدة البيانات
       for (const line of orderItems) {
         if (line.productId && isUuid(line.productId)) {
-          supabase.rpc('decrement_stock', {
-            row_id: line.productId,
-            amount: Math.ceil(Number(line.qty) || 1),
-          }).catch(() => {});
+          const qty = Math.max(1, Math.round(Number(line.qty) || 1));
+          let prevStock = 0;
+          let newStock = 0;
+          try {
+            // جلب المخزون الحالي للمقارنة والتوثيق
+            const { data: prodRow } = await supabase
+              .from(PRODUCTS_TABLE)
+              .select(PRODUCTS_STOCK_COLUMN)
+              .eq('id', line.productId)
+              .maybeSingle();
+
+            prevStock = Number(prodRow?.[PRODUCTS_STOCK_COLUMN] ?? 0);
+
+            // استدعاء دالة decrement_stock الرسمية من Supabase RPC
+            const { error: rpcError } = await supabase.rpc('decrement_stock', {
+              row_id: line.productId,
+              amount: qty,
+            });
+
+            if (rpcError) {
+              console.warn('[SupermarketPOS] RPC decrement_stock warning, falling back to direct update:', rpcError);
+              newStock = Math.max(0, prevStock - qty);
+              await supabase
+                .from(PRODUCTS_TABLE)
+                .update({ [PRODUCTS_STOCK_COLUMN]: newStock })
+                .eq('id', line.productId);
+            } else {
+              newStock = Math.max(0, prevStock - qty);
+            }
+
+            // توثيق حركة المخزون في inventory_logs إن وُجد الجدول
+            try {
+              await insertInventoryLog({
+                storeId: store.id,
+                productId: line.productId,
+                barcode: line.barcode ? String(line.barcode) : null,
+                productName: line.name || '',
+                qtyBefore: prevStock,
+                qtyAfter: newStock,
+                reason: 'sale',
+              });
+            } catch (logErr) {
+              /* inventory_logs جدول اختياري */
+            }
+          } catch (stockErr) {
+            console.warn('[SupermarketPOS] Error decrementing stock for item:', line.name, stockErr);
+          }
         }
       }
+
+      // تحديث المخزون في الذاكرة المحلية فوراً
+      setItems((prev) =>
+        prev.map((it) => {
+          const matched = orderItems.find((o) => o.productId === it.id);
+          if (matched) {
+            const q = Math.max(1, Math.round(Number(matched.qty) || 1));
+            const curStock = Number(it.stock ?? it.stock_count ?? 0);
+            const nextStock = Math.max(0, curStock - q);
+            return { ...it, stock: nextStock, stock_count: nextStock };
+          }
+          return it;
+        })
+      );
 
       // ربط محاسبي لصندوق كاش المتجر إذا كان الدفع نقدي
       if (paymentMode === 'cash') {
