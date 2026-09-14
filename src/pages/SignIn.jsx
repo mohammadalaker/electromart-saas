@@ -6,6 +6,7 @@ import SwiftmLogo from '../components/SwiftmLogo.jsx';
 import { useToast } from '../context/ToastContext';
 
 import { brandCopyright, brandStorageKey } from '../constants/brand.js';
+import { mapAuthErrorMessage, normalizeAuthEmail } from '../utils/authErrors.js';
 
 const REMEMBER_EMAIL_KEY = brandStorageKey('remember-email');
 const ONBOARDING_STEPS = [
@@ -92,7 +93,7 @@ export default function SignIn() {
   }, []);
 
   const handleForgotPassword = async () => {
-    const trimmed = email.trim();
+    const trimmed = normalizeAuthEmail(email);
     if (!trimmed) {
       toast.warning('يرجى إدخال البريد الإلكتروني أولاً.');
       return;
@@ -105,7 +106,7 @@ export default function SignIn() {
       if (error) throw error;
       toast.success('تحقق من بريدك — أرسلنا رابط إعادة تعيين كلمة المرور.');
     } catch (err) {
-      toast.error(err.message || String(err));
+      toast.error(mapAuthErrorMessage(err));
     } finally {
       setResetSending(false);
     }
@@ -116,11 +117,15 @@ export default function SignIn() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const emailNorm = normalizeAuthEmail(email);
+      const { error } = await supabase.auth.signInWithPassword({
+        email: emailNorm,
+        password,
+      });
       if (error) throw error;
       try {
         if (rememberMe) {
-          localStorage.setItem(REMEMBER_EMAIL_KEY, email.trim());
+          localStorage.setItem(REMEMBER_EMAIL_KEY, emailNorm);
         } else {
           localStorage.removeItem(REMEMBER_EMAIL_KEY);
         }
@@ -129,7 +134,7 @@ export default function SignIn() {
       }
       navigate(from === '/signin' ? '/overview' : from, { replace: true });
     } catch (error) {
-      toast.error(error.message);
+      toast.error(mapAuthErrorMessage(error));
     } finally {
       setLoading(false);
     }

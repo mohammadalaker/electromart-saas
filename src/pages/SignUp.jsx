@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Building2, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import SwiftmLogo from '../components/SwiftmLogo.jsx';
 import { BRAND_TAGLINE_EN } from '../constants/brand.js';
+import { mapAuthErrorMessage, normalizeAuthEmail } from '../utils/authErrors.js';
 
 // Tracks which step of the two-phase SaaS signup is active.
 const STEPS = {
@@ -79,13 +80,14 @@ export default function SignUp() {
 
     // ── Step 1: Create the Auth user ────────────────────────────────────────
     setStep(STEPS.AUTH);
+    const emailNorm = normalizeAuthEmail(email);
     const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
+      email: emailNorm,
       password,
     });
 
     if (authError) {
-      setError(authError.message);
+      setError(mapAuthErrorMessage(authError));
       setStep(STEPS.IDLE);
       return;
     }

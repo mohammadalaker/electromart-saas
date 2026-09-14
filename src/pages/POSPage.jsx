@@ -102,6 +102,27 @@ function readSidebarCollapsed() {
   }
 }
 
+/** نغمة صوتية للمسح الناجح / الفاشل على قارئ الباركود */
+function playScanBeep(success = true) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(success ? 1046.5 : 220, ctx.currentTime);
+    gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (success ? 0.09 : 0.2));
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + (success ? 0.09 : 0.2));
+  } catch {
+    /* ignore audio error */
+  }
+}
+
 /**
  * بحث نصي يعمل بالتوازي مع الفلاتر (يُطبَّق أولاً على المخزون، ثم الفلاتر على النتيجة).
  * يوحّد الأرقام العربية/اللاتينية حتى يطابق "65" مع "٦٥" في الاسم أو المرجع.
@@ -326,6 +347,9 @@ export default function POSPage() {
   const [reviewDone, setReviewDone] = useState(false);
 
   const barcodeInputRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [activeDropdownIndex, setActiveDropdownIndex] = useState(-1);
   const loadMoreRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
@@ -480,12 +504,71 @@ export default function POSPage() {
     };
   }, [posFiltersSheetOpen]);
 
-  /** تركيز حقل الباركود عند استخدام قارئ يعمل كلوحة مفاتيح (وضع «قارئ» في إعدادات النظام) */
+  /** تركيز دائم وذكي على حقل الباركود — مسار أولوية أولى لقارئ الباركود والكتابة */
   useEffect(() => {
-    if (!store?.id || !barcodeScannerMode) return;
-    const t = setTimeout(() => barcodeInputRef.current?.focus(), 200);
+    if (!store?.id) return;
+    const t = setTimeout(() => barcodeInputRef.current?.focus(), 150);
     return () => clearTimeout(t);
-  }, [store?.id, barcodeScannerMode]);
+  }, [store?.id]);
+
+  // إعادة التركيز على حقل الباركود عند إغلاق النوافذ المنبثقة
+  useEffect(() => {
+    if (!posCheckoutOpen && !newCustomerModalOpen && !creditLimitModal && !reviewModal) {
+      const t = setTimeout(() => barcodeInputRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [posCheckoutOpen, newCustomerModalOpen, creditLimitModal, reviewModal]);
+
+  // التقاط النقرات خارج الحقول التفاعلية لإعادة التركيز تلقائياً
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      if (posCheckoutOpen || newCustomerModalOpen || creditLimitModal || reviewModal) return;
+      const target = e.target;
+      if (!target) return;
+      const interactive = target.closest(
+        'input, textarea, select, button, a, [role="dialog"], [role="button"], [contenteditable="true"]'
+      );
+      if (interactive) return;
+      barcodeInputRef.current?.focus();
+    };
+
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, [posCheckoutOpen, newCustomerModalOpen, creditLimitModal, reviewModal]);
+
+  // التقاط ضغطات المفاتيح وإعادة توجيهها لحقل الباركود إذا لم يكن التركيز في حقل آخر
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (posCheckoutOpen || newCustomerModalOpen || creditLimitModal || reviewModal) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt'].includes(e.key)) return;
+      if (e.key.startsWith('F') && e.key.length > 1) return;
+
+      const activeEl = document.activeElement;
+      const isOtherInput =
+        activeEl &&
+        activeEl !== barcodeInputRef.current &&
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName);
+
+      if (!isOtherInput && barcodeInputRef.current && activeEl !== barcodeInputRef.current) {
+        barcodeInputRef.current.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [posCheckoutOpen, newCustomerModalOpen, creditLimitModal, reviewModal]);
+
+  // إغلاق القائمة المنسدلة للبحث عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (!store?.id) return;
@@ -581,6 +664,13 @@ export default function POSPage() {
     if (!q) return items;
     return items.filter((i) => productMatchesPosSearch(i, q));
   }, [items, debouncedSearch]);
+
+  /** نتائج البحث الجزئي المعروضة في القائمة المنسدلة أسفل حقل الباركود */
+  const partialMatches = useMemo(() => {
+    const q = normalizeDigitsToLatin(String(search || '').trim()).toLowerCase();
+    if (!q) return [];
+    return items.filter((i) => productMatchesPosSearch(i, q)).slice(0, 10);
+  }, [items, search]);
 
   /** تطبيق الفلاتر على نتيجة البحث فقط — تفاعل AND (مثلاً Samsung + "65" → سامسونج التي اسمها يحتوي 65) */
   const filteredItems = useMemo(
@@ -743,8 +833,14 @@ export default function POSPage() {
     });
   }, [toast]);
 
-  /** إضافة قطعة واحدة — مرجع ثابت لـ memo على ProductCard */
-  const posAddOneToCart = useCallback((item) => addToOrder(item, 1), [addToOrder]);
+  /** إضافة قطعة واحدة — مرجع ثابت لـ memo على ProductCard مع إعادة التركيز على الباركود */
+  const posAddOneToCart = useCallback(
+    (item) => {
+      addToOrder(item, 1);
+      setTimeout(() => barcodeInputRef.current?.focus(), 40);
+    },
+    [addToOrder]
+  );
 
   const removeFromOrder = (itemId) =>
     setOrderItems((prev) => prev.filter((x) => x.id !== itemId));
@@ -1076,15 +1172,19 @@ export default function POSPage() {
     setLoyaltyPointsInput('');
   };
 
-  /** مسح الباركود: البحث في القائمة ثم جلب من الخادم إن لزم (كمية > 0 فقط في الاستعلام). */
+  /** مسح الباركود: البحث في القائمة ثم جلب من الخادم إن لزم */
   const tryAddProductByBarcode = useCallback(
     async (raw) => {
-      const norm = normalizeDigitsToLatin(String(raw).trim());
+      const norm = normalizeDigitsToLatin(String(raw || '').trim());
       if (!norm) return false;
 
       let hit =
-        items.find((i) => String(i.barcode).trim() === norm) ||
-        items.find((i) => String(i.barcode).replace(/\s/g, '') === norm.replace(/\s/g, ''));
+        items.find((i) => normalizeDigitsToLatin(String(i.barcode || '').trim()) === norm) ||
+        items.find(
+          (i) =>
+            normalizeDigitsToLatin(String(i.barcode || '').replace(/\s/g, '')) ===
+            norm.replace(/\s/g, '')
+        );
 
       if (!hit && store?.id) {
         const { data, error } = await runProductsSelectWithFallback((sel) =>
@@ -1093,7 +1193,6 @@ export default function POSPage() {
             .select(sel)
             .eq('store_id', store.id)
             .eq('barcode', norm)
-            .gt(PRODUCTS_STOCK_COLUMN, 0)
             .maybeSingle()
         );
         if (!error && data) {
@@ -1107,33 +1206,134 @@ export default function POSPage() {
 
       if (hit) {
         addToOrder(hit, 1);
+        playScanBeep(true);
+        toast.success(`تمت إضافة: ${hit.name || hit.barcode}`);
+        setSearch('');
+        setIsDropdownOpen(false);
+        setActiveDropdownIndex(-1);
+        setTimeout(() => barcodeInputRef.current?.focus(), 40);
         return true;
       }
       return false;
     },
-    [items, store?.id, addToOrder]
+    [items, store?.id, addToOrder, toast]
   );
 
-  const onBarcodeSubmit = async (e) => {
-    e.preventDefault();
-    const raw = barcodeInputRef.current?.value?.trim() || '';
+  /** معالجة إدخال الباركود أو الضغط على Enter في البحث */
+  const handleBarcodeOrSearchSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const raw = search.trim();
     if (!raw) return;
+
+    // 1. الأولوية الأولى: محاولة مطابقة باركود exact
     const ok = await tryAddProductByBarcode(raw);
-    if (barcodeInputRef.current) barcodeInputRef.current.value = '';
-    if (!ok) {
-      toast.error('لم يُعثر على منتج بهذا الباركود أو الكمية غير متوفرة.');
+    if (ok) return;
+
+    // 2. إذا كان هناك عنصر محدد في القائمة المنسدلة (dropdown) بالأسهم
+    if (activeDropdownIndex >= 0 && partialMatches[activeDropdownIndex]) {
+      const selected = partialMatches[activeDropdownIndex];
+      addToOrder(selected, 1);
+      playScanBeep(true);
+      toast.success(`تمت إضافة: ${selected.name || selected.barcode}`);
+      setSearch('');
+      setIsDropdownOpen(false);
+      setActiveDropdownIndex(-1);
+      setTimeout(() => barcodeInputRef.current?.focus(), 40);
+      return;
+    }
+
+    // 3. إذا كان هناك ناتج بحث جزئي وحيد تماماً وضغط Enter
+    if (partialMatches.length === 1) {
+      const single = partialMatches[0];
+      addToOrder(single, 1);
+      playScanBeep(true);
+      toast.success(`تمت إضافة: ${single.name || single.barcode}`);
+      setSearch('');
+      setIsDropdownOpen(false);
+      setActiveDropdownIndex(-1);
+      setTimeout(() => barcodeInputRef.current?.focus(), 40);
+      return;
+    }
+
+    // 4. إذا وجدت نتائج متعددة، إبقاء القائمة المنسدلة مفتوحة للاختيار
+    if (partialMatches.length > 1) {
+      setIsDropdownOpen(true);
+      return;
+    }
+
+    // 5. لم يُعثر على أي تطابق
+    playScanBeep(false);
+    toast.error('لم يُعثر على منتج بهذا الباركود أو الاسم.');
+  };
+
+  /** إدخال نص البحث والتحكم في فتح القائمة */
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    if (val.trim()) {
+      setIsDropdownOpen(true);
+      setActiveDropdownIndex(-1);
+    } else {
+      setIsDropdownOpen(false);
+      setActiveDropdownIndex(-1);
     }
   };
 
-  /** بحث: إن كان النص باركوداً رقمياً وضغط Enter نضيف للسلة (يُكمّل حقل المسح). */
-  const onSearchKeyDown = async (e) => {
-    if (e.key !== 'Enter') return;
-    const q = search.trim();
-    if (!q) return;
-    if (!/^\d[\d\s]*$/.test(normalizeDigitsToLatin(q))) return;
-    e.preventDefault();
-    const ok = await tryAddProductByBarcode(q);
-    if (ok) setSearch('');
+  /** التنقل بمفاتيح الأسهم في القائمة المنسدلة */
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isDropdownOpen) {
+        setIsDropdownOpen(true);
+      } else if (partialMatches.length > 0) {
+        setActiveDropdownIndex((prev) =>
+          prev < partialMatches.length - 1 ? prev + 1 : 0
+        );
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (isDropdownOpen && partialMatches.length > 0) {
+        setActiveDropdownIndex((prev) =>
+          prev > 0 ? prev - 1 : partialMatches.length - 1
+        );
+      }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsDropdownOpen(false);
+      setActiveDropdownIndex(-1);
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleBarcodeOrSearchSubmit(e);
+      return;
+    }
+  };
+
+  /** اختيار صنف من القائمة المنسدلة */
+  const handlePickDropdownItem = (item) => {
+    addToOrder(item, 1);
+    playScanBeep(true);
+    toast.success(`تمت إضافة: ${item.name || item.barcode}`);
+    setSearch('');
+    setIsDropdownOpen(false);
+    setActiveDropdownIndex(-1);
+    setTimeout(() => barcodeInputRef.current?.focus(), 40);
+  };
+
+  /** تصفير حقل البحث والتركيز عليه فوراً */
+  const handleClearSearch = () => {
+    setSearch('');
+    setIsDropdownOpen(false);
+    setActiveDropdownIndex(-1);
+    barcodeInputRef.current?.focus();
   };
 
   const onPickDirectoryCustomer = (id) => {
@@ -1837,27 +2037,173 @@ export default function POSPage() {
                 </p>
               </div>
             </div>
-            <form onSubmit={onBarcodeSubmit} className="w-72 max-w-full">
-              <div className="relative">
-                <ScanLine className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} aria-hidden />
+            <div ref={searchContainerRef} className="relative flex-1 max-w-xl mx-2 md:mx-6">
+              <form onSubmit={handleBarcodeOrSearchSubmit} className="relative w-full">
+                <div className="relative flex items-center">
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none text-indigo-500 dark:text-indigo-400">
+                    <ScanLine size={19} className="animate-pulse" />
+                    <span className="h-4 w-px bg-gray-300 dark:bg-gray-700 hidden sm:inline-block" />
+                    <Search size={15} className="text-gray-400 hidden sm:inline-block" />
+                  </div>
+
                   <input
                     ref={barcodeInputRef}
                     type="text"
-                    placeholder={
-                      barcodeScannerMode ? 'امسح ثم Enter' : 'باركود ثم Enter'
-                    }
-                    title={
-                      barcodeScannerMode
-                        ? 'مسار الباركود: امسح الرمز بقارئ يعمل كلوحة مفاتيح ثم Enter لإضافة الصنف للسلة مباشرة'
-                        : 'أدخل رمز الباركود يدوياً ثم Enter لإضافة الصنف للسلة'
-                    }
-                    className="w-full rounded-lg border border-gray-300 bg-gray-50 py-2 pl-3 pr-10 text-sm text-gray-900 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                    dir="ltr"
-                    lang="en"
+                    value={search}
+                    onChange={handleSearchChange}
+                    onKeyDown={handleSearchKeyDown}
+                    onFocus={() => {
+                      if (search.trim()) setIsDropdownOpen(true);
+                    }}
+                    placeholder="امسح الباركود بالسكانر أو اكتب للبحث..."
+                    title="امسح الباركود بالسكانر للإضافة الفورية، أو اكتب للبحث بالاسم والموديل"
+                    className="w-full h-10 rounded-xl border border-indigo-200/80 bg-gray-50/90 pr-12 pl-24 text-sm font-medium text-gray-900 shadow-inner backdrop-blur-md transition-all duration-200 placeholder:text-gray-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-indigo-500/40 dark:bg-gray-850 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
                     autoComplete="off"
+                    spellCheck="false"
                   />
-              </div>
-            </form>
+
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                    {search ? (
+                      <button
+                        type="button"
+                        onClick={handleClearSearch}
+                        className="rounded-lg p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 transition"
+                        title="مسح"
+                      >
+                        <X size={15} />
+                      </button>
+                    ) : null}
+                    <span className="hidden sm:inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      قارئ جاهز
+                    </span>
+                  </div>
+                </div>
+              </form>
+
+              {/* القائمة المنسدلة لنتائج البحث الجزئي */}
+              {isDropdownOpen && search.trim() && (
+                <div
+                  className="absolute top-full right-0 left-0 mt-2 z-50 overflow-hidden rounded-2xl border border-gray-200/90 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/95 transition-all"
+                  style={{ maxHeight: '24rem' }}
+                >
+                  <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50/80 dark:bg-gray-800/50">
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">
+                      {partialMatches.length > 0 ? `نتائج البحث المطابقة (${partialMatches.length})` : 'لا توجد نتائج مطابقة'}
+                    </span>
+                    <span className="text-[11px] hidden sm:inline text-gray-400">
+                      اضغط Enter أو انقر للإضافة للسلة
+                    </span>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800/60">
+                    {partialMatches.length > 0 ? (
+                      partialMatches.map((item, idx) => {
+                        const isSelected = idx === activeDropdownIndex;
+                        const stock = Number(item.stock ?? 0);
+                        const price = item.priceAfterDiscount ?? item.price ?? 0;
+                        return (
+                          <div
+                            key={item.id || idx}
+                            onClick={() => handlePickDropdownItem(item)}
+                            onMouseEnter={() => setActiveDropdownIndex(idx)}
+                            className={`group flex items-center justify-between gap-3 px-3.5 py-2.5 cursor-pointer transition-colors ${
+                              isSelected
+                                ? 'bg-indigo-50/90 dark:bg-indigo-950/60 border-r-4 border-indigo-600'
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 flex items-center justify-center">
+                                {item.image ? (
+                                  <img
+                                    src={getPublicImageUrl(item.image)}
+                                    alt={item.name}
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                    }}
+                                  />
+                                ) : (
+                                  <ShoppingBag size={18} className="text-gray-400" />
+                                )}
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                                  {item.name || 'منتج بدون اسم'}
+                                </p>
+                                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                  {item.barcode ? (
+                                    <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300">
+                                      <ScanLine size={10} />
+                                      {item.barcode}
+                                    </span>
+                                  ) : null}
+                                  {item.reference ? (
+                                    <span className="truncate text-[11px] text-gray-400">
+                                      {item.reference}
+                                    </span>
+                                  ) : null}
+                                  {item.group ? (
+                                    <span className="rounded bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-300">
+                                      {item.group}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 shrink-0 text-left">
+                              <div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                                  {roundMoney(price)} ₪
+                                </div>
+                                <div className="text-[11px] mt-0.5">
+                                  {stock > 5 ? (
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                      متوفر ({stock})
+                                    </span>
+                                  ) : stock > 0 ? (
+                                    <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                      بقي {stock} فقط
+                                    </span>
+                                  ) : (
+                                    <span className="text-rose-500 font-medium">غير متوفر</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-gray-100 text-gray-600 group-hover:bg-indigo-600 group-hover:text-white dark:bg-gray-800 dark:text-gray-300'
+                                }`}
+                                title="إضافة إلى السلة"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                        <Search size={26} className="mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          لا توجد نتائج مطابقة لـ &quot;{search}&quot;
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          تأكد من كتابة الاسم أو رمز الباركود بشكل صحيح
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:border-amber-700/70 dark:bg-amber-900/40 dark:text-amber-300">
                 FREE PLAN
@@ -1906,50 +2252,54 @@ export default function POSPage() {
               </div>
             </section>
             <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
-              <div className="sticky top-0 z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPosFiltersSheetOpen(true)}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 md:hidden"
-                      >
-                        <SlidersHorizontal size={18} className="shrink-0" />
-                        <span>فلاتر</span>
-                        {hasPosSearchOrFilters && (
-                          <span
-                            className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] font-black ${
-                              shellDark ? 'bg-indigo-500 text-white' : 'bg-indigo-600 text-white'
-                            }`}
-                          >
-                            {posActiveConstraintCount}
-                          </span>
-                        )}
-                      </button>
-                      <div className="relative min-w-0 flex-1">
-                        <Search
-                          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                          size={18}
-                        />
-                        <input
-                          type="search"
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                          onKeyDown={onSearchKeyDown}
-                          placeholder="ابحث أو امسح الباركود..."
-                          title="تصفية شبكة المنتجات. إن أدخلت باركوداً رقمياً وضغط Enter يُضاف الصنف للسلة إن وُجد."
-                          className="w-full rounded-lg border border-gray-300 bg-gray-50 py-2 pl-4 pr-10 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                        />
+              <div className="sticky top-0 z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setPosFiltersSheetOpen(true)}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 md:hidden"
+                    >
+                      <SlidersHorizontal size={16} className="shrink-0" />
+                      <span>فلاتر</span>
+                      {hasPosSearchOrFilters && (
+                        <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] font-black bg-indigo-600 text-white">
+                          {posActiveConstraintCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {search.trim() ? (
+                      <div className="flex items-center gap-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 px-2.5 py-1 text-xs text-indigo-700 dark:text-indigo-300">
+                        <span>نتائج البحث عن: <strong className="font-semibold">{search}</strong></span>
+                        <button
+                          type="button"
+                          onClick={handleClearSearch}
+                          className="hover:text-indigo-900 dark:hover:text-indigo-100 transition"
+                          title="إلغاء البحث"
+                        >
+                          <X size={13} />
+                        </button>
                       </div>
-                      <select
-                        value={posShortcutFilter}
-                        onChange={(e) => setPosShortcutFilter(e.target.value)}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                      >
-                        <option value="top_sellers">الأكثر مبيعاً</option>
-                        <option value="none">الكل</option>
-                        <option value="promo_products">عروض حالية</option>
-                      </select>
-                    </div>
+                    ) : null}
+
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      عرض {posDisplayItems.length} من {items.length} منتج
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <select
+                      value={posShortcutFilter}
+                      onChange={(e) => setPosShortcutFilter(e.target.value)}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="none">جميع المنتجات</option>
+                      <option value="top_sellers">الأكثر مبيعاً</option>
+                      <option value="promo_products">عروض حالية</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div className="shrink-0 flex items-center gap-2 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2 whitespace-nowrap dark:border-gray-800 dark:bg-gray-900" dir="rtl">
                       <button

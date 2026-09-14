@@ -9,7 +9,7 @@ import {
   ShieldCheck, Building2, Landmark, CalendarClock, CalendarDays,
   PackageMinus, TrendingUp, Receipt, Banknote, Search, Package,
   Pin, X, LineChart, HeartHandshake, Puzzle, Settings as SettingsIcon,
-  Minus, LogOut, Bell,
+  Minus, LogOut, Bell, Store,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -62,6 +62,8 @@ const CATEGORIES = [
         icon: ShoppingCart,
         items: [
           { to: '/pos', icon: ScanLine, label: 'نقطة البيع (POS)', module: 'pos' },
+          { to: '/pos-supermarket', icon: Store, label: 'سوبرماركت (POS)', module: 'pos' },
+          { to: '/pos-classic', icon: ShoppingCart, label: 'نقطة البيع الكلاسيكية', module: 'pos' },
           { to: '/promotions', icon: Sparkles, label: 'العروض الذكية', module: 'promotions' },
         ],
       },

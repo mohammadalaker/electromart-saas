@@ -36,6 +36,7 @@ import DebtAgingReportPage from './pages/DebtAgingReportPage.jsx'
 import PromotionsAdminPage from './pages/PromotionsAdminPage.jsx'
 import ServiceCenterPage from './pages/ServiceCenterPage.jsx'
 import POSPage from './pages/POSPage.jsx'
+import SupermarketPOS from './pages/SupermarketPOS.jsx'
 import PreOrdersPage from './pages/PreOrdersPage.jsx'
 import QuickInventoryPage from './pages/QuickInventoryPage.jsx'
 import VoucherPage from './components/VoucherPage.jsx'
@@ -118,7 +119,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/promotions" element={<EntitlementGuard module="promotions"><PromotionsAdminPage /></EntitlementGuard>} />
           <Route path="/service/warranty" element={<EntitlementGuard module="service_warranty"><ServiceCenterPage /></EntitlementGuard>} />
           <Route path="/service/tickets" element={<EntitlementGuard module="service_warranty"><ServiceCenterPage /></EntitlementGuard>} />
-          <Route path="/pos" element={<EntitlementGuard module="pos"><POSPage /></EntitlementGuard>} />
+          <Route path="/pos" element={<EntitlementGuard module="pos"><SupermarketPOS /></EntitlementGuard>} />
+          <Route path="/pos-supermarket" element={<EntitlementGuard module="pos"><SupermarketPOS /></EntitlementGuard>} />
+          <Route path="/pos-classic" element={<EntitlementGuard module="pos"><POSPage /></EntitlementGuard>} />
           <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
           <Route path="/sales" element={<EntitlementGuard module="sales_movements"><SalesMovements /></EntitlementGuard>} />
           <Route path="/online-orders" element={<OnlineOrdersPage />} />
