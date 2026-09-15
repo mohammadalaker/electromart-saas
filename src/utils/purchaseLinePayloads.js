@@ -10,9 +10,10 @@ export function computeLineTotal(unitPrice, discountPct, qty) {
   return Math.round(raw * 100) / 100;
 }
 
-/** كمية صحيحة من سطر الفاتورة (للمطابقة مع الأرقام التسلسلية وغيرها). */
+/** كمية صحيحة من سطر الفاتورة (محسوبة بالوحدة الأساسية للمخزن عبر نسبة التحويل). */
 export function stockQtyFromLine(row) {
-  return Math.floor(Math.max(0, parseFloat(String(row.qty).replace(',', '.')) || 0));
+  const factor = Number(row?.conversionFactor) || 1;
+  return Math.floor(Math.max(0, parseFloat(String(row?.qty || 0).replace(',', '.')) || 0) * factor);
 }
 
 /** تكلفة الوحدة بعد خصم سطر الشراء */
@@ -41,6 +42,8 @@ export function computePurchaseLinePayloads(lines, landedCostExtraInput) {
     return {
       barcode: String(row.barcode || '').trim(),
       reference: String(row.reference || '').trim(),
+      unit: String(row.unit || 'قطعة').trim(),
+      conversion_factor: Number(row.conversionFactor) || 1,
       unit_price,
       discount_percent,
       qty,
@@ -95,6 +98,8 @@ export function dbLineItemsToReceiveRows(lineItems) {
       key: crypto.randomUUID(),
       barcode: String(item.barcode ?? ''),
       reference: String(item.reference ?? ''),
+      unit: String(item.unit ?? 'قطعة'),
+      conversionFactor: Number(item.conversion_factor) || 1,
       unit_price: String(item.unit_price ?? ''),
       discount_percent: String(item.discount_percent ?? '0'),
       qty: String(item.qty ?? ''),

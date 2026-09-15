@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { roundMoney } from '../../utils/productModel';
+import { useHtmlDarkClass } from '../../lib/theme';
 
 const JOURNAL_TABLE = 'accounting_journal';
 const ACCOUNTS_TABLE = 'accounting_accounts';
@@ -29,6 +30,20 @@ const toEnglishNumbers = (str) => {
   return String(str).replace(/[٠١٢٣٤٥٦٧٨٩]/g, d => d.charCodeAt(0) - 1632)
                     .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, d => d.charCodeAt(0) - 1776);
 };
+
+function FieldTooltip({ text }) {
+  if (!text) return null;
+  return (
+    <span className="relative group/tip inline-flex items-center" title={text}>
+      <Info size={13} className="text-slate-400 hover:text-indigo-400 transition-colors cursor-help" />
+      <span className="pointer-events-none absolute bottom-full mb-1.5 right-1/2 translate-x-1/2 hidden group-hover/tip:flex flex-col items-center z-50">
+        <span className="rounded-lg bg-slate-950/95 text-white text-[11px] font-medium px-2.5 py-1 whitespace-nowrap shadow-xl border border-white/10 backdrop-blur-md">
+          {text}
+        </span>
+      </span>
+    </span>
+  );
+}
 
 const STATUS_META = {
   draft: { label: 'مسودة', colorClass: 'bg-slate-500/15 text-slate-400 border-slate-500/30' },
@@ -47,6 +62,7 @@ const TYPE_META = {
 export default function JournalEntriesPage() {
   const { store, loading: storeLoading } = useStore();
   const toast = useToast();
+  const darkUi = useHtmlDarkClass();
 
   const [entries, setEntries] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -654,30 +670,46 @@ export default function JournalEntriesPage() {
 
       {/* Add / Edit Glassmorphic Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 font-arabic" dir="rtl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 font-arabic" dir="rtl">
           <div
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity"
             onClick={() => !saving && setModalOpen(false)}
             aria-hidden
           />
 
           <div
-            className="relative bg-white/80 dark:bg-gray-900/50 backdrop-blur-md border border-white/20 dark:border-gray-700/30 w-full max-w-4xl max-h-[92vh] flex flex-col rounded-[32px] shadow-2xl overflow-hidden transition-all duration-300"
+            className={`relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden transition-all duration-300 ${
+              darkUi
+                ? 'border-white/10 bg-slate-900/95 backdrop-blur-2xl text-white'
+                : 'border-slate-200 bg-white/95 backdrop-blur-2xl text-slate-900'
+            }`}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
           >
             {/* Header */}
-            <div className="flex-shrink-0 p-6 border-b border-slate-100 dark:border-gray-700/40 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/40">
+            <div
+              className={`flex-shrink-0 px-5 py-3.5 sm:px-6 sm:py-4 border-b flex justify-between items-center ${
+                darkUi
+                  ? 'border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950'
+                  : 'border-slate-200 bg-gradient-to-r from-slate-50 via-white to-indigo-50/50'
+              }`}
+            >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shrink-0">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                    darkUi
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'bg-indigo-100 text-indigo-600 border border-indigo-200'
+                  }`}
+                >
                   <BookOpen size={20} />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-xl font-black text-gray-900 dark:text-white truncate">
+                  <h3 className={`text-base sm:text-lg font-black truncate ${darkUi ? 'text-white' : 'text-slate-900'}`}>
                     {editEntry ? `تعديل قيد: ${editEntry.entry_number}` : 'إنشاء قيد محاسبي جديد'}
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  <p className={`text-xs truncate ${darkUi ? 'text-slate-400' : 'text-slate-500'}`}>
                     سجل القيود اليومية المحاسبية المزدوجة
                   </p>
                 </div>
@@ -686,51 +718,95 @@ export default function JournalEntriesPage() {
                 type="button"
                 onClick={() => setModalOpen(false)}
                 disabled={saving}
-                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors shrink-0 disabled:opacity-50 text-slate-400"
+                className={`p-1.5 rounded-lg transition-colors shrink-0 disabled:opacity-50 ${
+                  darkUi
+                    ? 'text-slate-400 hover:bg-white/10 hover:text-white'
+                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                }`}
                 aria-label="إغلاق"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             {/* Scrollable Form Body */}
-            <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1 min-h-0 [scrollbar-width:thin]">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto flex-1 min-h-0 [scrollbar-width:thin]">
+              {/* Row 1: Identification & Timing (Entry Number + Date + Type) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* Entry Number */}
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-1.5">رقم القيد *</label>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className={`flex items-center gap-1.5 text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                      <span>رقم القيد *</span>
+                      <FieldTooltip text="رقم مرجعي فريد لكل قيد محاسبي لتتبعه بدقة." />
+                    </label>
+                    {!editEntry && (
+                      <button
+                        type="button"
+                        onClick={() => setEntryNumber(suggestEntryNumber())}
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${
+                          darkUi
+                            ? 'text-indigo-300 hover:bg-indigo-500/20'
+                            : 'text-indigo-600 hover:bg-indigo-50'
+                        }`}
+                        title="توليد رقم تلقائي"
+                      >
+                        توليد تلقائي
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
                     placeholder="مثال: JE-2024-001"
                     value={entryNumber}
-                    onChange={(e) => setEntryNumber(e.target.value)}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                    onChange={(e) => setEntryNumber(toEnglishNumbers(e.target.value))}
+                    dir="ltr"
+                    className={`w-full h-10 px-3.5 py-2 font-mono text-sm font-semibold rounded-xl border outline-none transition focus:ring-2 ${
+                      darkUi
+                        ? 'border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus:border-indigo-400/50 focus:ring-indigo-500/20'
+                        : 'border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:ring-indigo-100'
+                    }`}
                   />
                 </div>
 
                 {/* Entry Date */}
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-1.5">تاريخ القيد *</label>
+                  <label className={`mb-1.5 flex items-center gap-1.5 text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <span>تاريخ القيد *</span>
+                    <FieldTooltip text="تاريخ تسجيل الحركة المحاسبية بالدفتر." />
+                  </label>
                   <input
                     type="date"
                     required
                     value={entryDate}
-                    onChange={(e) => setEntryDate(e.target.value)}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-900 dark:text-white"
+                    onChange={(e) => setEntryDate(toEnglishNumbers(e.target.value))}
+                    dir="ltr"
+                    className={`w-full h-10 px-3.5 py-2 text-sm font-semibold rounded-xl border outline-none transition focus:ring-2 ${
+                      darkUi
+                        ? 'border-white/10 bg-white/5 text-white focus:border-indigo-400/50 focus:ring-indigo-500/20'
+                        : 'border-slate-200 bg-white/80 text-slate-900 focus:border-indigo-300 focus:ring-indigo-100'
+                    }`}
                   />
                 </div>
 
                 {/* Entry Type */}
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-1.5">نوع القيد *</label>
+                  <label className={`mb-1.5 flex items-center gap-1.5 text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <span>نوع القيد *</span>
+                    <FieldTooltip text="تصنيف العملية المالية (يدوي، مبيعات، مشتريات...)." />
+                  </label>
                   <select
                     value={type}
                     onChange={(e) => setType(e.target.value)}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-900 dark:text-white"
+                    className={`w-full h-10 px-3.5 py-2 text-sm font-semibold rounded-xl border outline-none transition focus:ring-2 ${
+                      darkUi
+                        ? 'border-white/10 bg-white/5 text-white focus:border-indigo-400/50 focus:ring-indigo-500/20'
+                        : 'border-slate-200 bg-white/80 text-slate-900 focus:border-indigo-300 focus:ring-indigo-100'
+                    }`}
                   >
                     {Object.entries(TYPE_META).map(([k, v]) => (
-                      <option key={k} value={k} className="bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                      <option key={k} value={k} className={darkUi ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}>
                         {v.label}
                       </option>
                     ))}
@@ -738,85 +814,142 @@ export default function JournalEntriesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-1.5">البيان / الوصف الإجمالي</label>
+              {/* Row 2: Reference & Description */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Reference */}
+                <div className="sm:col-span-1">
+                  <label className={`mb-1.5 flex items-center gap-1.5 text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <span>المرجع (اختياري)</span>
+                    <FieldTooltip text="رقم الفاتورة أو السند أو الشيك المرتبط بالقيد لتتبعه." />
+                  </label>
                   <input
                     type="text"
-                    placeholder="شرح بسيط للقيد..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                    placeholder="رقم الفاتورة أو السند…"
+                    value={reference}
+                    onChange={(e) => setReference(toEnglishNumbers(e.target.value))}
+                    className={`w-full h-10 px-3.5 py-2 text-sm font-semibold rounded-xl border outline-none transition focus:ring-2 ${
+                      darkUi
+                        ? 'border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus:border-indigo-400/50 focus:ring-indigo-500/20'
+                        : 'border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:ring-indigo-100'
+                    }`}
                   />
                 </div>
 
-                {/* Reference */}
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-1.5">المرجع</label>
+                {/* Description */}
+                <div className="sm:col-span-2">
+                  <label className={`mb-1.5 flex items-center gap-1.5 text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <span>البيان / الوصف الإجمالي</span>
+                    <FieldTooltip text="شرح مختصر لطبيعة وسبب القيد المحاسبي." />
+                  </label>
                   <input
                     type="text"
-                    placeholder="رقم الفاتورة أو السند المرتبط..."
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                    placeholder="شرح وتفاصيل القيد المحاسبي…"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className={`w-full h-10 px-3.5 py-2 text-sm font-semibold rounded-xl border outline-none transition focus:ring-2 ${
+                      darkUi
+                        ? 'border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus:border-indigo-400/50 focus:ring-indigo-500/20'
+                        : 'border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:ring-indigo-100'
+                    }`}
                   />
                 </div>
               </div>
 
               {/* Dynamic Lines Table */}
-              <div className="space-y-3">
+              <div className="space-y-2 pt-1">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-black text-slate-700 dark:text-slate-200">بنود وسطور القيد (مزدوج)</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs font-bold ${darkUi ? 'text-slate-200' : 'text-slate-800'}`}>
+                      بنود وسطور القيد (مزدوج)
+                    </span>
+                    <FieldTooltip text="يجب أن يتطابق إجمالي المدين مع إجمالي الدائن لتوازن القيد." />
+                  </div>
                   <button
                     type="button"
                     onClick={handleAddLine}
-                    className="inline-flex items-center gap-1 rounded-xl bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-xs font-bold text-indigo-600 dark:text-indigo-300 px-3 py-1.5 transition-colors"
+                    className={`h-8 inline-flex items-center gap-1 rounded-xl px-3 text-xs font-bold transition ${
+                      darkUi
+                        ? 'border border-white/15 bg-white/10 text-indigo-200 hover:bg-white/15'
+                        : 'border border-slate-200 bg-white text-indigo-700 hover:bg-slate-50 shadow-sm'
+                    }`}
                   >
                     <Plus size={14} />
                     إضافة سطر
                   </button>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-700/60 overflow-hidden bg-slate-50/50 dark:bg-slate-800/20 p-2">
-                  <table className="w-full text-xs text-right min-w-[600px]">
+                <div
+                  className={`rounded-2xl border overflow-hidden p-1.5 ${
+                    darkUi
+                      ? 'border-white/10 bg-white/[0.02]'
+                      : 'border-slate-200 bg-slate-50/70'
+                  }`}
+                >
+                  <table className="w-full text-xs text-right min-w-[560px]">
                     <thead>
-                      <tr className="text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700/60">
-                        <th className="py-2 px-2 font-black w-1/3">الحساب المالي *</th>
+                      <tr
+                        className={`border-b text-xs ${
+                          darkUi
+                            ? 'border-white/10 text-slate-400'
+                            : 'border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <th className="py-2 px-2 font-black w-5/12">الحساب المالي *</th>
                         <th className="py-2 px-2 font-black">البيان (اختياري)</th>
-                        <th className="py-2 px-2 font-black text-center w-24">مدين ₪</th>
-                        <th className="py-2 px-2 font-black text-center w-24">دائن ₪</th>
+                        <th className="py-2 px-2 font-black text-center w-28">مدين ₪</th>
+                        <th className="py-2 px-2 font-black text-center w-28">دائن ₪</th>
                         <th className="py-2 px-2 w-10 text-center">حذف</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lines.map((line, index) => (
-                        <tr key={index} className="border-b border-slate-100 dark:border-slate-800/50">
-                          <td className="py-2 px-1">
+                        <tr
+                          key={index}
+                          className={`border-b transition-colors ${
+                            darkUi
+                              ? 'border-white/5 hover:bg-white/[0.02]'
+                              : 'border-slate-100 hover:bg-white/60'
+                          }`}
+                        >
+                          <td className="py-1.5 px-1">
                             <select
                               required
                               value={line.account_id}
                               onChange={(e) => handleUpdateLine(index, 'account_id', e.target.value)}
-                              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs font-bold text-gray-900 dark:text-slate-200 focus:outline-none focus:border-indigo-500"
+                              className={`w-full h-8 rounded-lg border px-2 py-1 text-xs font-bold outline-none transition focus:ring-1 ${
+                                darkUi
+                                  ? 'border-white/10 bg-slate-900 text-white focus:border-indigo-400'
+                                  : 'border-slate-200 bg-white text-slate-900 focus:border-indigo-400'
+                              }`}
                             >
-                              <option value="" className="text-slate-500 dark:bg-slate-900">اختر الحساب...</option>
+                              <option value="" className={darkUi ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400'}>
+                                — اختر الحساب —
+                              </option>
                               {accounts.map((acc) => (
-                                <option key={acc.id} value={acc.id} className="dark:bg-slate-900 text-gray-900 dark:text-white">
+                                <option
+                                  key={acc.id}
+                                  value={acc.id}
+                                  className={darkUi ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}
+                                >
                                   [{acc.code}] {acc.name}
                                 </option>
                               ))}
                             </select>
                           </td>
-                          <td className="py-2 px-1">
+                          <td className="py-1.5 px-1">
                             <input
                               type="text"
-                              placeholder="بيان خاص بالسطر..."
+                              placeholder="بيان السطر…"
                               value={line.description}
                               onChange={(e) => handleUpdateLine(index, 'description', e.target.value)}
-                              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-gray-900 dark:text-slate-200 focus:outline-none"
+                              className={`w-full h-8 rounded-lg border px-2 py-1 text-xs outline-none transition focus:ring-1 ${
+                                darkUi
+                                  ? 'border-white/10 bg-slate-900 text-white placeholder:text-slate-500 focus:border-indigo-400'
+                                  : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-indigo-400'
+                              }`}
                             />
                           </td>
-                          <td className="py-2 px-1">
+                          <td className="py-1.5 px-1">
                             <input
                               type="text"
                               inputMode="decimal"
@@ -826,10 +959,15 @@ export default function JournalEntriesPage() {
                                 handleUpdateLine(index, 'debit', converted);
                               }}
                               placeholder="0.00"
-                              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs font-bold text-center text-emerald-600 dark:text-emerald-400 focus:outline-none"
+                              dir="ltr"
+                              className={`w-full h-8 rounded-lg border px-2 py-1 font-currency text-xs font-bold text-center outline-none transition focus:ring-1 ${
+                                darkUi
+                                  ? 'border-white/10 bg-slate-900 text-emerald-300 focus:border-emerald-400'
+                                  : 'border-slate-200 bg-white text-emerald-700 focus:border-emerald-500'
+                              }`}
                             />
                           </td>
-                          <td className="py-2 px-1">
+                          <td className="py-1.5 px-1">
                             <input
                               type="text"
                               inputMode="decimal"
@@ -839,17 +977,23 @@ export default function JournalEntriesPage() {
                                 handleUpdateLine(index, 'credit', converted);
                               }}
                               placeholder="0.00"
-                              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs font-bold text-center text-rose-600 dark:text-rose-400 focus:outline-none"
+                              dir="ltr"
+                              className={`w-full h-8 rounded-lg border px-2 py-1 font-currency text-xs font-bold text-center outline-none transition focus:ring-1 ${
+                                darkUi
+                                  ? 'border-white/10 bg-slate-900 text-rose-300 focus:border-rose-400'
+                                  : 'border-slate-200 bg-white text-rose-700 focus:border-rose-500'
+                              }`}
                             />
                           </td>
-                          <td className="py-2 px-1 text-center">
+                          <td className="py-1.5 px-1 text-center">
                             <button
                               type="button"
                               onClick={() => handleRemoveLine(index)}
-                              className="text-rose-500 hover:text-rose-700 p-1"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-500/15 hover:text-rose-500 transition-colors"
                               title="حذف السطر"
+                              aria-label="حذف السطر"
                             >
-                              &times;
+                              <Trash2 size={14} />
                             </button>
                           </td>
                         </tr>
@@ -860,26 +1004,36 @@ export default function JournalEntriesPage() {
               </div>
 
               {/* Running Balance Indicator */}
-              <div className={`rounded-2xl border p-4 flex flex-wrap justify-between items-center gap-4 ${
-                totals.balanced
-                  ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/5 text-emerald-800 dark:text-emerald-300'
-                  : 'border-rose-200 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/5 text-rose-800 dark:text-rose-300'
-              }`}>
-                <div className="flex gap-4 text-xs font-bold">
-                  <div>إجمالي المدين: <span className="font-mono text-sm">₪{fmt(totals.debit)}</span></div>
-                  <div>إجمالي الدائن: <span className="font-mono text-sm">₪{fmt(totals.credit)}</span></div>
+              <div
+                className={`rounded-2xl border px-4 py-2.5 flex flex-wrap justify-between items-center gap-3 transition-colors ${
+                  totals.balanced
+                    ? darkUi
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                      : 'border-emerald-200 bg-emerald-50/80 text-emerald-800'
+                    : darkUi
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                    : 'border-rose-200 bg-rose-50/80 text-rose-800'
+                }`}
+              >
+                <div className="flex items-center gap-4 text-xs font-bold">
+                  <div>
+                    إجمالي المدين: <span className="font-currency text-sm font-black" dir="ltr">₪{fmt(totals.debit)}</span>
+                  </div>
+                  <div>
+                    إجمالي الدائن: <span className="font-currency text-sm font-black" dir="ltr">₪{fmt(totals.credit)}</span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-xs font-black">
                   {totals.balanced ? (
                     <>
-                      <Check size={16} />
+                      <Check size={16} className="text-emerald-500 shrink-0" />
                       <span>القيد متزن ومكتمل للترحيل</span>
                     </>
                   ) : (
                     <>
-                      <AlertCircle size={16} />
-                      <span>غير متزن (فرق التوازن: ₪{fmt(totals.diff)})</span>
+                      <AlertCircle size={16} className="text-rose-500 shrink-0" />
+                      <span>غير متزن (الفرق: ₪{fmt(totals.diff)})</span>
                     </>
                   )}
                 </div>
@@ -887,11 +1041,21 @@ export default function JournalEntriesPage() {
             </div>
 
             {/* Actions Footer */}
-            <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 p-6 sm:px-8 border-t border-slate-100 dark:border-gray-700/40 shrink-0 bg-slate-50/50 dark:bg-slate-800/40">
+            <div
+              className={`px-5 py-3.5 sm:px-6 sm:py-4 border-t flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 shrink-0 ${
+                darkUi
+                  ? 'border-white/10 bg-slate-900/90'
+                  : 'border-slate-200/80 bg-slate-50/90'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="sm:px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                className={`w-full sm:w-auto h-10 px-5 rounded-xl text-sm font-bold transition ${
+                  darkUi
+                    ? 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                }`}
               >
                 إلغاء
               </button>
@@ -899,7 +1063,11 @@ export default function JournalEntriesPage() {
                 type="button"
                 disabled={saving}
                 onClick={() => handleSaveEntry(false)}
-                className="sm:px-8 py-4 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-900/50 rounded-2xl font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-all"
+                className={`w-full sm:w-auto h-10 px-5 rounded-xl text-sm font-bold transition disabled:opacity-50 ${
+                  darkUi
+                    ? 'border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25'
+                    : 'border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                }`}
               >
                 حفظ كمسودة
               </button>
@@ -907,9 +1075,13 @@ export default function JournalEntriesPage() {
                 type="button"
                 disabled={saving || !totals.balanced}
                 onClick={() => handleSaveEntry(true)}
-                className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-200/80 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                className={`w-full sm:w-auto h-10 px-6 rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-lg transition active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none ${
+                  darkUi
+                    ? 'bg-gradient-to-l from-indigo-600 to-violet-600 text-white shadow-indigo-900/40 hover:from-indigo-500 hover:to-violet-500'
+                    : 'bg-gradient-to-l from-indigo-600 to-indigo-500 text-white shadow-indigo-200 hover:from-indigo-500 hover:to-indigo-400'
+                }`}
               >
-                {saving && <Loader2 className="animate-spin" size={18} />}
+                {saving && <Loader2 className="animate-spin" size={16} />}
                 ترحيل القيد (Post)
               </button>
             </div>

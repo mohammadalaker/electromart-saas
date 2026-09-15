@@ -50,6 +50,14 @@ import Sidebar from '../components/Sidebar';
 import PrintPosReceiptSimple from '../components/PrintPosReceiptSimple';
 import POSCheckoutFullForm from '../components/POSCheckoutFullForm';
 import { brandStorageKey } from '../constants/brand.js';
+import {
+  COMMON_UNIT_PRESETS,
+  findUnitByBarcode,
+  fetchUnitsForProductIds,
+  fetchUnitsByProductId,
+  saveProductUnits,
+  PRODUCT_UNITS_TABLE,
+} from '../utils/productUnits';
 
 const SIDEBAR_COLLAPSED_KEY = brandStorageKey('sidebar-collapsed');
 
@@ -428,22 +436,117 @@ export default function SupermarketPOS() {
   // ─────────────────────────────────────────────────────────────
   // 3. بنود جدول الفاتورة المباشر (Direct Invoice Table)
   // ─────────────────────────────────────────────────────────────
-  // كل سطر: { id, barcode, name, unit, qty, unitPrice, discount, lineTotal }
+  // كل سطر: { id, barcode, name, unit, qty, unitPrice, discount, lineTotal, conversionFactor }
   const [orderItems, setOrderItems] = useState([]);
   const [tenderedAmount, setTenderedAmount] = useState('');
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const [simpleReceiptPrint, setSimpleReceiptPrint] = useState(null);
 
+  // خريطة وحدات المنتجات المسجلة في جدول product_units للأصناف الحالية
+  const [productUnitsMap, setProductUnitsMap] = useState({});
+
+  // جلب الوحدات المسجلة لأصناف الفاتورة تلقائياً عند إضافتها
+  useEffect(() => {
+    const missingIds = orderItems
+      .map((o) => o.productId)
+      .filter((id) => id && isUuid(id) && !productUnitsMap[id]);
+
+    if (missingIds.length > 0 && store?.id) {
+      fetchUnitsForProductIds(missingIds, store.id).then((map) => {
+        if (map && Object.keys(map).length > 0) {
+          setProductUnitsMap((prev) => ({ ...prev, ...map }));
+        }
+      });
+    }
+  }, [orderItems, store?.id, productUnitsMap]);
+
+  // مزامنة وتثبيت باركود مستقل لكرتونة دخان امبريال لمنع التعارض مع باركود الصنف
+  useEffect(() => {
+    if (!store?.id) return;
+    const imperialId = '623f38f2-8bb6-4a0c-a2a4-7dbb0546e984';
+    fetchUnitsByProductId(imperialId, store.id).then(async (units) => {
+      const cartonUnit = (units || []).find((u) => u.unit_name === 'كرتونة');
+      if (!cartonUnit || cartonUnit.barcode === '1212121212' || (units || []).length === 0) {
+        const fixedUnits = [
+          {
+            unit_name: 'قطعة',
+            conversion_factor: 1,
+            barcode: '1212121212',
+            sale_price: 27,
+            is_base_unit: true,
+          },
+          {
+            unit_name: 'كرتونة',
+            conversion_factor: 10,
+            barcode: '1212121212-BOX',
+            sale_price: 270,
+            is_base_unit: false,
+          },
+        ];
+        const res = await saveProductUnits(imperialId, store.id, fixedUnits);
+        if (res?.success) {
+          setProductUnitsMap((prev) => ({ ...prev, [imperialId]: fixedUnits }));
+        }
+      } else {
+        setProductUnitsMap((prev) => ({ ...prev, [imperialId]: units }));
+      }
+    }).catch((err) => {
+      console.warn('[SupermarketPOS] Error syncing imperial units:', err);
+    });
+  }, [store?.id]);
+
+  // تغيير الوحدة يدوياً من سطر الفاتورة
+  const handleUnitChange = (lineId, newUnitName) => {
+    setOrderItems((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+        const units = productUnitsMap[line.productId] || [];
+        const foundUnit = units.find((u) => u.unit_name === newUnitName);
+
+        let newPrice = line.unitPrice;
+        let newConv = 1;
+        if (foundUnit) {
+          newPrice = Number(foundUnit.sale_price) || line.unitPrice;
+          newConv = Number(foundUnit.conversion_factor) || 1;
+        } else if (newUnitName === 'قطعة') {
+          newPrice = line.basePrice ?? line.unitPrice;
+          newConv = 1;
+        }
+
+        const lineTotal = roundMoney(Math.max(0, line.qty * newPrice - (line.discount || 0)));
+        const baseTitle = line.baseName || line.name.replace(/\s*\([^)]*\)$/, '');
+        const displayName =
+          newUnitName && newUnitName !== 'قطعة' ? `${baseTitle} (${newUnitName})` : baseTitle;
+
+        return {
+          ...line,
+          name: displayName,
+          unit: newUnitName,
+          unitPrice: newPrice,
+          conversionFactor: newConv,
+          lineTotal,
+        };
+      })
+    );
+  };
+
   // إضافة منتج بالباركود (إن وُجد يزيد الكمية +1 وإلا يضيف سطراً جديداً)
   const addOrIncrementProduct = useCallback(
-    (product, customQty = 1) => {
+    (product, customQty = 1, unitOverride = null) => {
       const normBc = normalizeDigitsToLatin(String(product.barcode || '').trim());
-      const unitPrice = roundMoney(product.priceAfterDiscount ?? product.price ?? 0);
+      const defaultPrice = roundMoney(product.priceAfterDiscount ?? product.price ?? 0);
+      const targetUnit = unitOverride?.unit || (product.box ? 'كرتونة' : 'قطعة');
+      const targetPrice = unitOverride?.unitPrice != null ? unitOverride.unitPrice : defaultPrice;
+      const targetConv = unitOverride?.conversionFactor != null ? unitOverride.conversionFactor : 1;
+      const displayName =
+        unitOverride?.unit && unitOverride.unit !== 'قطعة'
+          ? `${product.name} (${unitOverride.unit})`
+          : (product.name || 'منتج');
 
       setOrderItems((prev) => {
         const existingIdx = prev.findIndex((line) => {
-          if (normBc && line.barcode === normBc) return true;
-          if (line.productId && line.productId === product.id) return true;
+          if (line.productId && line.productId === product.id && line.unit === targetUnit) return true;
+          if (!line.productId && normBc && line.barcode === normBc && line.unit === targetUnit) return true;
           return false;
         });
 
@@ -451,21 +554,24 @@ export default function SupermarketPOS() {
           const next = [...prev];
           const cur = next[existingIdx];
           const nextQty = roundMoney(cur.qty + customQty);
-          const lineTotal = roundMoney(Math.max(0, nextQty * cur.unitPrice - cur.discount));
+          const lineTotal = roundMoney(Math.max(0, nextQty * cur.unitPrice - (cur.discount || 0)));
           next[existingIdx] = { ...cur, qty: nextQty, lineTotal };
           return next;
         }
 
         const newQty = customQty;
-        const lineTotal = roundMoney(Math.max(0, newQty * unitPrice));
+        const lineTotal = roundMoney(Math.max(0, newQty * targetPrice));
         const newLine = {
           id: 'item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
           productId: product.id || null,
           barcode: normBc || '—',
-          name: product.name || 'منتج',
-          unit: product.box ? 'كرتونة' : 'قطعة',
+          name: displayName,
+          baseName: product.name || 'منتج',
+          unit: targetUnit,
+          basePrice: defaultPrice,
+          conversionFactor: targetConv,
           qty: newQty,
-          unitPrice: unitPrice,
+          unitPrice: targetPrice,
           discount: 0,
           lineTotal: lineTotal,
         };
@@ -473,7 +579,7 @@ export default function SupermarketPOS() {
       });
 
       playScanBeep(true);
-      toast.success(`✓ أُضيف: ${product.name || normBc}`);
+      toast.success(`✓ أُضيف: ${displayName}`);
       setSearch('');
       setIsDropdownOpen(false);
       setActiveDropdownIndex(-1);
@@ -490,7 +596,7 @@ export default function SupermarketPOS() {
 
     const norm = normalizeDigitsToLatin(raw);
 
-    // 1. فحص التطابق التام في المنتجات المحملة محلياً
+    // 1. فحص التطابق التام في المنتجات المحملة محلياً (الوحدة الأساسية)
     let hit =
       items.find((i) => normalizeDigitsToLatin(String(i.barcode || '').trim()) === norm) ||
       items.find(
@@ -499,7 +605,7 @@ export default function SupermarketPOS() {
           norm.replace(/\s/g, '')
       );
 
-    // 2. إذا لم يُعثر عليه، استعلام مباشر من قاعدة بيانات Supabase
+    // 2. إذا لم يُعثر عليه، استعلام مباشر من جدول products
     if (!hit && store?.id) {
       try {
         const { data, error } = await runProductsSelectWithFallback((sel) =>
@@ -518,13 +624,47 @@ export default function SupermarketPOS() {
           }
         }
       } catch (err) {
-        console.error('Error searching barcode:', err);
+        console.error('Error searching barcode in products:', err);
       }
     }
 
     if (hit) {
+      if (hit.id && store?.id && !productUnitsMap[hit.id]) {
+        fetchUnitsByProductId(hit.id, store.id).then((units) => {
+          if (units && units.length > 0) {
+            setProductUnitsMap((prev) => ({ ...prev, [hit.id]: units }));
+          }
+        });
+      }
       addOrIncrementProduct(hit, 1);
       return;
+    }
+
+    // 2.5. فحص جدول الوحدات الإضافية product_units بالباركود
+    if (store?.id) {
+      try {
+        const unitHit = await findUnitByBarcode(norm, store.id);
+        if (unitHit && unitHit.product) {
+          const prodRow = normalizeItemFromSupabase(unitHit.product);
+          if (prodRow) {
+            setProductUnitsMap((prev) => ({
+              ...prev,
+              [prodRow.id]: [
+                ...(prev[prodRow.id] || []).filter((u) => u.id !== unitHit.id),
+                unitHit,
+              ],
+            }));
+            addOrIncrementProduct(prodRow, 1, {
+              unit: unitHit.unit_name,
+              unitPrice: Number(unitHit.sale_price) || prodRow.price,
+              conversionFactor: Number(unitHit.conversion_factor) || 1,
+            });
+            return;
+          }
+        }
+      } catch (unitErr) {
+        console.warn('Error searching barcode in product_units:', unitErr);
+      }
     }
 
     // 3. إذا كان هناك عنصر محدد في القائمة المنسدلة بالأسهم
@@ -564,8 +704,35 @@ export default function SupermarketPOS() {
     expiryDate: '',
     category: 'مواد غذائية',
     barcode: '',
+    additionalUnits: [],
   };
   const [newProductForm, setNewProductForm] = useState(initialNewProductForm);
+
+  const addAdditionalUnitRow = () => {
+    setNewProductForm((p) => ({
+      ...p,
+      additionalUnits: [
+        ...(p.additionalUnits || []),
+        { id: crypto.randomUUID(), unit_name: '', conversion_factor: '', barcode: '', sale_price: '' },
+      ],
+    }));
+  };
+
+  const removeAdditionalUnitRow = (id) => {
+    setNewProductForm((p) => ({
+      ...p,
+      additionalUnits: (p.additionalUnits || []).filter((u) => u.id !== id),
+    }));
+  };
+
+  const updateAdditionalUnitRow = (id, field, val) => {
+    setNewProductForm((p) => ({
+      ...p,
+      additionalUnits: (p.additionalUnits || []).map((u) =>
+        u.id === id ? { ...u, [field]: val } : u
+      ),
+    }));
+  };
   const [suppliersList, setSuppliersList] = useState([]);
   const [savingNewProduct, setSavingNewProduct] = useState(false);
   const newProductNameInputRef = useRef(null);
@@ -675,6 +842,89 @@ export default function SupermarketPOS() {
       const unitVal = newProductForm.unit || 'قطعة';
       const catVal = newProductForm.category?.trim() || null;
 
+      const cleanMainBc = normalizeDigitsToLatin(String(barcodeStr || '').trim());
+      const rawAdditionalUnits = (newProductForm.additionalUnits || [])
+        .map((u) => ({
+          unit_name: String(u.unit_name || '').trim(),
+          barcode: normalizeDigitsToLatin(String(u.barcode || '').trim()),
+          conversion_factor: Number(u.conversion_factor) || 1,
+          sale_price: Number(u.sale_price) || 0,
+        }))
+        .filter((u) => u.unit_name);
+
+      const unitBarcodes = rawAdditionalUnits.filter((u) => Boolean(u.barcode));
+
+      // 1. فحص التعارض الداخلي: هل تستخدم وحدة إضافية نفس باركود الصنف الأساسي؟
+      if (cleanMainBc) {
+        const sameAsMain = unitBarcodes.find((u) => u.barcode === cleanMainBc);
+        if (sameAsMain) {
+          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${cleanMainBc}) مستخدم للوحدة الأساسية لنفس المنتج.`);
+          setSavingNewProduct(false);
+          return;
+        }
+      }
+
+      // 2. فحص التعارض الداخلي: هل هناك تكرار في باركودات الوحدات الإضافية المدخلة؟
+      const seenUnitBc = new Set();
+      for (const u of unitBarcodes) {
+        if (seenUnitBc.has(u.barcode)) {
+          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${u.barcode}) مكرر في أكثر من وحدة لنفس المنتج.`);
+          setSavingNewProduct(false);
+          return;
+        }
+        seenUnitBc.add(u.barcode);
+      }
+
+      // 3. فحص قاعدة البيانات: هل أي باركود وحدة إضافية مستخدم في products.barcode؟
+      for (const u of unitBarcodes) {
+        const { data: prodBcMatch } = await supabase
+          .from(PRODUCTS_TABLE)
+          .select('id, eng_name')
+          .eq('store_id', store.id)
+          .eq('barcode', u.barcode)
+          .maybeSingle();
+
+        if (prodBcMatch) {
+          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${u.barcode}) مسجل كباركود صنف للصنف «${prodBcMatch.eng_name || ''}».`);
+          setSavingNewProduct(false);
+          return;
+        }
+      }
+
+      // 4. فحص قاعدة البيانات: هل أي باركود وحدة إضافية مستخدم في product_units.barcode لأي صنف آخر أو وحدة أخرى؟
+      for (const u of unitBarcodes) {
+        const { data: puMatch } = await supabase
+          .from(PRODUCT_UNITS_TABLE)
+          .select('id, unit_name, product_id, product:products(eng_name)')
+          .eq('store_id', store.id)
+          .eq('barcode', u.barcode)
+          .maybeSingle();
+
+        if (puMatch) {
+          const prodTitle = puMatch.product?.eng_name ? ` للصنف «${puMatch.product.eng_name}»` : '';
+          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${u.barcode}) مسجل لوحدة «${puMatch.unit_name}»${prodTitle}.`);
+          setSavingNewProduct(false);
+          return;
+        }
+      }
+
+      // 5. فحص باركود الصنف الأساسي: هل هو مستخدم مسبقاً كباركود وحدة في product_units؟
+      if (cleanMainBc) {
+        const { data: mainPuMatch } = await supabase
+          .from(PRODUCT_UNITS_TABLE)
+          .select('id, unit_name, product:products(eng_name)')
+          .eq('store_id', store.id)
+          .eq('barcode', cleanMainBc)
+          .maybeSingle();
+
+        if (mainPuMatch) {
+          const prodTitle = mainPuMatch.product?.eng_name ? ` للصنف «${mainPuMatch.product.eng_name}»` : '';
+          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${cleanMainBc}) مسجل كباركود لوحدة «${mainPuMatch.unit_name}»${prodTitle}.`);
+          setSavingNewProduct(false);
+          return;
+        }
+      }
+
       // ── ربط الحقول بالأعمدة المطابقة في جدول products ──
       // سعر البيع -> full_price و price_after_disc
       // سعر التكلفة -> purchase_price و last_purchase_price و avg_purchase_price
@@ -731,6 +981,42 @@ export default function SupermarketPOS() {
 
       if (insErr && !inserted) {
         throw insErr;
+      }
+
+      // ── حفظ الوحدة الأساسية والوحدات الإضافية في جدول product_units ──
+      if (inserted?.id) {
+        try {
+          const unitsToSave = [
+            {
+              unit_name: unitVal,
+              conversion_factor: 1,
+              barcode: cleanMainBc || null,
+              sale_price: priceNum,
+              cost_price: costPriceNum,
+              is_base_unit: true,
+            },
+            ...rawAdditionalUnits.map((u) => ({
+              unit_name: u.unit_name,
+              conversion_factor: u.conversion_factor || 1,
+              barcode: u.barcode || null,
+              sale_price: u.sale_price || priceNum,
+              cost_price: costPriceNum * (u.conversion_factor || 1),
+              is_base_unit: false,
+            })),
+          ];
+
+          const saveRes = await saveProductUnits(inserted.id, store.id, unitsToSave);
+          if (!saveRes?.success) {
+            console.warn('[SupermarketPOS] Error saving product_units:', saveRes?.error);
+          }
+
+          setProductUnitsMap((prev) => ({
+            ...prev,
+            [inserted.id]: unitsToSave,
+          }));
+        } catch (unitSaveErr) {
+          console.warn('[SupermarketPOS] Error saving product_units:', unitSaveErr);
+        }
       }
 
       // توثيق حركة المخزون الافتتاحي في inventory_logs إذا كانت الكمية أكبر من 0
@@ -1098,6 +1384,7 @@ export default function SupermarketPOS() {
         barcode: String(o.barcode || ''),
         name: o.name || '',
         unit: o.unit || 'قطعة',
+        conversion_factor: Number(o.conversionFactor) || 1,
         qty: Number(o.qty) || 1,
         unit_price: Number(o.unitPrice) || 0,
         discount: Number(o.discount) || 0,
@@ -1213,10 +1500,11 @@ export default function SupermarketPOS() {
         /* sales_items جدول اختياري */
       }
 
-      // خصم المخزون للأصناف المرتبطة بمنتج في قاعدة البيانات
+      // خصم المخزون للأصناف المرتبطة بمنتج في قاعدة البيانات (ضرب الكمية × نسبة التحويل)
       for (const line of orderItems) {
         if (line.productId && isUuid(line.productId)) {
-          const qty = Math.max(1, Math.round(Number(line.qty) || 1));
+          const factor = Number(line.conversionFactor) || 1;
+          const baseQty = Math.max(0.001, (Number(line.qty) || 1) * factor);
           let prevStock = 0;
           let newStock = 0;
           try {
@@ -1232,18 +1520,18 @@ export default function SupermarketPOS() {
             // استدعاء دالة decrement_stock الرسمية من Supabase RPC
             const { error: rpcError } = await supabase.rpc('decrement_stock', {
               row_id: line.productId,
-              amount: qty,
+              amount: baseQty,
             });
 
             if (rpcError) {
               console.warn('[SupermarketPOS] RPC decrement_stock warning, falling back to direct update:', rpcError);
-              newStock = Math.max(0, prevStock - qty);
+              newStock = Math.max(0, prevStock - baseQty);
               await supabase
                 .from(PRODUCTS_TABLE)
                 .update({ [PRODUCTS_STOCK_COLUMN]: newStock })
                 .eq('id', line.productId);
             } else {
-              newStock = Math.max(0, prevStock - qty);
+              newStock = Math.max(0, prevStock - baseQty);
             }
 
             // توثيق حركة المخزون في inventory_logs إن وُجد الجدول
@@ -1252,7 +1540,9 @@ export default function SupermarketPOS() {
                 storeId: store.id,
                 productId: line.productId,
                 barcode: line.barcode ? String(line.barcode) : null,
-                productName: line.name || '',
+                productName: factor > 1
+                  ? `${line.name} (${line.qty} ${line.unit} = ${baseQty} قطعة)`
+                  : (line.name || ''),
                 qtyBefore: prevStock,
                 qtyAfter: newStock,
                 reason: 'sale',
@@ -1266,14 +1556,15 @@ export default function SupermarketPOS() {
         }
       }
 
-      // تحديث المخزون في الذاكرة المحلية فوراً
+      // تحديث المخزون في الذاكرة المحلية فوراً مع احتساب نسبة التحويل
       setItems((prev) =>
         prev.map((it) => {
           const matched = orderItems.find((o) => o.productId === it.id);
           if (matched) {
-            const q = Math.max(1, Math.round(Number(matched.qty) || 1));
+            const factor = Number(matched.conversionFactor) || 1;
+            const baseQty = Math.max(1, Math.round((Number(matched.qty) || 1) * factor));
             const curStock = Number(it.stock ?? it.stock_count ?? 0);
-            const nextStock = Math.max(0, curStock - q);
+            const nextStock = Math.max(0, curStock - baseQty);
             return { ...it, stock: nextStock, stock_count: nextStock };
           }
           return it;
@@ -1884,21 +2175,37 @@ export default function SupermarketPOS() {
                           />
                         </td>
 
-                        {/* الوحدة */}
-                        <td className="py-2.5 px-1 w-20 text-center">
-                          <select
-                            value={line.unit}
-                            onChange={(e) => updateLineDirect(line.id, 'unit', e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/90 px-1 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 text-center"
-                          >
-                            <option value="قطعة">قطعة</option>
-                            <option value="كرتونة">كرتونة</option>
-                            <option value="كغم">كغم</option>
-                            <option value="غرام">غرام</option>
-                            <option value="لتر">لتر</option>
-                            <option value="علبة">علبة</option>
-                            <option value="باكيت">باكيت</option>
-                          </select>
+                        {/* الوحدة - ديناميكية حسب الوحدات المسجلة للصنف */}
+                        <td className="py-2.5 px-1 w-24 text-center">
+                          {(() => {
+                            const extraUnits = (line.productId && productUnitsMap[line.productId]) || [];
+                            const unitNames = new Set(extraUnits.map((u) => u.unit_name));
+                            if (!unitNames.has('قطعة')) {
+                              unitNames.add('قطعة');
+                            }
+                            if (line.unit) {
+                              unitNames.add(line.unit);
+                            }
+                            const list = Array.from(unitNames);
+
+                            return (
+                              <select
+                                value={line.unit}
+                                onChange={(e) => handleUnitChange(line.id, e.target.value)}
+                                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/90 px-1 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 text-center cursor-pointer hover:border-indigo-400 transition"
+                              >
+                                {list.map((uName) => {
+                                  const uObj = extraUnits.find((eu) => eu.unit_name === uName);
+                                  const priceHint = uObj?.sale_price != null ? ` (${uObj.sale_price}₪)` : '';
+                                  return (
+                                    <option key={uName} value={uName}>
+                                      {uName}{priceHint}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            );
+                          })()}
                         </td>
 
                         {/* الكمية (تعديل مباشر + أزرار زيادة ونقصان) */}
@@ -2617,7 +2924,7 @@ export default function SupermarketPOS() {
                 {/* الوحدة */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    الوحدة
+                    الوحدة الأساسية
                   </label>
                   <select
                     value={newProductForm.unit}
@@ -2625,11 +2932,11 @@ export default function SupermarketPOS() {
                     className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="قطعة">قطعة</option>
+                    <option value="علبة">علبة</option>
                     <option value="كرتونة">كرتونة</option>
                     <option value="كغم">كغم</option>
                     <option value="غرام">غرام</option>
                     <option value="لتر">لتر</option>
-                    <option value="علبة">علبة</option>
                     <option value="باكيت">باكيت</option>
                   </select>
                 </div>
@@ -2651,6 +2958,121 @@ export default function SupermarketPOS() {
                     dir="ltr"
                   />
                 </div>
+              </div>
+
+              {/* وحدات بيع إضافية (اختياري) */}
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Boxes size={15} className="text-indigo-500" />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      وحدات بيع إضافية (اختياري)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addAdditionalUnitRow}
+                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition"
+                  >
+                    <Plus size={13} />
+                    إضافة وحدة
+                  </button>
+                </div>
+
+                {(newProductForm.additionalUnits || []).length === 0 ? (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 py-0.5">
+                    لا توجد وحدات إضافية. اضغط «+ إضافة وحدة» لإضافة كرتونة، علبة، بكت... بنسبة تحويل وسعر خاص.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {(newProductForm.additionalUnits || []).map((u, idx) => (
+                      <div
+                        key={u.id || idx}
+                        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 space-y-2 shadow-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            وحدة إضافية #{idx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeAdditionalUnitRow(u.id)}
+                            className="rounded p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                            title="حذف هذه الوحدة"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                              اسم الوحدة *
+                            </label>
+                            <input
+                              type="text"
+                              list="unit-presets-modal"
+                              required
+                              value={u.unit_name}
+                              onChange={(e) => updateAdditionalUnitRow(u.id, 'unit_name', e.target.value)}
+                              placeholder="مثال: كرتونة"
+                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
+                            />
+                            <datalist id="unit-presets-modal">
+                              {COMMON_UNIT_PRESETS.map((preset) => (
+                                <option key={preset} value={preset} />
+                              ))}
+                            </datalist>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5" title="كم قطعة من الوحدة الأساسية تعادل هذه الوحدة">
+                              نسبة التحويل *
+                            </label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0.001"
+                              required
+                              value={u.conversion_factor}
+                              onChange={(e) => updateAdditionalUnitRow(u.id, 'conversion_factor', e.target.value)}
+                              placeholder="مثال: 24"
+                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
+                              dir="ltr"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                              سعر البيع (₪) *
+                            </label>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              required
+                              value={u.sale_price}
+                              onChange={(e) => updateAdditionalUnitRow(u.id, 'sale_price', e.target.value)}
+                              placeholder="0.00"
+                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
+                              dir="ltr"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                              الباركود (اختياري)
+                            </label>
+                            <input
+                              type="text"
+                              value={u.barcode}
+                              onChange={(e) => updateAdditionalUnitRow(u.id, 'barcode', e.target.value)}
+                              placeholder="باركود الوحدة..."
+                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-mono text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* 1. سعر التكلفة (شيكل) * + 2. الكمية الافتتاحية بالمخزون * */}

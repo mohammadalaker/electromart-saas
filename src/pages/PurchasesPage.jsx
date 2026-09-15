@@ -52,12 +52,19 @@ import {
   resolvePurchaseLinesNewProducts,
   insertNewProductForPurchase,
 } from '../utils/resolvePurchaseNewProducts';
+import {
+  COMMON_UNIT_PRESETS,
+  fetchUnitsForProductIds,
+  findUnitByBarcode,
+  fetchUnitsByProductId,
+  PRODUCT_UNITS_TABLE,
+} from '../utils/productUnits';
 
 const PURCHASES_TABLE = 'store_purchases';
 const CONTACTS_TABLE = 'store_contacts';
 const TARGET_MARGIN = 0.2;
 
-const UNIT_OPTIONS = ['قطعة', 'حبة', 'كرتونة', 'طقم', 'بكت', 'متر', 'كغم', 'لتر'];
+const UNIT_OPTIONS = COMMON_UNIT_PRESETS;
 
 function escapeIlike(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -69,6 +76,7 @@ function newLine(init = {}) {
     barcode: init.barcode || '',
     reference: init.reference || '',
     unit: init.unit || 'قطعة',
+    conversionFactor: init.conversionFactor || 1,
     unit_price: init.unit_price != null ? String(init.unit_price) : '',
     discount_percent: init.discount_percent != null ? String(init.discount_percent) : '0',
     qty: init.qty != null ? String(init.qty) : '1',
@@ -135,6 +143,30 @@ export default function PurchasesPage() {
   const [searchLoadingKey, setSearchLoadingKey] = useState(null);
   const searchTimersRef = useRef({});
   const tableDropdownRef = useRef(null);
+
+  // Registered units per product: { [productId]: Array<ProductUnit> }
+  const [productUnitsMap, setProductUnitsMap] = useState({});
+
+  // Auto-fetch units for products present in invoice lines
+  const productIdsInLines = useMemo(() => {
+    return Array.from(new Set(lines.map((l) => l.productId).filter(Boolean)));
+  }, [lines]);
+
+  useEffect(() => {
+    if (!store?.id || productIdsInLines.length === 0) return;
+    const missingIds = productIdsInLines.filter((id) => !productUnitsMap[id]);
+    if (missingIds.length === 0) return;
+
+    let cancelled = false;
+    fetchUnitsForProductIds(missingIds, store.id).then((map) => {
+      if (!cancelled && map && Object.keys(map).length > 0) {
+        setProductUnitsMap((prev) => ({ ...prev, ...map }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store?.id, productIdsInLines, productUnitsMap]);
 
   // Pre-orders reservations
   const [preOrderReservations, setPreOrderReservations] = useState([]);
@@ -299,10 +331,35 @@ export default function PurchasesPage() {
       const pattern = `%${safe}%`;
       const sel = 'id, barcode, reference, eng_name, full_price, price_after_disc, brand_group';
       try {
-        const [r1, r2, r3] = await Promise.all([
+        const [r1, r2, r3, rUnits] = await Promise.all([
           supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('barcode', pattern).limit(8),
           supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('reference', pattern).limit(8),
           supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('eng_name', pattern).limit(8),
+          supabase
+            .from(PRODUCT_UNITS_TABLE)
+            .select(`
+              id,
+              unit_name,
+              conversion_factor,
+              barcode,
+              sale_price,
+              cost_price,
+              product_id,
+              product:products(
+                id,
+                barcode,
+                reference,
+                eng_name,
+                full_price,
+                price_after_disc,
+                brand_group
+              )
+            `)
+            .eq('store_id', store.id)
+            .ilike('barcode', pattern)
+            .limit(8)
+            .then((res) => res)
+            .catch(() => ({ data: [] })),
         ]);
         const map = new Map();
         [r1.data, r2.data, r3.data].forEach((arr) => {
@@ -310,9 +367,17 @@ export default function PurchasesPage() {
             if (p?.id) map.set(p.id, p);
           });
         });
+        (rUnits?.data || []).forEach((u) => {
+          if (u?.product?.id) {
+            map.set(`unit_${u.id}`, {
+              ...u.product,
+              unitData: u,
+            });
+          }
+        });
         setSuggestionsByRow((prev) => ({
           ...prev,
-          [rowKey]: Array.from(map.values()).slice(0, 12),
+          [rowKey]: Array.from(map.values()).slice(0, 15),
         }));
       } catch (e) {
         console.warn('product search error', e);
@@ -447,40 +512,142 @@ export default function PurchasesPage() {
     });
   }, []);
 
-  const pickProduct = useCallback((rowKey, p) => {
-    setLines((prev) => {
-      const idx = prev.findIndex((r) => r.key === rowKey);
-      if (idx === -1) return prev;
-
+  const pickProduct = useCallback(
+    (rowKey, p) => {
+      const u = p.unitData;
+      const factor = u ? Number(u.conversion_factor) || 1 : 1;
       const pad = Number(p.price_after_disc);
       const fp = Number(p.full_price) || 0;
+      const unitCost =
+        u && Number(u.cost_price) > 0
+          ? Number(u.cost_price)
+          : fp > 0
+            ? fp * factor
+            : null;
 
-      const updatedRow = {
-        ...prev[idx],
-        barcode: String(p.barcode || '').trim(),
-        reference: String(p.reference ?? '').trim(),
-        productId: p.id,
-        productName: String(p.eng_name ?? '').trim().slice(0, 80),
-        unit_price: prev[idx].unit_price !== '' ? prev[idx].unit_price : fp > 0 ? String(fp) : '',
-        sellPrice: pad > 0 ? pad : fp,
-        stockFullPrice: fp,
-        brandGroup: String(p.brand_group ?? '').trim().slice(0, 80),
-      };
+      setLines((prev) => {
+        const idx = prev.findIndex((r) => r.key === rowKey);
+        if (idx === -1) return prev;
 
-      const nextLines = [...prev];
-      nextLines[idx] = updatedRow;
+        const updatedRow = {
+          ...prev[idx],
+          barcode: String(u?.barcode || p.barcode || '').trim(),
+          reference: String(p.reference ?? '').trim(),
+          productId: p.id,
+          productName: String(p.eng_name ?? '').trim().slice(0, 80),
+          unit: u ? u.unit_name : prev[idx].unit || 'قطعة',
+          conversionFactor: factor,
+          unit_price:
+            unitCost != null
+              ? String(Math.round(unitCost * 100) / 100)
+              : prev[idx].unit_price !== ''
+                ? prev[idx].unit_price
+                : fp > 0
+                  ? String(fp)
+                  : '',
+          sellPrice: u && Number(u.sale_price) > 0 ? Number(u.sale_price) : pad > 0 ? pad : fp,
+          stockFullPrice: fp,
+          brandGroup: String(p.brand_group ?? '').trim().slice(0, 80),
+        };
 
-      // If this was the last row, auto append another empty row
-      if (idx === prev.length - 1) {
-        nextLines.push(newLine());
+        const nextLines = [...prev];
+        nextLines[idx] = updatedRow;
+
+        // If this was the last row, auto append another empty row
+        if (idx === prev.length - 1) {
+          nextLines.push(newLine());
+        }
+
+        return nextLines;
+      });
+
+      setSuggestionsByRow((prev) => ({ ...prev, [rowKey]: [] }));
+      setDropdownRowKey(null);
+
+      // Fetch units for product if not yet loaded
+      if (p?.id && store?.id) {
+        fetchUnitsByProductId(p.id, store.id).then((units) => {
+          if (units && units.length > 0) {
+            setProductUnitsMap((prevMap) => ({ ...prevMap, [p.id]: units }));
+          }
+        });
+      }
+    },
+    [store?.id]
+  );
+
+  const handleUnitChange = useCallback(
+    (rowKey, newUnitName) => {
+      setLines((prev) => {
+        return prev.map((r) => {
+          if (r.key !== rowKey) return r;
+          const units = (r.productId && productUnitsMap[r.productId]) || [];
+          const matchedUnit = units.find((u) => u.unit_name === newUnitName);
+          if (matchedUnit) {
+            const factor = Number(matchedUnit.conversion_factor) || 1;
+            let newUnitPrice = r.unit_price;
+            if (Number(matchedUnit.cost_price) > 0) {
+              newUnitPrice = String(matchedUnit.cost_price);
+            } else {
+              const oldFactor = Number(r.conversionFactor) || 1;
+              const baseCost =
+                Number(r.stockFullPrice) ||
+                (Number(r.unit_price) > 0 ? Number(r.unit_price) / oldFactor : 0);
+              if (baseCost > 0) {
+                newUnitPrice = String(Math.round(baseCost * factor * 100) / 100);
+              }
+            }
+            return {
+              ...r,
+              unit: newUnitName,
+              conversionFactor: factor,
+              unit_price: newUnitPrice,
+              barcode: matchedUnit.barcode || r.barcode,
+            };
+          }
+          return {
+            ...r,
+            unit: newUnitName,
+            conversionFactor: 1,
+          };
+        });
+      });
+    },
+    [productUnitsMap]
+  );
+
+  const handleBarcodeKeyDown = useCallback(
+    async (e, row) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const clean = normalizeDigitsToLatin(String(row.barcode || '').trim());
+      if (!clean || !store?.id) return;
+
+      // 1. Check products.barcode first
+      const { data: prodData } = await supabase
+        .from(PRODUCTS_TABLE)
+        .select('id, barcode, reference, eng_name, full_price, price_after_disc, brand_group')
+        .eq('store_id', store.id)
+        .eq('barcode', clean)
+        .maybeSingle();
+
+      if (prodData) {
+        pickProduct(row.key, prodData);
+        return;
       }
 
-      return nextLines;
-    });
-
-    setSuggestionsByRow((prev) => ({ ...prev, [rowKey]: [] }));
-    setDropdownRowKey(null);
-  }, []);
+      // 2. Check product_units.barcode fallback
+      const unitMatch = await findUnitByBarcode(clean, store.id);
+      if (unitMatch && unitMatch.product) {
+        pickProduct(row.key, {
+          ...unitMatch.product,
+          unitData: unitMatch,
+        });
+        return;
+      }
+    },
+    [store?.id, pickProduct]
+  );
 
   const addRow = () => setLines((prev) => [...prev, newLine()]);
 
@@ -498,6 +665,7 @@ export default function PurchasesPage() {
         barcode: src.barcode,
         reference: src.reference,
         unit: src.unit,
+        conversionFactor: src.conversionFactor || 1,
         unit_price: src.unit_price,
         discount_percent: src.discount_percent,
         qty: src.qty,
@@ -535,10 +703,36 @@ export default function PurchasesPage() {
       const pattern = `%${safe}%`;
       const sel = 'id, barcode, reference, eng_name, full_price, price_after_disc, brand_group, stock_count';
       try {
-        const [r1, r2, r3] = await Promise.all([
+        const [r1, r2, r3, rUnits] = await Promise.all([
           supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('eng_name', pattern).limit(12),
           supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('barcode', pattern).limit(8),
           supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('reference', pattern).limit(8),
+          supabase
+            .from(PRODUCT_UNITS_TABLE)
+            .select(`
+              id,
+              unit_name,
+              conversion_factor,
+              barcode,
+              sale_price,
+              cost_price,
+              product_id,
+              product:products(
+                id,
+                barcode,
+                reference,
+                eng_name,
+                full_price,
+                price_after_disc,
+                brand_group,
+                stock_count
+              )
+            `)
+            .eq('store_id', store.id)
+            .ilike('barcode', pattern)
+            .limit(8)
+            .then((res) => res)
+            .catch(() => ({ data: [] })),
         ]);
         const map = new Map();
         [r1.data, r2.data, r3.data].forEach((arr) =>
@@ -546,6 +740,14 @@ export default function PurchasesPage() {
             if (p?.id) map.set(p.id, p);
           })
         );
+        (rUnits?.data || []).forEach((u) => {
+          if (u?.product?.id) {
+            map.set(`u_${u.id}`, {
+              ...u.product,
+              unitData: u,
+            });
+          }
+        });
         setProductSearchResults(Array.from(map.values()).slice(0, 20));
       } catch (e) {
         console.warn('product modal search error', e);
@@ -560,17 +762,33 @@ export default function PurchasesPage() {
   const addProductFromSearch = useCallback((p) => {
     const pad = Number(p.price_after_disc);
     const fp = Number(p.full_price) || 0;
+    const u = p.unitData;
+    const factor = u ? Number(u.conversion_factor) || 1 : 1;
+    const unitCost =
+      u && Number(u.cost_price) > 0
+        ? Number(u.cost_price)
+        : fp > 0
+          ? fp * factor
+          : null;
+
     setLines((prev) => {
       // Find first empty line or append
       const emptyIdx = prev.findIndex((r) => !r.productId && !r.barcode && !r.productName);
       const populated = {
         ...(emptyIdx !== -1 ? prev[emptyIdx] : newLine()),
-        barcode: String(p.barcode || '').trim(),
+        barcode: String(u?.barcode || p.barcode || '').trim(),
         reference: String(p.reference ?? '').trim(),
         productId: p.id,
         productName: String(p.eng_name ?? '').trim().slice(0, 80),
-        unit_price: fp > 0 ? String(fp) : '',
-        sellPrice: pad > 0 ? pad : fp,
+        unit: u ? u.unit_name : 'قطعة',
+        conversionFactor: factor,
+        unit_price:
+          unitCost != null
+            ? String(Math.round(unitCost * 100) / 100)
+            : fp > 0
+              ? String(fp)
+              : '',
+        sellPrice: u && Number(u.sale_price) > 0 ? Number(u.sale_price) : pad > 0 ? pad : fp,
         stockFullPrice: fp,
         brandGroup: String(p.brand_group ?? '').trim().slice(0, 80),
       };
@@ -583,10 +801,19 @@ export default function PurchasesPage() {
       }
       return [...prev, populated, newLine()];
     });
+
+    if (p?.id && store?.id) {
+      fetchUnitsByProductId(p.id, store.id).then((units) => {
+        if (units && units.length > 0) {
+          setProductUnitsMap((prevMap) => ({ ...prevMap, [p.id]: units }));
+        }
+      });
+    }
+
     setProductSearchOpen(false);
     setProductSearchQuery('');
     setProductSearchResults([]);
-  }, []);
+  }, [store?.id]);
 
   const handleNewProductSubmit = useCallback(
     async (e) => {
@@ -1228,6 +1455,7 @@ export default function PurchasesPage() {
                               setDropdownField('barcode');
                               scheduleSearch(row.key, v);
                             }}
+                            onKeyDown={(e) => handleBarcodeKeyDown(e, row)}
                             onFocus={() => {
                               setDropdownRowKey(row.key);
                               setDropdownField('barcode');
@@ -1249,7 +1477,7 @@ export default function PurchasesPage() {
                           {showDrop && dropdownField === 'barcode' && (
                             <ul className="absolute z-50 right-0 left-0 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-[11px]">
                               {sug.map((p) => (
-                                <li key={p.id}>
+                                <li key={p.unitData ? `u-${p.unitData.id}` : p.id}>
                                   <button
                                     type="button"
                                     className="w-full text-right px-2.5 py-2 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-50 dark:border-slate-700/50 last:border-0"
@@ -1259,10 +1487,10 @@ export default function PurchasesPage() {
                                     }}
                                   >
                                     <span className="font-bold text-slate-800 dark:text-slate-100 block truncate">
-                                      {p.eng_name || '—'}
+                                      {p.eng_name || '—'} {p.unitData ? `(${p.unitData.unit_name})` : ''}
                                     </span>
                                     <span className="font-currency text-slate-500 dark:text-slate-400" dir="ltr" lang="en">
-                                      {p.barcode} · مرجع {p.reference || '—'}
+                                      {p.unitData?.barcode || p.barcode} · مرجع {p.reference || '—'}
                                     </span>
                                   </button>
                                 </li>
@@ -1301,7 +1529,7 @@ export default function PurchasesPage() {
                           {showDrop && dropdownField === 'name' && (
                             <ul className="absolute z-50 right-0 left-0 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-[11px]">
                               {sug.map((p) => (
-                                <li key={p.id}>
+                                <li key={p.unitData ? `u-${p.unitData.id}` : p.id}>
                                   <button
                                     type="button"
                                     className="w-full text-right px-2.5 py-2 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-50 dark:border-slate-700/50 last:border-0"
@@ -1311,10 +1539,10 @@ export default function PurchasesPage() {
                                     }}
                                   >
                                     <span className="font-bold text-slate-800 dark:text-slate-100 block truncate">
-                                      {p.eng_name || '—'}
+                                      {p.eng_name || '—'} {p.unitData ? `(${p.unitData.unit_name})` : ''}
                                     </span>
                                     <span className="font-currency text-slate-500 dark:text-slate-400" dir="ltr" lang="en">
-                                      {p.barcode} · مرجع {p.reference || '—'}
+                                      {p.unitData?.barcode || p.barcode} · مرجع {p.reference || '—'}
                                     </span>
                                   </button>
                                 </li>
@@ -1325,17 +1553,48 @@ export default function PurchasesPage() {
 
                         {/* 4. Unit */}
                         <td className="py-1.5 px-1 text-center">
-                          <input
-                            list={`units-${row.key}`}
-                            value={row.unit}
-                            onChange={(e) => updateLine(row.key, 'unit', e.target.value)}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                          />
-                          <datalist id={`units-${row.key}`}>
-                            {UNIT_OPTIONS.map((u) => (
-                              <option key={u} value={u} />
-                            ))}
-                          </datalist>
+                          {(() => {
+                            const regUnits = (row.productId && productUnitsMap[row.productId]) || [];
+                            if (regUnits.length > 0) {
+                              const unitOptions = [...regUnits];
+                              if (row.unit && !unitOptions.some((u) => u.unit_name === row.unit)) {
+                                unitOptions.unshift({
+                                  id: 'current',
+                                  unit_name: row.unit,
+                                  conversion_factor: row.conversionFactor || 1,
+                                });
+                              }
+                              return (
+                                <select
+                                  value={row.unit}
+                                  onChange={(e) => handleUnitChange(row.key, e.target.value)}
+                                  className="h-8 w-full rounded-md border border-violet-300 bg-violet-50/70 px-1 text-center text-xs font-bold text-violet-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200 cursor-pointer"
+                                  title="اختر وحدة الشراء"
+                                >
+                                  {unitOptions.map((u) => (
+                                    <option key={u.id || u.unit_name} value={u.unit_name}>
+                                      {u.unit_name} {Number(u.conversion_factor) > 1 ? `(×${u.conversion_factor})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            return (
+                              <>
+                                <input
+                                  list={`units-${row.key}`}
+                                  value={row.unit}
+                                  onChange={(e) => updateLine(row.key, 'unit', e.target.value)}
+                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                />
+                                <datalist id={`units-${row.key}`}>
+                                  {UNIT_OPTIONS.map((u) => (
+                                    <option key={u} value={u} />
+                                  ))}
+                                </datalist>
+                              </>
+                            );
+                          })()}
                         </td>
 
                         {/* 5. Qty */}
@@ -1833,7 +2092,7 @@ export default function PurchasesPage() {
                         Number(p.price_after_disc) > 0 ? Number(p.price_after_disc) : Number(p.full_price) || 0;
                       const stock = p.stock_count != null ? Number(p.stock_count) : null;
                       return (
-                        <li key={p.id}>
+                        <li key={p.unitData ? `u_${p.unitData.id}` : p.id}>
                           <button
                             type="button"
                             onMouseDown={(e) => {
@@ -1844,10 +2103,10 @@ export default function PurchasesPage() {
                           >
                             <div className="min-w-0 flex-1">
                               <p className="font-black text-sm text-slate-900 dark:text-slate-100 truncate">
-                                {p.eng_name || '—'}
+                                {p.eng_name || '—'} {p.unitData ? `(${p.unitData.unit_name})` : ''}
                               </p>
                               <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-0.5" dir="ltr">
-                                {p.barcode || '—'}
+                                {p.unitData?.barcode || p.barcode || '—'}
                                 {p.reference ? ` · ${p.reference}` : ''}
                               </p>
                             </div>

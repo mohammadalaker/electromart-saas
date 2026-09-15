@@ -128,8 +128,9 @@ async function applyWeightedAverageBatch(lines, linePayloads, storeId) {
     if (!row.productId) continue;
     const qty = stockQtyFromLine(row);
     if (qty <= 0) continue;
-    const base = effectiveUnitCost(row);
-    const unitExtra = Number(p.landed_unit_extra || 0);
+    const factor = Number(row?.conversionFactor) || 1;
+    const base = effectiveUnitCost(row) / factor;
+    const unitExtra = Number(p.landed_unit_extra || 0) / factor;
     const unitCost = Math.round((base + unitExtra) * 1000000) / 1000000;
     items.push({ product_id: row.productId, qty, unit_cost: unitCost });
   }

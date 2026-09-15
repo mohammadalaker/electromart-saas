@@ -131,7 +131,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/purchases/history" element={<EntitlementGuard module="purchase_history"><PurchaseHistoryPage /></EntitlementGuard>} />
           <Route path="/purchases/supplier-statement" element={<EntitlementGuard module="supplier_statement"><SupplierAccountStatementPage /></EntitlementGuard>} />
           <Route path="/sales/customer-statement" element={<EntitlementGuard module="customer_statement"><CustomerAccountStatementPage /></EntitlementGuard>} />
-          <Route path="/vouchers" element={<EntitlementGuard module="vouchers"><VoucherPage /></EntitlementGuard>} />
+          <Route path="/vouchers" element={<Navigate to="/vouchers/receipt" replace />} />
+          <Route path="/vouchers/receipt" element={<EntitlementGuard module="vouchers"><VoucherPage type="receipt" /></EntitlementGuard>} />
+          <Route path="/vouchers/payment" element={<EntitlementGuard module="vouchers"><VoucherPage type="payment" /></EntitlementGuard>} />
           <Route path="/finance/checks" element={<EntitlementGuard module="checks"><ChecksPage /></EntitlementGuard>} />
           <Route path="/checks" element={<EntitlementGuard module="checks"><ChecksDashboardPage /></EntitlementGuard>} />
           <Route path="/checks/incoming" element={<EntitlementGuard module="checks"><IncomingChecksPage /></EntitlementGuard>} />

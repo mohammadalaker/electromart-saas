@@ -10,6 +10,7 @@ import {
   PackageMinus, TrendingUp, Receipt, Banknote, Search, Package,
   Pin, X, LineChart, HeartHandshake, Puzzle, Settings as SettingsIcon,
   Minus, LogOut, Bell, Store,
+  ArrowDownLeft, ArrowUpRight,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -102,6 +103,15 @@ const CATEGORIES = [
           { to: '/sales/customer-statement', icon: UserCircle, label: 'كشف زبون', module: 'customer_statement' },
         ],
       },
+      {
+        id: 'vouchers',
+        title: 'سندات القبض والصرف',
+        icon: Receipt,
+        items: [
+          { to: '/vouchers/receipt', icon: ArrowDownLeft, label: 'سند قبض', module: 'vouchers', iconColor: '#10B981' },
+          { to: '/vouchers/payment', icon: ArrowUpRight, label: 'سند صرف', module: 'vouchers', iconColor: '#EF4444' },
+        ],
+      },
     ],
   },
   {
@@ -135,7 +145,6 @@ const CATEGORIES = [
           { to: '/finance', icon: Landmark, label: 'المالية والمصروفات', module: 'finance_overview' },
           { to: '/finance/income-statement', icon: TrendingUp, label: 'قائمة الدخل', module: 'finance_overview' },
           { to: '/finance/debt-aging', icon: CalendarClock, label: 'أعمار الديون', module: 'debt_aging' },
-          { to: '/vouchers', icon: Receipt, label: 'سندات الصرف والقبض', module: 'vouchers' },
           { to: '/checks', icon: Banknote, label: 'الشيكات والكمبيالات', module: 'checks' },
           { to: '/finance/checks', icon: Banknote, label: 'الشيكات', module: 'checks' },
         ],
@@ -333,7 +342,12 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
             : 'text-[#1C1C1E] hover:bg-[#F5F5F7]'
         }`}
       >
-        <ItemIcon size={18} strokeWidth={active ? 2.5 : 1.5} className="shrink-0" />
+        <ItemIcon
+          size={18}
+          strokeWidth={active ? 2.5 : 1.5}
+          className="shrink-0"
+          style={!active && item.iconColor ? { color: item.iconColor } : undefined}
+        />
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
         {showPin && (
           <button
@@ -535,7 +549,11 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
                                         {active && (
                                           <span className="absolute right-[-13px] top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-[#4CAF50]" />
                                         )}
-                                        <ItemIcon size={15} strokeWidth={active ? 2.5 : 1.5} />
+                                         <ItemIcon
+                                           size={15}
+                                           strokeWidth={active ? 2.5 : 1.5}
+                                           style={!active && item.iconColor ? { color: item.iconColor } : undefined}
+                                         />
                                         <span className="min-w-0 flex-1 truncate font-medium">
                                           {item.label}
                                         </span>
