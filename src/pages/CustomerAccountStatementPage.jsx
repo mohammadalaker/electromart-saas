@@ -11,9 +11,17 @@ import {
   Wallet,
   X,
   Receipt,
+  CreditCard,
+  Clock,
+  User,
+  Hash,
+  Tag,
+  DollarSign,
+  CheckCircle2,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import PrintCustomerStatement from '../components/PrintCustomerStatement';
+import InvoiceModal from '../components/InvoiceModal';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 
@@ -363,37 +371,7 @@ async function fetchSalesForCustomerStatement(supabaseClient, storeId, contactId
   };
 }
 
-function parseSaleLineItems(raw) {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw;
-  try {
-    const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return Array.isArray(j) ? j : [];
-  } catch {
-    return [];
-  }
-}
 
-async function fetchSaleDetailForStatement(supabaseClient, storeId, saleId) {
-  const baseSelect =
-    'id, created_at, total_amount, payment_mode, notes, line_items, contact_id, returned_at, return_note, pos_tender';
-  let { data, error } = await supabaseClient
-    .from(SALES_TABLE)
-    .select(baseSelect)
-    .eq('store_id', storeId)
-    .eq('id', saleId)
-    .maybeSingle();
-  if (error && /pos_tender|column|schema|PGRST204/i.test(String(error.message || ''))) {
-    ({ data, error } = await supabaseClient
-      .from(SALES_TABLE)
-      .select('id, created_at, total_amount, payment_mode, notes, line_items, contact_id, returned_at, return_note')
-      .eq('store_id', storeId)
-      .eq('id', saleId)
-      .maybeSingle());
-  }
-  if (error) throw error;
-  return data;
-}
 
 export default function CustomerAccountStatementPage() {
   const { store, loading: storeLoading } = useStore();
@@ -417,42 +395,15 @@ export default function CustomerAccountStatementPage() {
   const [openingError, setOpeningError] = useState(null);
   const [openingConfirm, setOpeningConfirm] = useState(false);
 
-  /** نافذة تفاصيل فاتورة مرتبطة بـ sale_id */
-  const [invoiceModal, setInvoiceModal] = useState({
-    open: false,
-    loading: false,
-    sale: null,
-    error: null,
-  });
+  /** معرّف الفاتورة المعروضة في نافذة InvoiceModal */
+  const [viewSaleId, setViewSaleId] = useState(null);
 
-  const openInvoiceDetail = async (saleId) => {
-    if (!store?.id || !saleId) return;
-    setInvoiceModal({ open: true, loading: true, sale: null, error: null });
-    try {
-      const data = await fetchSaleDetailForStatement(supabase, store.id, saleId);
-      if (!data?.id) {
-        setInvoiceModal({
-          open: true,
-          loading: false,
-          sale: null,
-          error: 'تعذّر العثور على الفاتورة.',
-        });
-        return;
-      }
-      setInvoiceModal({ open: true, loading: false, sale: data, error: null });
-    } catch (e) {
-      console.error(e);
-      setInvoiceModal({
-        open: true,
-        loading: false,
-        sale: null,
-        error: e.message || 'فشل تحميل تفاصيل الفاتورة',
-      });
-    }
+  const openInvoiceDetail = (saleId) => {
+    if (saleId) setViewSaleId(saleId);
   };
 
   const closeInvoiceModal = () => {
-    setInvoiceModal({ open: false, loading: false, sale: null, error: null });
+    setViewSaleId(null);
   };
 
   const [voucherModal, setVoucherModal] = useState({
@@ -990,55 +941,83 @@ export default function CustomerAccountStatementPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {ledgerRows.map((r, i) => (
-                          <tr
-                            key={`${i}-${r.saleId || ''}-${r.voucherId || 'row'}`}
-                            className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 dark:border-slate-700/50 dark:odd:bg-slate-800/30 dark:even:bg-slate-800/50"
-                          >
-                            <td className="p-2.5 text-center font-currency text-slate-500 dark:text-slate-400">{i + 1}</td>
-                            <td className="p-2.5 font-currency dark:text-slate-200" dir="ltr">
-                              {r.dateLabel}
-                            </td>
-                            <td className="p-2.5 font-bold dark:text-slate-100">{r.description}</td>
-                            <td className="p-2.5 font-currency dark:text-slate-300" dir="ltr">
-                              {r.ref}
-                            </td>
-                            <td className="p-2.5 text-center align-middle">
-                              {r.saleId ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openInvoiceDetail(r.saleId)}
-                                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[11px] font-black text-indigo-900 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
-                                  title="عرض أصناف الفاتورة والملاحظات"
-                                >
-                                  <Eye size={14} className="shrink-0" />
-                                  عرض
-                                </button>
-                              ) : r.voucherId ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openVoucherDetail(r.voucherId)}
-                                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-black text-amber-950 hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/45"
-                                  title="تفاصيل سند القبض وطريقة الدفع والشيكات"
-                                >
-                                  <Receipt size={14} className="shrink-0" />
-                                  سند
-                                </button>
-                              ) : (
-                                <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
-                              )}
-                            </td>
-                            <td className="p-2.5 text-center font-currency text-emerald-800 font-bold dark:text-emerald-300" dir="ltr">
-                              {r.debit != null ? `₪${Number(r.debit).toFixed(2)}` : '—'}
-                            </td>
-                            <td className="p-2.5 text-center font-currency text-rose-700 font-bold dark:text-rose-300" dir="ltr">
-                              {r.credit != null ? `₪${Number(r.credit).toFixed(2)}` : '—'}
-                            </td>
-                            <td className="p-2.5 text-center font-black font-currency dark:text-white" dir="ltr">
-                              ₪{Number(r.balance ?? 0).toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
+                        {ledgerRows.map((r, i) => {
+                          const isClickable = Boolean(r.saleId || r.voucherId);
+                          return (
+                            <tr
+                              key={`${i}-${r.saleId || ''}-${r.voucherId || 'row'}`}
+                              onClick={() => {
+                                if (r.saleId) openInvoiceDetail(r.saleId);
+                                else if (r.voucherId) openVoucherDetail(r.voucherId);
+                              }}
+                              className={`border-b border-slate-100 dark:border-slate-700/50 transition-colors ${
+                                isClickable
+                                  ? 'cursor-pointer hover:bg-indigo-50/80 dark:hover:bg-indigo-950/50'
+                                  : ''
+                              } ${
+                                i % 2 === 0
+                                  ? 'bg-white dark:bg-slate-800/30'
+                                  : 'bg-slate-50/60 dark:bg-slate-800/50'
+                              }`}
+                              title={
+                                r.saleId
+                                  ? 'اضغط لعرض تفاصيل الفاتورة والأصناف'
+                                  : r.voucherId
+                                    ? 'اضغط لعرض تفاصيل الدفعة وسند القبض'
+                                    : undefined
+                              }
+                            >
+                              <td className="p-2.5 text-center font-currency text-slate-500 dark:text-slate-400">{i + 1}</td>
+                              <td className="p-2.5 font-currency dark:text-slate-200" dir="ltr">
+                                {r.dateLabel}
+                              </td>
+                              <td className="p-2.5 font-bold dark:text-slate-100">{r.description}</td>
+                              <td className="p-2.5 font-currency dark:text-slate-300" dir="ltr">
+                                {r.ref}
+                              </td>
+                              <td className="p-2.5 text-center align-middle">
+                                {r.saleId ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openInvoiceDetail(r.saleId);
+                                    }}
+                                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[11px] font-black text-indigo-900 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
+                                    title="عرض أصناف الفاتورة والملاحظات"
+                                  >
+                                    <Eye size={14} className="shrink-0" />
+                                    عرض
+                                  </button>
+                                ) : r.voucherId ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openVoucherDetail(r.voucherId);
+                                    }}
+                                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-black text-amber-950 hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/45"
+                                    title="تفاصيل سند القبض وطريقة الدفع والشيكات"
+                                  >
+                                    <Receipt size={14} className="shrink-0" />
+                                    سند
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-center font-currency text-emerald-800 font-bold dark:text-emerald-300" dir="ltr">
+                                {r.debit != null ? `₪${Number(r.debit).toFixed(2)}` : '—'}
+                              </td>
+                              <td className="p-2.5 text-center font-currency text-rose-700 font-bold dark:text-rose-300" dir="ltr">
+                                {r.credit != null ? `₪${Number(r.credit).toFixed(2)}` : '—'}
+                              </td>
+                              <td className="p-2.5 text-center font-black font-currency dark:text-white" dir="ltr">
+                                ₪{Number(r.balance ?? 0).toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1156,183 +1135,12 @@ export default function CustomerAccountStatementPage() {
           document.body
         )}
 
-      {typeof document !== 'undefined' &&
-        createPortal(
-          invoiceModal.open ? (
-            <div
-              className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-slate-900/55 backdrop-blur-sm"
-              dir="rtl"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="invoice-detail-title"
-              onClick={(ev) => {
-                if (ev.target === ev.currentTarget && !invoiceModal.loading) closeInvoiceModal();
-              }}
-            >
-              <div
-                className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-gray-900"
-                onClick={(ev) => ev.stopPropagation()}
-              >
-                <div className="flex items-start justify-between gap-3 mb-4">
-                  <h2 id="invoice-detail-title" className="text-lg font-black text-slate-900 dark:text-white">
-                    تفاصيل الفاتورة
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => !invoiceModal.loading && closeInvoiceModal()}
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
-                    aria-label="إغلاق"
-                  >
-                    <X size={22} />
-                  </button>
-                </div>
-                {invoiceModal.loading ? (
-                  <div className="flex justify-center py-16">
-                    <Loader2 className="animate-spin text-indigo-500 dark:text-indigo-400" size={36} />
-                  </div>
-                ) : invoiceModal.error ? (
-                  <p className="text-sm font-bold text-rose-600 dark:text-rose-100 py-4">{invoiceModal.error}</p>
-                ) : invoiceModal.sale ? (
-                  <div className="space-y-4">
-                    <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 break-all" dir="ltr">
-                      معرّف: {invoiceModal.sale.id}
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                      <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-slate-800/50">
-                        <p className="text-[10px] font-black text-slate-500 dark:text-slate-400">التاريخ</p>
-                        <p className="font-bold font-currency text-slate-900 dark:text-slate-100" dir="ltr">
-                          {invoiceModal.sale.created_at
-                            ? new Date(invoiceModal.sale.created_at).toLocaleString('ar-EG', {
-                                dateStyle: 'medium',
-                                timeStyle: 'short',
-                              })
-                            : '—'}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-slate-800/50">
-                        <p className="text-[10px] font-black text-slate-500 dark:text-slate-400">الإجمالي</p>
-                        <p className="font-black font-currency text-indigo-900 dark:text-indigo-100" dir="ltr">
-                          ₪{Number(invoiceModal.sale.total_amount ?? 0).toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs font-bold">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">
-                        الدفع:{' '}
-                        {String(invoiceModal.sale.payment_mode || '').toLowerCase() === 'credit'
-                          ? 'ذمة'
-                          : String(invoiceModal.sale.payment_mode || '').toLowerCase() === 'cash'
-                            ? 'كاش'
-                            : invoiceModal.sale.payment_mode || '—'}
-                      </span>
-                      {invoiceModal.sale.pos_tender === 'check' ? (
-                        <span className="rounded-full bg-amber-100 text-amber-900 px-2.5 py-1 dark:bg-amber-950/50 dark:text-amber-100">
-                          تحصيل: شيك
-                        </span>
-                      ) : null}
-                      {invoiceModal.sale.pos_tender === 'visa' ? (
-                        <span className="rounded-full bg-violet-100 text-violet-900 px-2.5 py-1 dark:bg-violet-950/50 dark:text-violet-100">
-                          تحصيل: دفع إلكتروني
-                        </span>
-                      ) : null}
-                      {invoiceModal.sale.pos_tender === 'digital_wallet' ? (
-                        <span className="rounded-full bg-teal-100 text-teal-900 px-2.5 py-1 dark:bg-teal-950/45 dark:text-teal-100">
-                          تحصيل: محفظة رقمية
-                        </span>
-                      ) : null}
-                      {invoiceModal.sale.returned_at ? (
-                        <span className="rounded-full bg-rose-100 text-rose-800 px-2.5 py-1 dark:bg-rose-950/45 dark:text-rose-100">
-                          مرتجع
-                        </span>
-                      ) : null}
-                    </div>
-                    {invoiceModal.sale.contact_id ? (
-                      <Link
-                        to={`/customers/${invoiceModal.sale.contact_id}`}
-                        className="inline-flex text-xs font-black text-indigo-600 hover:underline dark:text-indigo-400"
-                      >
-                        فتح ملف الزبون المرتبط ←
-                      </Link>
-                    ) : null}
-                    {invoiceModal.sale.notes ? (
-                      <div>
-                        <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-1">ملاحظات الفاتورة</p>
-                        <pre className="whitespace-pre-wrap text-xs font-bold text-slate-700 dark:text-slate-200 rounded-xl border border-slate-100 bg-slate-50/90 p-3 max-h-40 overflow-y-auto dark:border-white/10 dark:bg-slate-800/60">
-                          {String(invoiceModal.sale.notes)}
-                        </pre>
-                      </div>
-                    ) : null}
-                    <div>
-                      <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-2">الأصناف</p>
-                      {parseSaleLineItems(invoiceModal.sale.line_items).length === 0 ? (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">لا توجد أسطر محفوظة في الفاتورة.</p>
-                      ) : (
-                        <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-white/10">
-                          <table className="w-full text-xs text-right min-w-[320px]">
-                            <thead>
-                              <tr className="bg-slate-900 text-white dark:bg-slate-950">
-                                <th className="p-2">#</th>
-                                <th className="p-2" dir="ltr">
-                                  باركود
-                                </th>
-                                <th className="p-2 text-center">كمية</th>
-                                <th className="p-2 text-center" dir="ltr">
-                                  سعر
-                                </th>
-                                <th className="p-2 text-center" dir="ltr">
-                                  إجمالي
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {parseSaleLineItems(invoiceModal.sale.line_items).map((line, idx) => (
-                                <tr
-                                  key={`${idx}-${line.barcode || idx}`}
-                                  className="border-b border-slate-100 dark:border-slate-700/80 odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-800/30 dark:even:bg-slate-800/50"
-                                >
-                                  <td className="p-2 text-center text-slate-500">{idx + 1}</td>
-                                  <td className="p-2 font-mono" dir="ltr">
-                                    {line.barcode ?? '—'}
-                                  </td>
-                                  <td className="p-2 text-center font-currency">{line.qty ?? '—'}</td>
-                                  <td className="p-2 text-center font-currency" dir="ltr">
-                                    {line.unit_price != null ? `₪${Number(line.unit_price).toFixed(2)}` : '—'}
-                                  </td>
-                                  <td className="p-2 text-center font-black font-currency" dir="ltr">
-                                    {line.line_total != null ? `₪${Number(line.line_total).toFixed(2)}` : '—'}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                      {parseSaleLineItems(invoiceModal.sale.line_items).some((l) => l.serial_numbers) ? (
-                        <ul className="mt-2 space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
-                          {parseSaleLineItems(invoiceModal.sale.line_items).map((line, idx) =>
-                            line.serial_numbers ? (
-                              <li key={`s-${idx}`} className="font-mono" dir="ltr">
-                                سيريال #{idx + 1}: {String(line.serial_numbers)}
-                              </li>
-                            ) : null
-                          )}
-                        </ul>
-                      ) : null}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                      يمكنك أيضاً مراجعة الفاتورة في صفحة{' '}
-                      <Link to="/sales" className="font-black text-indigo-600 hover:underline dark:text-indigo-400">
-                        حركة المبيعات
-                      </Link>
-                      .
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null,
-          document.body
-        )}
+      <InvoiceModal
+        isOpen={Boolean(viewSaleId)}
+        saleId={viewSaleId}
+        onClose={closeInvoiceModal}
+        store={store}
+      />
 
       {typeof document !== 'undefined' &&
         createPortal(
@@ -1351,14 +1159,31 @@ export default function CustomerAccountStatementPage() {
                 className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-gray-900"
                 onClick={(ev) => ev.stopPropagation()}
               >
-                <div className="flex items-start justify-between gap-3 mb-4">
-                  <h2 id="voucher-detail-title" className="text-lg font-black text-slate-900 dark:text-white">
-                    تفاصيل سند القبض
-                  </h2>
+                <div className="flex items-start justify-between gap-3 mb-5 border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 shrink-0">
+                      <Wallet size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 id="voucher-detail-title" className="text-lg font-black text-slate-900 dark:text-white">
+                          تفاصيل الدفعة (سند قبض)
+                        </h2>
+                        {voucherModal.voucher?.id && (
+                          <span className="font-currency font-black text-xs px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800" dir="ltr">
+                            #{voucherModal.voucher.id.slice(0, 8).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        سند تسديد وقبض مسجل بحساب الزبون
+                      </p>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => !voucherModal.loading && closeVoucherModal()}
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10 transition-colors"
                     aria-label="إغلاق"
                   >
                     <X size={22} />
@@ -1455,12 +1280,21 @@ export default function CustomerAccountStatementPage() {
                         </pre>
                       </div>
                     ) : null}
-                    <Link
-                      to="/vouchers"
-                      className="inline-flex text-xs font-black text-amber-700 hover:underline dark:text-amber-400"
-                    >
-                      فتح صفحة سندات القبض والصرف ←
-                    </Link>
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                      <Link
+                        to="/vouchers"
+                        className="inline-flex font-bold text-amber-700 hover:underline dark:text-amber-400"
+                      >
+                        فتح صفحة سندات القبض والصرف ←
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={closeVoucherModal}
+                        className="rounded-xl bg-slate-100 px-4 py-2 font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        إغلاق النافذة
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </div>

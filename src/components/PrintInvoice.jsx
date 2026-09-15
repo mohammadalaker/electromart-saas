@@ -9,6 +9,9 @@ export default function PrintInvoice({ data }) {
 
   const {
     storeName,
+    logoUrl,
+    invoiceNumber,
+    invoiceId,
     customerName,
     customerPhone,
     customerEmail,
@@ -28,6 +31,8 @@ export default function PrintInvoice({ data }) {
     printedAtLabel,
   } = data;
 
+  const invNum = invoiceNumber || invoiceId;
+
   return (
     <>
       <style>{`
@@ -42,13 +47,30 @@ export default function PrintInvoice({ data }) {
     >
       <header className="border-b-2 border-indigo-600/90 pb-6 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div>
-            <h1 className="font-title text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {storeName || 'المتجر'}
-            </h1>
-            <p className="mt-1 text-sm font-bold text-indigo-600">فاتورة مبيعات</p>
+          <div className="flex items-center gap-3">
+            {logoUrl && (
+              <img
+                src={logoUrl}
+                alt=""
+                className="h-12 w-auto object-contain max-w-[100px] rounded-lg"
+              />
+            )}
+            <div>
+              <h1 className="font-title text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                {storeName || 'المتجر'}
+              </h1>
+              <p className="mt-1 text-sm font-bold text-indigo-600">فاتورة مبيعات</p>
+            </div>
           </div>
           <div className="text-left text-xs sm:text-sm text-slate-500 font-bold">
+            {invNum && (
+              <div className="mb-1">
+                <span className="block text-slate-400 text-[10px] uppercase tracking-wider">رقم الفاتورة</span>
+                <span className="font-mono text-slate-900 font-black text-sm" dir="ltr">
+                  #{String(invNum).replace(/^#/, '')}
+                </span>
+              </div>
+            )}
             <span className="block text-slate-400 text-[10px] uppercase tracking-wider">التاريخ</span>
             <span dir="ltr" lang="en">
               {printedAtLabel}
@@ -261,3 +283,6 @@ export default function PrintInvoice({ data }) {
     </>
   );
 }
+
+export { default as InvoiceModal } from './InvoiceModal';
+

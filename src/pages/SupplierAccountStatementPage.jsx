@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Loader2, FileText, Printer, Truck, Wallet, X } from 'lucide-react';
+import { Loader2, FileText, Printer, Truck, Wallet, X, Eye, Receipt, CreditCard, Calendar, Hash } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import PrintSupplierStatement from '../components/PrintSupplierStatement';
 import { supabase } from '../lib/supabaseClient';
@@ -128,6 +128,18 @@ function parseLineItems(raw) {
     }
   }
   return Array.isArray(raw) ? raw : [];
+}
+
+function parseCheckLines(v) {
+  const raw = v?.check_lines;
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(j) ? j : [];
+  } catch {
+    return [];
+  }
 }
 
 export default function SupplierAccountStatementPage() {
@@ -924,6 +936,7 @@ export default function SupplierAccountStatementPage() {
                     <th className="p-3 font-black">التاريخ</th>
                     <th className="p-3 font-black">البيان</th>
                     <th className="p-3 font-black">المرجع</th>
+                    <th className="p-3 font-black text-center w-[88px]">تفاصيل</th>
                     <th className="p-3 font-black text-center">مدين (آجل)</th>
                     <th className="p-3 font-black text-center">دائن</th>
                     <th className="p-3 font-black text-center">رصيد ذمة</th>
@@ -932,62 +945,90 @@ export default function SupplierAccountStatementPage() {
                 <tbody>
                   {ledgerRows.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-500 font-bold dark:text-slate-400">
+                      <td colSpan={7} className="p-8 text-center text-slate-500 font-bold dark:text-slate-400">
                         لا حركات لهذا المورد
                       </td>
                     </tr>
                   ) : (
-                    ledgerRows.rows.map((r, i) => (
-                      <tr
-                        key={`${r.kind}-${r.voucherId || r.purchaseId || r.ref}-${i}`}
-                        className="border-b border-slate-100 odd:bg-white even:bg-slate-50/50 dark:border-slate-700/50 dark:odd:bg-slate-800/30 dark:even:bg-slate-800/50"
-                      >
-                        <td className="p-2.5 font-currency text-slate-700 dark:text-slate-200" dir="ltr" lang="en">
-                          {r.dateLabel}
-                        </td>
-                        <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">{r.description}</td>
-                        <td className="p-2.5 text-xs">
-                          {r.kind === 'voucher' && r.credit != null && r.voucherId ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setVoucherModal({ id: r.voucherId, refLabel: String(r.ref) })
-                              }
-                              className="font-currency font-bold text-indigo-700 hover:text-indigo-900 hover:underline underline-offset-2 text-left w-full dark:text-indigo-400 dark:hover:text-indigo-300"
-                              dir="ltr"
-                              lang="en"
-                              title="عرض تفاصيل سند الصرف"
-                            >
-                              {r.ref}
-                            </button>
-                          ) : r.purchaseId ? (
-                            <button
-                              type="button"
-                              onClick={() => setViewPurchaseId(r.purchaseId)}
-                              className="font-currency font-bold text-teal-700 hover:text-teal-900 hover:underline underline-offset-2 text-left w-full dark:text-teal-400 dark:hover:text-teal-300"
-                              dir="ltr"
-                              lang="en"
-                              title="عرض تفاصيل فاتورة المشتريات"
-                            >
-                              {r.ref}
-                            </button>
-                          ) : (
-                            <span className="font-currency text-slate-600 dark:text-slate-400" dir="ltr" lang="en">
-                              {r.ref}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-2.5 font-currency text-center text-emerald-800 font-bold dark:text-emerald-300" dir="ltr" lang="en">
-                          {r.debit != null ? `₪${r.debit.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="p-2.5 font-currency text-center text-rose-700 font-bold dark:text-rose-300" dir="ltr" lang="en">
-                          {r.credit != null ? `₪${r.credit.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="p-2.5 font-currency text-center font-black text-slate-900 dark:text-white" dir="ltr" lang="en">
-                          ₪{r.balance.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))
+                    ledgerRows.rows.map((r, i) => {
+                      const isClickable = Boolean(r.purchaseId || (r.kind === 'voucher' && r.voucherId));
+                      return (
+                        <tr
+                          key={`${r.kind}-${r.voucherId || r.purchaseId || r.ref}-${i}`}
+                          onClick={() => {
+                            if (r.purchaseId) {
+                              setViewPurchaseId(r.purchaseId);
+                            } else if (r.kind === 'voucher' && r.voucherId) {
+                              setVoucherModal({ id: r.voucherId, refLabel: String(r.ref) });
+                            }
+                          }}
+                          className={`border-b border-slate-100 dark:border-slate-700/50 transition-colors ${
+                            isClickable
+                              ? 'cursor-pointer hover:bg-teal-50/80 dark:hover:bg-teal-950/50'
+                              : ''
+                          } ${
+                            i % 2 === 0
+                              ? 'bg-white dark:bg-slate-800/30'
+                              : 'bg-slate-50/50 dark:bg-slate-800/50'
+                          }`}
+                          title={
+                            r.purchaseId
+                              ? 'اضغط لعرض تفاصيل فاتورة المشتريات والأصناف'
+                              : r.voucherId
+                                ? 'اضغط لعرض تفاصيل سند الصرف'
+                                : undefined
+                          }
+                        >
+                          <td className="p-2.5 font-currency text-slate-700 dark:text-slate-200" dir="ltr" lang="en">
+                            {r.dateLabel}
+                          </td>
+                          <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">{r.description}</td>
+                          <td className="p-2.5 text-xs font-currency font-bold text-slate-700 dark:text-slate-300" dir="ltr" lang="en">
+                            {r.ref}
+                          </td>
+                          <td className="p-2.5 text-center align-middle">
+                            {r.purchaseId ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewPurchaseId(r.purchaseId);
+                                }}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1.5 text-[11px] font-black text-teal-900 hover:bg-teal-100 dark:border-teal-800/50 dark:bg-teal-950/40 dark:text-teal-100 dark:hover:bg-teal-900/50"
+                                title="عرض تفاصيل فاتورة المشتريات"
+                              >
+                                <Eye size={14} className="shrink-0" />
+                                عرض
+                              </button>
+                            ) : r.kind === 'voucher' && r.voucherId ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setVoucherModal({ id: r.voucherId, refLabel: String(r.ref) });
+                                }}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-[11px] font-black text-indigo-950 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-100 dark:hover:bg-indigo-900/45"
+                                title="عرض تفاصيل سند الصرف"
+                              >
+                                <Receipt size={14} className="shrink-0" />
+                                سند
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 font-currency text-center text-emerald-800 font-bold dark:text-emerald-300" dir="ltr" lang="en">
+                            {r.debit != null ? `₪${r.debit.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="p-2.5 font-currency text-center text-rose-700 font-bold dark:text-rose-300" dir="ltr" lang="en">
+                            {r.credit != null ? `₪${r.credit.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="p-2.5 font-currency text-center font-black text-slate-900 dark:text-white" dir="ltr" lang="en">
+                            ₪{r.balance.toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1032,19 +1073,31 @@ export default function SupplierAccountStatementPage() {
           role="presentation"
         >
           <div
-            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-xl p-6 dark:bg-gray-900 dark:border dark:border-white/10"
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-5 sm:p-6 dark:bg-gray-900 border border-slate-200 dark:border-white/10"
             onClick={(e) => e.stopPropagation()}
             dir="rtl"
           >
-            <div className="flex justify-between items-start gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
-              <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">فاتورة مشتريات</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">من سجل المشتريات المرتبط بهذا المورد</p>
+            <div className="flex justify-between items-start gap-3 mb-5 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300 shrink-0">
+                  <Truck size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white">تفاصيل فاتورة مشتريات</h3>
+                    {purchaseDetail?.invoice_number && (
+                      <span className="font-currency font-black text-xs px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-200 dark:border-teal-800" dir="ltr">
+                        #{purchaseDetail.invoice_number}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">من سجل فواتير المشتريات المرتبطة بالمورد</p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={closeInvoiceModal}
-                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400"
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400 transition-colors"
                 aria-label="إغلاق"
               >
                 <X size={22} />
@@ -1052,108 +1105,157 @@ export default function SupplierAccountStatementPage() {
             </div>
 
             {detailLoading && !purchaseDetail ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="animate-spin text-teal-600 dark:text-teal-400" size={32} />
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <Loader2 className="animate-spin text-teal-600 dark:text-teal-400" size={36} />
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">جاري تحميل بيانات الفاتورة...</p>
               </div>
             ) : purchaseDetail ? (
-              <>
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
-                  <div>
-                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">المورد</dt>
-                    <dd className="font-black text-slate-900 dark:text-white">{purchaseDetail.supplier_company_name || '—'}</dd>
+              <div className="space-y-5">
+                {/* بطاقات البيانات الأساسية */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-1">المورد</p>
+                    <p className="font-bold text-slate-900 dark:text-white truncate">
+                      {purchaseDetail.supplier_company_name || '—'}
+                    </p>
                   </div>
-                  <div>
-                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">الهاتف</dt>
-                    <dd className="font-currency font-bold dark:text-slate-200" dir="ltr" lang="en">
-                      {purchaseDetail.supplier_phone || '—'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">رقم الفاتورة</dt>
-                    <dd className="font-currency font-black dark:text-slate-100" dir="ltr" lang="en">
+
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-1">رقم الفاتورة</p>
+                    <p className="font-mono font-bold text-slate-900 dark:text-slate-100 truncate" dir="ltr">
                       {purchaseDetail.invoice_number || '—'}
-                    </dd>
+                    </p>
                   </div>
-                  <div>
-                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">التاريخ</dt>
-                    <dd className="font-currency font-bold dark:text-slate-200" dir="ltr" lang="en">
-                      {purchaseDetail.invoice_date || '—'}
-                    </dd>
+
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-1">تاريخ الفاتورة</p>
+                    <p className="font-currency font-bold text-slate-900 dark:text-slate-100" dir="ltr">
+                      {purchaseDetail.invoice_date || formatDateLabel(purchaseDetail.created_at)}
+                    </p>
                   </div>
-                  <div>
-                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">الدفع</dt>
-                    <dd className="font-black dark:text-slate-100">
-                      {purchaseDetail.payment_mode === 'credit' ? 'آجل' : 'كاش'}
-                    </dd>
-                  </div>
-                  {purchaseDetail.payment_mode === 'credit' && purchaseDetail.payment_due_date ? (
+
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-1">طريقة الشراء</p>
                     <div>
-                      <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">الاستحقاق</dt>
-                      <dd className="font-currency font-bold text-amber-900 dark:text-amber-200" dir="ltr" lang="en">
-                        {purchaseDetail.payment_due_date}
-                      </dd>
+                      {purchaseDetail.payment_mode === 'credit' ? (
+                        <span className="inline-block rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-[11px] font-black dark:bg-amber-950/60 dark:text-amber-200">
+                          آجل (ذمة)
+                        </span>
+                      ) : (
+                        <span className="inline-block rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[11px] font-black dark:bg-emerald-950/60 dark:text-emerald-200">
+                          نقدي (كاش)
+                        </span>
+                      )}
                     </div>
-                  ) : null}
-                  <div className="sm:col-span-2">
-                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">الإجمالي</dt>
-                    <dd className="font-currency text-xl font-black text-teal-800 dark:text-teal-300" dir="ltr" lang="en">
-                      ₪ {Number(purchaseDetail.total_amount ?? 0).toFixed(2)}
-                    </dd>
                   </div>
-                </dl>
-
-                {Number(purchaseDetail.landed_cost_extra ?? 0) > 0 && (
-                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-3">
-                    مصاريف واصلة:{' '}
-                    <span className="font-currency" dir="ltr" lang="en">
-                      ₪ {Number(purchaseDetail.landed_cost_extra).toFixed(2)}
-                    </span>
-                  </p>
-                )}
-
-                <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 mb-2">الأصناف</h4>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/10 mb-4">
-                  <table className="w-full text-xs text-right min-w-[480px]">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200">
-                        <th className="p-2 font-black">الباركود</th>
-                        <th className="p-2 font-black">المرجع</th>
-                        <th className="p-2 font-black text-center">الكمية</th>
-                        <th className="p-2 font-black">السعر</th>
-                        <th className="p-2 font-black">المجموع</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parseLineItems(purchaseDetail.line_items).map((line, idx) => (
-                        <tr key={idx} className="border-t border-slate-100 dark:border-slate-700 dark:text-slate-200">
-                          <td className="p-2 font-currency" dir="ltr" lang="en">
-                            {line.barcode || '—'}
-                          </td>
-                          <td className="p-2 font-currency" dir="ltr" lang="en">
-                            {line.reference || '—'}
-                          </td>
-                          <td className="p-2 text-center font-currency font-bold" dir="ltr" lang="en">
-                            {line.qty ?? '—'}
-                          </td>
-                          <td className="p-2 font-currency" dir="ltr" lang="en">
-                            ₪{Number(line.unit_price ?? 0).toFixed(2)}
-                          </td>
-                          <td className="p-2 font-currency font-black" dir="ltr" lang="en">
-                            ₪{Number(line.line_total ?? 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
 
-                {purchaseDetail.notes ? (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap border-t border-slate-100 dark:border-slate-700 pt-3">
-                    <span className="font-black text-slate-500 dark:text-slate-400">ملاحظات: </span>
-                    {purchaseDetail.notes}
-                  </p>
-                ) : null}
-              </>
+                {purchaseDetail.payment_mode === 'credit' && purchaseDetail.payment_due_date && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs font-bold text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200 flex items-center justify-between">
+                    <span>تاريخ استحقاق سداد الفاتورة:</span>
+                    <span className="font-currency" dir="ltr">{purchaseDetail.payment_due_date}</span>
+                  </div>
+                )}
+
+                {/* جدول الأصناف */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200">
+                      الأصناف الواردة بالفاتورة ({parseLineItems(purchaseDetail.line_items).length})
+                    </h4>
+                  </div>
+
+                  {parseLineItems(purchaseDetail.line_items).length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 py-3 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40">
+                      لا توجد بنود أسطر مسجلة في الفاتورة.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/10">
+                      <table className="w-full text-xs text-right min-w-[500px]">
+                        <thead>
+                          <tr className="bg-slate-900 text-white dark:bg-slate-950">
+                            <th className="p-2.5 w-8 text-center">#</th>
+                            <th className="p-2.5">اسم الصنف / البيان</th>
+                            <th className="p-2.5 font-mono" dir="ltr">الباركود</th>
+                            <th className="p-2.5 font-mono" dir="ltr">المرجع</th>
+                            <th className="p-2.5 text-center">الكمية</th>
+                            <th className="p-2.5 text-center font-bold" dir="ltr">سعر الوحدة</th>
+                            <th className="p-2.5 text-center font-bold" dir="ltr">المجموع</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parseLineItems(purchaseDetail.line_items).map((line, idx) => (
+                            <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/80 odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-800/30 dark:even:bg-slate-800/50">
+                              <td className="p-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">
+                                {line.name || line.item_name || line.description || line.reference || 'صنف مشتريات'}
+                              </td>
+                              <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+                                {line.barcode || '—'}
+                              </td>
+                              <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+                                {line.reference || '—'}
+                              </td>
+                              <td className="p-2.5 text-center font-currency font-bold text-slate-800 dark:text-slate-200" dir="ltr">
+                                {line.qty ?? '—'}
+                              </td>
+                              <td className="p-2.5 text-center font-currency text-slate-700 dark:text-slate-300" dir="ltr">
+                                ₪{Number(line.unit_price ?? 0).toFixed(2)}
+                              </td>
+                              <td className="p-2.5 text-center font-black font-currency text-teal-900 dark:text-teal-200" dir="ltr">
+                                ₪{Number(line.line_total ?? 0).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* ملخص الإجمالي المالي */}
+                <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-3.5 dark:border-teal-900/40 dark:bg-teal-950/40 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black text-teal-900/70 dark:text-teal-300/70">إجمالي فاتورة الشراء</p>
+                    <p className="text-2xl font-black font-currency text-teal-900 dark:text-teal-100" dir="ltr">
+                      ₪{Number(purchaseDetail.total_amount ?? 0).toFixed(2)}
+                    </p>
+                  </div>
+
+                  {Number(purchaseDetail.landed_cost_extra ?? 0) > 0 && (
+                    <div className="text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">مصاريف شحن واصلة: </span>
+                      <span className="font-bold font-currency text-slate-800 dark:text-slate-200" dir="ltr">
+                        ₪{Number(purchaseDetail.landed_cost_extra).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* الملاحظات */}
+                {purchaseDetail.notes && (
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-1">ملاحظات الفاتورة</p>
+                    <pre className="whitespace-pre-wrap text-xs font-medium text-slate-700 dark:text-slate-200 rounded-xl border border-slate-100 bg-slate-50/90 p-3 max-h-32 overflow-y-auto dark:border-white/10 dark:bg-slate-800/60 leading-relaxed font-sans">
+                      {purchaseDetail.notes}
+                    </pre>
+                  </div>
+                )}
+
+                {/* تذييل المودال */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                  <Link to="/purchase-history" className="font-bold text-teal-700 hover:underline dark:text-teal-400">
+                    فتح في سجل المشتريات ←
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={closeInvoiceModal}
+                    className="rounded-xl bg-slate-100 px-4 py-2 font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    إغلاق النافذة
+                  </button>
+                </div>
+              </div>
             ) : (
               <p className="text-center text-slate-500 dark:text-slate-400 font-bold py-8">لا تتوفر بيانات الفاتورة</p>
             )}
@@ -1202,54 +1304,130 @@ export default function SupplierAccountStatementPage() {
                 <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={32} />
               </div>
             ) : voucherDetail ? (
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div>
-                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">المبلغ (دائن)</dt>
-                  <dd className="font-currency text-xl font-black text-rose-700 dark:text-rose-300" dir="ltr" lang="en">
-                    ₪ {Number(voucherDetail.amount ?? 0).toFixed(2)}
-                  </dd>
+              <div className="space-y-4">
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">المبلغ (دائن)</dt>
+                    <dd className="font-currency text-xl font-black text-rose-700 dark:text-rose-300" dir="ltr" lang="en">
+                      ₪ {Number(voucherDetail.amount ?? 0).toFixed(2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">تاريخ السند</dt>
+                    <dd className="font-currency font-bold dark:text-slate-200" dir="ltr" lang="en">
+                      {voucherDetail.date
+                        ? String(voucherDetail.date).slice(0, 10)
+                        : formatDateLabel(voucherDetail.created_at)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">نوع السند</dt>
+                    <dd className="font-black text-slate-900 dark:text-white">
+                      {String(getVoucherTypeField(voucherDetail) ?? '—')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">تسجيل السند</dt>
+                    <dd className="font-currency text-xs text-slate-600 dark:text-slate-400" dir="ltr" lang="en">
+                      {voucherDetail.created_at
+                        ? new Date(voucherDetail.created_at).toLocaleString('ar-EG', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '—'}
+                    </dd>
+                  </div>
+                </dl>
+
+                {/* طريقة الدفع */}
+                <div className="flex flex-wrap gap-2 text-xs font-bold">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    طريقة الدفع:{' '}
+                    {String(voucherDetail.voucher_tender || voucherDetail.payment_mode || 'cash') === 'checks'
+                      ? 'شيكات'
+                      : String(voucherDetail.voucher_tender || voucherDetail.payment_mode || 'cash') === 'visa'
+                        ? 'فيزا / بطاقة'
+                        : String(voucherDetail.voucher_tender || voucherDetail.payment_mode || 'cash') === 'mixed'
+                          ? 'كاش + شيكات'
+                          : 'كاش (نقدي)'}
+                  </span>
+                  {voucherDetail.visa_last4 && (
+                    <span className="rounded-full bg-violet-100 text-violet-900 px-2.5 py-1 dark:bg-violet-950/50">
+                      ****{String(voucherDetail.visa_last4).slice(-4)}
+                    </span>
+                  )}
                 </div>
+
+                {/* تفاصيل الشيكات إن وُجدت */}
+                {parseCheckLines(voucherDetail).length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 mb-2">
+                      بيانات الشيكات المرفقة ({parseCheckLines(voucherDetail).length})
+                    </p>
+                    <div className="overflow-x-auto rounded-xl border border-indigo-100 dark:border-indigo-900/40">
+                      <table className="w-full text-xs text-right min-w-[300px]">
+                        <thead>
+                          <tr className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-200">
+                            <th className="p-2">رقم الشيك</th>
+                            <th className="p-2 text-center" dir="ltr">التاريخ</th>
+                            <th className="p-2 text-center" dir="ltr">المبلغ</th>
+                            <th className="p-2">البنك</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parseCheckLines(voucherDetail).map((ch, idx) => (
+                            <tr
+                              key={idx}
+                              className="border-b border-indigo-50 dark:border-indigo-900/30 odd:bg-white even:bg-indigo-50/20 dark:odd:bg-slate-800/40"
+                            >
+                              <td className="p-2 font-mono" dir="ltr">
+                                {ch.check_number ?? '—'}
+                              </td>
+                              <td className="p-2 text-center font-currency" dir="ltr">
+                                {ch.check_date ?? '—'}
+                              </td>
+                              <td className="p-2 text-center font-black font-currency text-indigo-900 dark:text-indigo-200" dir="ltr">
+                                {ch.amount != null ? `₪${Number(ch.amount).toFixed(2)}` : '—'}
+                              </td>
+                              <td className="p-2">{ch.bank_name ?? '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* البيان / الملاحظات */}
                 <div>
-                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">تاريخ السند</dt>
-                  <dd className="font-currency font-bold dark:text-slate-200" dir="ltr" lang="en">
-                    {voucherDetail.date
-                      ? String(voucherDetail.date).slice(0, 10)
-                      : formatDateLabel(voucherDetail.created_at)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">نوع السند</dt>
-                  <dd className="font-black text-slate-900 dark:text-white">
-                    {String(getVoucherTypeField(voucherDetail) ?? '—')}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">تسجيل السند</dt>
-                  <dd className="font-currency text-xs text-slate-600 dark:text-slate-400" dir="ltr" lang="en">
-                    {voucherDetail.created_at
-                      ? new Date(voucherDetail.created_at).toLocaleString('ar-EG', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '—'}
-                  </dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">البيان / الملاحظات</dt>
-                  <dd className="font-bold text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
+                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1">البيان / الملاحظات</dt>
+                  <dd className="font-bold text-slate-800 dark:text-slate-200 whitespace-pre-wrap rounded-xl border border-slate-100 bg-slate-50/80 p-3 text-xs dark:border-white/10 dark:bg-slate-800/50">
                     {voucherDetail.description?.trim() || '—'}
                   </dd>
                 </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500">معرّف السند (داخلي)</dt>
+
+                {/* معرّف السند */}
+                <div>
+                  <dt className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1">معرّف السند (داخلي)</dt>
                   <dd className="font-mono text-[11px] text-slate-500 dark:text-slate-400 break-all" dir="ltr" lang="en">
                     {String(voucherDetail.id)}
                   </dd>
                 </div>
-              </dl>
+
+                {/* زر الإغلاق في الأسفل */}
+                <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={closeVoucherModal}
+                    className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    إغلاق النافذة
+                  </button>
+                </div>
+              </div>
             ) : (
               <p className="text-center text-slate-500 dark:text-slate-400 font-bold py-8">لا تتوفر بيانات هذا السند.</p>
             )}
