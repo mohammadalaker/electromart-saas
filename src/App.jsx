@@ -1398,9 +1398,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
             type="button"
             onClick={() => setImportModalOpen(true)}
             className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-800 shadow-sm hover:bg-emerald-100 transition-all dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
+            title="استيراد مخزون من ملف إكسل"
           >
             <FileSpreadsheet size={18} />
-            استيراد Excel
+            استيراد مخزون من إكسل
           </button>
           <button
             type="button"

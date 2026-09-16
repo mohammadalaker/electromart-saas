@@ -375,7 +375,7 @@ export default function CustomerProfilePage() {
             دليل الزبائن
           </Link>
           <Link
-            to="/sales/customer-statement"
+            to={`/customers/statement?contactId=${contactId}`}
             className="inline-flex items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-900 shadow-sm hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
           >
             <Receipt size={18} />

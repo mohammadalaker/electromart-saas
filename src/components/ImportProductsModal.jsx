@@ -1,540 +1,703 @@
-import { useCallback, useRef, useState } from 'react';
-import ExcelJS from 'exceljs';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import {
   X,
   Upload,
   FileSpreadsheet,
-  ChevronLeft,
-  ChevronRight,
   Loader2,
   CheckCircle2,
   AlertTriangle,
-  ArrowLeft,
   Table2,
-  Settings2,
-  Download,
+  Percent,
+  Layers,
+  ArrowRight,
+  Check,
+  RefreshCw,
+  AlertCircle,
+  FileText,
 } from 'lucide-react';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { normalizeDigitsToLatin } from '../utils/normalizeDigits';
 
-/** أسماء الأعمدة الشائعة مع الحقل المقابل في الـ DB */
-const FIELD_HINTS = {
-  eng_name: ['الاسم', 'اسم المنتج', 'name', 'product name', 'الصنف', 'اسم الصنف', 'المنتج'],
-  barcode: ['باركود', 'barcode', 'رمز', 'كود', 'code', 'sku', 'رقم الصنف'],
-  full_price: ['السعر', 'سعر القائمة', 'price', 'full price', 'سعر الشراء', 'سعر البيع', 'التكلفة'],
-  price_after_disc: ['سعر البيع', 'بعد الخصم', 'sale price', 'discount price', 'سعر العرض', 'final price'],
-  stock_count: ['المخزون', 'الكمية', 'stock', 'quantity', 'qty', 'كمية', 'العدد'],
-  brand_group: ['المجموعة', 'العلامة', 'brand', 'group', 'ماركة', 'الفئة', 'التصنيف'],
-  reference: ['المرجع', 'reference', 'ref', 'رقم المرجع', 'كود المرجع', 'الرقم'],
-  box_count: ['الكرتون', 'box', 'عدد الكرتون', 'boxes', 'كرتون'],
-  warranty_months: ['الضمان', 'warranty', 'ضمان', 'مدة الضمان'],
-};
+const BATCH_SIZE = 500;
 
-const FIELD_LABELS = {
-  eng_name: 'اسم المنتج *',
-  barcode: 'الباركود *',
-  full_price: 'السعر الأصلي',
-  price_after_disc: 'سعر البيع / بعد الخصم',
-  stock_count: 'المخزون (الكمية)',
-  brand_group: 'المجموعة / الماركة',
-  reference: 'رقم المرجع',
-  box_count: 'عدد الكرتون',
-  warranty_months: 'الضمان (أشهر)',
-};
-
-const ALL_FIELDS = Object.keys(FIELD_LABELS);
-const IGNORE = '__ignore__';
-
-function guessFieldForHeader(header) {
-  const h = normalizeDigitsToLatin(String(header ?? '').trim()).toLowerCase();
-  if (!h) return IGNORE;
-  for (const [field, hints] of Object.entries(FIELD_HINTS)) {
-    if (hints.some((hint) => h.includes(hint.toLowerCase()) || hint.toLowerCase().includes(h))) {
-      return field;
+/**
+ * تنظيف وتحويل الباركود لتجنب الصيغ العلمية أو فقدان الأصفار
+ */
+function parseBarcodeSafe(val) {
+  if (val == null || val === '') return null;
+  if (typeof val === 'number') {
+    return Number.isInteger(val) ? String(val) : String(Math.round(val));
+  }
+  let s = normalizeDigitsToLatin(String(val)).trim();
+  if (!s) return null;
+  // في حال تحول الرقم الكبير إلى صيغة علمية مثل 6.2811E+12
+  if (/^[0-9.]+[eE][+-]?[0-9]+$/.test(s)) {
+    try {
+      const num = Number(s);
+      if (!Number.isNaN(num)) {
+        return BigInt(Math.round(num)).toString();
+      }
+    } catch {
+      /* fallback to string */
     }
   }
-  return IGNORE;
+  return s;
 }
 
-function parseNumSafe(v) {
-  if (v == null || v === '') return null;
-  const s = normalizeDigitsToLatin(String(v).replace(/,/g, '.')).trim();
+/**
+ * استخراج رقم عشري آمن
+ */
+function parseNumSafe(val) {
+  if (val == null || val === '') return 0;
+  const s = normalizeDigitsToLatin(String(val).replace(/,/g, '')).trim();
   const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
 
-function cellToString(v) {
-  if (v == null) return '';
-  if (typeof v === 'object' && v.text != null) return String(v.text);
-  if (typeof v === 'object' && v.result != null) return String(v.result);
-  return String(v);
+/**
+ * احتساب سعر البيع بناءً على التكلفة ونسبة الربح
+ */
+function calculateSalePrice(costPrice, marginPercent) {
+  const cost = Math.max(0, Number(costPrice) || 0);
+  const margin = Number(marginPercent) || 0;
+  const price = cost * (1 + margin / 100);
+  return Math.round(price * 100) / 100;
 }
 
 export default function ImportProductsModal({ storeId, onClose, onImported }) {
-  const [step, setStep] = useState(1); // 1=upload 2=map 3=preview 4=result
+  // المراحل: 'upload' (اختيار ومعاينة), 'importing' (جاري المعالجة), 'summary' (الملخص)
+  const [stage, setStage] = useState('upload');
   const [file, setFile] = useState(null);
-  const [headers, setHeaders] = useState([]);
-  const [rawRows, setRawRows] = useState([]);
-  const [mapping, setMapping] = useState({});
-  const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [parsedRows, setParsedRows] = useState([]);
+  const [profitMargin, setProfitMargin] = useState(20);
   const [parseError, setParseError] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  // إحصائيات وتقدم المعالجة
+  const [progress, setProgress] = useState({ current: 0, total: 0, percent: 0 });
+  const [importSummary, setImportSummary] = useState({ success: 0, failed: 0, errors: [] });
+
   const fileInputRef = useRef(null);
 
-  const parseFile = useCallback(async (f) => {
+  const [loadingPreloaded, setLoadingPreloaded] = useState(false);
+
+  /**
+   * قراءة ملف الإكسل ومعالجة الأعمدة الـ 7
+   * الترتيب المتوقع:
+   * 0: اسم الصنف
+   * 1: رصيد الصنف
+   * 2: الوحدة
+   * 3: معدل السعر
+   * 4: اجمالي
+   * 5: اّخر سعر شراء
+   * 6: باركود
+   */
+  const handleProcessFile = useCallback(async (selectedFile) => {
+    if (!selectedFile) return;
     setParseError(null);
+    setFile(selectedFile);
+
     try {
-      const buffer = await f.arrayBuffer();
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buffer);
-      const ws = wb.worksheets[0];
-      if (!ws) throw new Error('الملف فارغ أو لا يحتوي على ورقة عمل.');
+      const buffer = await selectedFile.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const wsName = wb.SheetNames[0];
+      const ws = wb.Sheets[wsName];
+      if (!ws) throw new Error('الملف لا يحتوي على أوراق عمل صالحة.');
 
-      const allRows = [];
-      ws.eachRow((row) => {
-        allRows.push(row.values.slice(1).map(cellToString));
-      });
-      if (allRows.length < 2) throw new Error('الملف يحتاج على الأقل صف عناوين + صف بيانات.');
+      // جلب جميع الصفوف كمصفوفة مصفوفات (2D Array)
+      const rawGrid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      const hdrs = allRows[0];
-      const data = allRows.slice(1).filter((r) => r.some((c) => c.trim()));
+      if (rawGrid.length < 2) {
+        throw new Error('الملف لا يحتوي على بيانات كافية (يجب توفر صف عناوين وصف بيانات واحد على الأقل).');
+      }
 
-      setHeaders(hdrs);
-      setRawRows(data);
-
-      // Auto-detect mapping
-      const auto = {};
-      const usedFields = new Set();
-      hdrs.forEach((h, idx) => {
-        const field = guessFieldForHeader(h);
-        if (field !== IGNORE && !usedFields.has(field)) {
-          auto[idx] = field;
-          usedFields.add(field);
-        } else {
-          auto[idx] = IGNORE;
+      // البحث التلقائي عن صف العناوين لتجاوز أي أسطر فارغة سابقة في ملف الإكسل
+      let headerIndex = -1;
+      for (let i = 0; i < Math.min(10, rawGrid.length); i++) {
+        const r = rawGrid[i];
+        if (!Array.isArray(r)) continue;
+        const isHeader = r.some((c) => {
+          const s = String(c || '').trim();
+          return s.includes('اسم الصنف') || s.includes('رصيد الصنف') || s.includes('باركود') || s.includes('سعر شراء');
+        });
+        if (isHeader) {
+          headerIndex = i;
+          break;
         }
-      });
-      setMapping(auto);
-      setStep(2);
-    } catch (e) {
-      setParseError(e.message || 'فشل قراءة الملف');
+      }
+
+      const startRowIndex = headerIndex >= 0 ? headerIndex + 1 : 1;
+      const dataRows = rawGrid.slice(startRowIndex);
+      const items = [];
+
+      for (let r = 0; r < dataRows.length; r++) {
+        const row = dataRows[r];
+        if (!Array.isArray(row)) continue;
+
+        const name = String(row[0] ?? '').trim();
+        const barcode = parseBarcodeSafe(row[6]);
+
+        // تجاهل تكرار سطر العناوين إن وجد
+        if (name === 'اسم الصنف' || barcode === 'باركود') continue;
+
+        const stockCount = parseNumSafe(row[1]);
+        const unit = String(row[2] ?? '').trim() || 'قطعة';
+        const avgPrice = parseNumSafe(row[3]);
+        const purchasePrice = parseNumSafe(row[5]);
+
+        // تجاهل الصفوف الفارغة تماماً
+        if (!name && !barcode && stockCount === 0 && purchasePrice === 0) {
+          continue;
+        }
+
+        items.push({
+          rowNumber: startRowIndex + r + 1, // رقم الصف الفعلي في ملف الإكسل
+          name: name || 'صنف بدون اسم',
+          barcode: barcode || null,
+          stockCount,
+          unit,
+          avgPrice: avgPrice || purchasePrice,
+          purchasePrice,
+        });
+      }
+
+      if (items.length === 0) {
+        throw new Error('لم يتم العثور على أي صفوف بيانات صالحة في الملف.');
+      }
+
+      setParsedRows(items);
+    } catch (err) {
+      console.error('[ImportProductsModal] parse error:', err);
+      setParseError(err.message || 'فشل في قراءة ملف الإكسل.');
+      setParsedRows([]);
     }
   }, []);
 
-  const handleFileChange = useCallback((f) => {
-    if (!f) return;
-    if (!/\.(xlsx|xls|csv)$/i.test(f.name)) {
-      setParseError('يُقبل فقط ملفات .xlsx أو .xls أو .csv');
-      return;
+  /**
+   * تحميل ملف كشف ارصدة المخزون المرفق بالنظام مباشرة
+   */
+  const handleLoadPreloaded = async () => {
+    setLoadingPreloaded(true);
+    setParseError(null);
+    try {
+      const res = await fetch('/كشف%20ارصدة%20المخزون.xlsx');
+      if (!res.ok) throw new Error('تعذر تحميل الملف مباشرة من مجلد المشروع.');
+      const blob = await res.blob();
+      const preloadedFile = new File([blob], 'كشف ارصدة المخزون.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      await handleProcessFile(preloadedFile);
+    } catch (err) {
+      console.error('[ImportProductsModal] preload error:', err);
+      setParseError(err.message || 'فشل في تحميل الملف التلقائي.');
+    } finally {
+      setLoadingPreloaded(false);
     }
-    setFile(f);
-    parseFile(f);
-  }, [parseFile]);
+  };
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFileChange(f);
-  }, [handleFileChange]);
-
-  /** تحويل صف Excel إلى record DB */
-  function rowToRecord(row) {
-    const rec = {};
-    Object.entries(mapping).forEach(([idx, field]) => {
-      if (field === IGNORE) return;
-      const val = (row[Number(idx)] ?? '').trim();
-      if (!val) return;
-      if (['full_price', 'price_after_disc', 'stock_count', 'box_count', 'warranty_months'].includes(field)) {
-        const n = parseNumSafe(val);
-        if (n !== null) rec[field] = n;
-      } else {
-        rec[field] = val;
+  const handleDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setDragOver(false);
+      const dropped = e.dataTransfer?.files?.[0];
+      if (dropped) {
+        handleProcessFile(dropped);
       }
-    });
-    return rec;
-  }
+    },
+    [handleProcessFile]
+  );
 
-  const previewRows = rawRows.slice(0, 10).map(rowToRecord);
+  // معاينة أول 10 صفوف مع سعر البيع المحسوب بنسبة الربح الحالية
+  const previewRows = useMemo(() => {
+    return parsedRows.slice(0, 10).map((row) => ({
+      ...row,
+      salePrice: calculateSalePrice(row.purchasePrice, profitMargin),
+    }));
+  }, [parsedRows, profitMargin]);
 
-  const handleImport = async () => {
-    setImporting(true);
-    let inserted = 0, updated = 0, errors = 0;
-    const errorList = [];
+  /**
+   * تنفيذ استيراد جميع الأصناف على دفعات بحجم 500 صف
+   */
+  const handleExecuteImport = async () => {
+    if (!storeId || parsedRows.length === 0) return;
 
-    for (const row of rawRows) {
-      const rec = rowToRecord(row);
-      if (!rec.barcode && !rec.eng_name) { errors++; continue; }
+    setStage('importing');
+    const total = parsedRows.length;
+    setProgress({ current: 0, total, percent: 0 });
+
+    let successCount = 0;
+    let failedCount = 0;
+    const errorsList = [];
+
+    const margin = Number(profitMargin) || 0;
+
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const batchSlice = parsedRows.slice(i, i + BATCH_SIZE);
+
+      // بناء السجلات مع إلغاء تكرار الباركود داخل نفس الدفعة
+      const seenInBatch = new Set();
+      const recordsToInsert = [];
+      for (let j = batchSlice.length - 1; j >= 0; j--) {
+        const item = batchSlice[j];
+        if (item.barcode) {
+          if (seenInBatch.has(item.barcode)) continue;
+          seenInBatch.add(item.barcode);
+        }
+        const salePrice = calculateSalePrice(item.purchasePrice, margin);
+        recordsToInsert.unshift({
+          eng_name: item.name,
+          barcode: item.barcode,
+          stock_count: Math.round(item.stockCount || 0),
+          purchase_price: item.purchasePrice,
+          last_purchase_price: item.purchasePrice,
+          avg_purchase_price: item.avgPrice || item.purchasePrice,
+          full_price: salePrice,
+          price_after_disc: salePrice,
+          store_id: storeId,
+        });
+      }
 
       try {
-        const payload = { ...rec, store_id: storeId };
+        const { error } = await supabase
+          .from(PRODUCTS_TABLE)
+          .upsert(recordsToInsert, { onConflict: 'store_id,barcode' });
 
-        if (rec.barcode) {
-          // Upsert by barcode
-          const { data: existing } = await supabase
-            .from(PRODUCTS_TABLE)
-            .select('id')
-            .eq('barcode', String(rec.barcode))
-            .eq('store_id', storeId)
-            .maybeSingle();
-
-          if (existing?.id) {
-            const { error } = await supabase
-              .from(PRODUCTS_TABLE)
-              .update(rec)
-              .eq('barcode', String(rec.barcode))
-              .eq('store_id', storeId);
-            if (error) throw error;
-            updated++;
-          } else {
-            const { error } = await supabase
-              .from(PRODUCTS_TABLE)
-              .insert([payload]);
-            if (error) throw error;
-            inserted++;
-          }
+        if (error) {
+          console.error(`[ImportProductsModal] Batch ${i}-${i + batchSlice.length} error:`, error);
+          failedCount += batchSlice.length;
+          errorsList.push({
+            batch: `${i + 1} - ${Math.min(i + batchSlice.length, total)}`,
+            message: error.message || 'خطأ أثناء الإدخال في قاعدة البيانات',
+          });
         } else {
-          const { error } = await supabase
-            .from(PRODUCTS_TABLE)
-            .insert([payload]);
-          if (error) throw error;
-          inserted++;
+          successCount += batchSlice.length;
         }
-      } catch (e) {
-        errors++;
-        errorList.push({ row: rec.eng_name || rec.barcode || '?', msg: e.message });
+      } catch (err) {
+        console.error(`[ImportProductsModal] Batch ${i} exception:`, err);
+        failedCount += batchSlice.length;
+        errorsList.push({
+          batch: `${i + 1} - ${Math.min(i + batchSlice.length, total)}`,
+          message: err.message || 'خطأ غير متوقع في الشبكة',
+        });
       }
+
+      const currentProcessed = Math.min(i + batchSlice.length, total);
+      const percent = Math.round((currentProcessed / total) * 100);
+      setProgress({ current: currentProcessed, total, percent });
     }
 
-    setResult({ inserted, updated, errors, errorList });
-    setImporting(false);
-    setStep(4);
-    if (inserted + updated > 0) onImported?.();
-  };
-
-  const downloadTemplate = async () => {
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('منتجات', { views: [{ rightToLeft: true }] });
-    const headers = [
-      'اسم المنتج', 'باركود', 'السعر الأصلي', 'سعر البيع',
-      'المخزون', 'المجموعة', 'المرجع', 'عدد الكرتون', 'الضمان (أشهر)',
-    ];
-    const headerRow = ws.addRow(headers);
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
-      cell.alignment = { horizontal: 'center' };
+    setImportSummary({
+      success: successCount,
+      failed: failedCount,
+      errors: errorsList,
     });
-    ws.addRow(['سماعات سوني WH-1000XM5', '12345678', '450', '380', '10', 'Sony', 'WH1000XM5', '1', '12']);
-    ws.columns.forEach((col) => { col.width = 20; });
-    const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'قالب-استيراد-منتجات.xlsx';
-    a.click();
-    URL.revokeObjectURL(url);
+    setStage('summary');
   };
 
-  const colSpanByMapping = ALL_FIELDS.filter((f) => Object.values(mapping).includes(f));
+  const handleReset = () => {
+    setStage('upload');
+    setFile(null);
+    setParsedRows([]);
+    setParseError(null);
+    setProgress({ current: 0, total: 0, percent: 0 });
+    setImportSummary({ success: 0, failed: 0, errors: [] });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-md animate-fadeIn"
       dir="rtl"
-      onClick={() => !importing && onClose()}
     >
-      <div
-        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700/60 dark:bg-gray-900 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-l from-indigo-50/50 to-white dark:from-indigo-950/30 dark:to-gray-900">
+      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-white/20 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 overflow-hidden transition-all">
+        {/* شريط الرأس Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-md">
-              <FileSpreadsheet size={20} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+              <FileSpreadsheet size={24} />
             </div>
             <div>
-              <h2 className="font-black text-slate-900 dark:text-white text-base">استيراد منتجات من Excel</h2>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                {step === 1 && 'ارفع ملف .xlsx أو .xls'}
-                {step === 2 && 'ربط الأعمدة بحقول المنتج'}
-                {step === 3 && `معاينة — ${rawRows.length} صف`}
-                {step === 4 && 'نتيجة الاستيراد'}
+              <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                استيراد مخزون من إكسل
+              </h3>
+              <p className="text-xs font-bold text-slate-400">
+                إدخال الأصناف والمخزون دفعة واحدة مع احتساب أسعار البيع تلقائياً
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Step indicator */}
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4].map((s) => (
-                <div
-                  key={s}
-                  className={`h-2 rounded-full transition-all ${
-                    s === step ? 'w-6 bg-indigo-600' : s < step ? 'w-2 bg-indigo-300 dark:bg-indigo-700' : 'w-2 bg-slate-200 dark:bg-slate-700'
-                  }`}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => !importing && onClose()}
-              disabled={importing}
-              className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 disabled:opacity-40 dark:hover:bg-slate-800 dark:text-slate-400"
-            >
-              <X size={20} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={stage === 'importing'}
+            className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-slate-400 transition-colors disabled:opacity-50"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">
-
-          {/* Step 1: Upload */}
-          {step === 1 && (
-            <div className="space-y-4">
+        {/* محتوى النافذة القابل للتمرير */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+          {/* مرحلة 1: رفع ومعاينة الملف */}
+          {stage === 'upload' && (
+            <>
+              {/* بطاقة رفع الملف / السحب والإفلات */}
               <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-8 py-14 text-center cursor-pointer transition-all ${
+                className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 sm:p-8 cursor-pointer text-center transition-all ${
                   dragOver
-                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
-                    : 'border-slate-200 bg-slate-50/60 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-indigo-500/50'
+                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
+                    : file
+                    ? 'border-emerald-400/60 bg-emerald-50/20 dark:border-emerald-800/40 dark:bg-emerald-950/10'
+                    : 'border-slate-200 hover:border-emerald-400 bg-slate-50/50 hover:bg-emerald-50/20 dark:border-white/10 dark:bg-slate-800/30 dark:hover:bg-slate-800/60'
                 }`}
               >
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="sr-only"
-                  onChange={(e) => handleFileChange(e.target.files?.[0])}
+                  accept=".xlsx, .xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleProcessFile(f);
+                  }}
                 />
-                <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-2xl ${dragOver ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-white text-slate-400 shadow-sm dark:bg-slate-700 dark:text-slate-400'}`}>
-                  <Upload size={32} strokeWidth={1.5} />
+
+                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  <Upload size={26} />
                 </div>
-                <p className="font-black text-slate-700 dark:text-slate-200 text-base">
-                  {dragOver ? 'أسقط الملف هنا' : 'اسحب وأسقط ملف Excel هنا'}
-                </p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">أو اضغط لاختيار ملف</p>
-                <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">.xlsx / .xls / .csv</p>
+
+                {file ? (
+                  <div>
+                    <p className="text-sm font-black text-slate-800 dark:text-white">
+                      تم اختيار الملف: <span className="text-emerald-600 dark:text-emerald-400">{file.name}</span>
+                    </p>
+                    <p className="text-xs font-bold text-slate-400 mt-1">
+                      تم قراءة {(parsedRows.length).toLocaleString('en-US')} صنف جاهز للاستيراد
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm font-black text-slate-800 dark:text-white">
+                      اسحب وأفلت ملف الإكسل هنا، أو <span className="text-emerald-600 underline">اضغط للاختيار</span>
+                    </p>
+                    <p className="text-xs font-bold text-slate-400 mt-1">
+                      يدعم ملفات بصيغة <span className="font-mono">.xlsx</span> أو <span className="font-mono">.xls</span>
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {parseError && (
-                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800 dark:border-rose-800/50 dark:bg-rose-950/30 dark:text-rose-200">
-                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-                  {parseError}
+              {/* زر سريع لتحميل ملف كشف أرصدة المخزون المرفق */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-800/40 dark:bg-emerald-950/20">
+                <div className="flex items-center gap-2.5 text-xs">
+                  <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300">
+                    <FileSpreadsheet size={16} />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-800 dark:text-white">
+                      ملف &quot;كشف ارصدة المخزون.xlsx&quot; جاهز في مجلد البرنامج
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                      يحتوي على 10,106 صنف مسجل جاهزة للاستيراد والمعاينة المباشرة
+                    </p>
+                  </div>
                 </div>
-              )}
 
-              <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-700/60 dark:bg-slate-800/40">
-                <p className="text-xs font-black text-slate-600 dark:text-slate-300 mb-2">متطلبات الملف:</p>
-                <ul className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                  <li>• أول صف = عناوين الأعمدة (اسم المنتج، باركود، السعر…)</li>
-                  <li>• باركود فريد لكل منتج — لو الباركود موجود مسبقاً يتحدّث المنتج</li>
-                  <li>• لو ما عنده باركود يُضاف كمنتج جديد</li>
-                </ul>
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); downloadTemplate(); }}
-                  className="mt-3 inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/30 dark:text-indigo-300 transition-colors"
+                  onClick={handleLoadPreloaded}
+                  disabled={loadingPreloaded}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black shadow-md shadow-emerald-600/20 transition-all disabled:opacity-50"
                 >
-                  <Download size={13} />
-                  تحميل قالب جاهز
+                  {loadingPreloaded ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Check size={15} />
+                  )}
+                  <span>تحميل الملف ومعاينته فوراً</span>
                 </button>
               </div>
-            </div>
-          )}
 
-          {/* Step 2: Map columns */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-xs font-bold text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/20 dark:text-amber-200 flex items-center gap-2">
-                <AlertTriangle size={14} className="shrink-0" />
-                اسم المنتج والباركود حقلان أساسيان — ربط على الأقل واحداً منهما.
-              </div>
-
-              <div className="space-y-2">
-                {headers.map((header, idx) => (
-                  <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-700/50 dark:bg-slate-800/40">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-black text-slate-700 dark:text-slate-200 truncate" title={header}>
-                        {header || `عمود ${idx + 1}`}
-                      </p>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">
-                        {[rawRows[0]?.[idx], rawRows[1]?.[idx]].filter(Boolean).join(' / ') || '—'}
-                      </p>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <ArrowLeft size={14} className="text-slate-300 dark:text-slate-600" />
-                      <select
-                        value={mapping[idx] ?? IGNORE}
-                        onChange={(e) => setMapping((prev) => ({ ...prev, [idx]: e.target.value }))}
-                        className={`rounded-xl border px-3 py-2 text-xs font-bold outline-none transition-colors focus:ring-2 focus:ring-indigo-500/20 ${
-                          mapping[idx] && mapping[idx] !== IGNORE
-                            ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700/50 dark:bg-indigo-950/30 dark:text-indigo-300'
-                            : 'border-slate-200 bg-white text-slate-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400'
-                        }`}
-                      >
-                        <option value={IGNORE}>تجاهل هذا العمود</option>
-                        {ALL_FIELDS.map((f) => (
-                          <option key={f} value={f}>{FIELD_LABELS[f]}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Preview */}
-          {step === 3 && (
-            <div className="space-y-3">
-              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                معاينة أول {Math.min(10, rawRows.length)} صفوف من أصل {rawRows.length} — اضغط «استيراد» لبدء الرفع الكامل.
-              </p>
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700/60">
-                <table className="w-full text-xs min-w-[500px]">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-indigo-50/80 to-transparent text-slate-700 border-b border-slate-200/70 dark:from-indigo-950/40 dark:to-transparent dark:text-slate-200 dark:border-slate-700/60">
-                      {colSpanByMapping.map((f) => (
-                        <th key={f} className="text-right py-2.5 px-3 font-semibold whitespace-nowrap">
-                          {FIELD_LABELS[f]}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((rec, idx) => (
-                      <tr key={idx} className={`border-b border-slate-100/70 dark:border-slate-700/40 ${idx % 2 === 0 ? 'bg-white dark:bg-slate-900/50' : 'bg-slate-50/40 dark:bg-slate-800/30'}`}>
-                        {colSpanByMapping.map((f) => (
-                          <td key={f} className="py-2.5 px-3 text-slate-700 dark:text-slate-300 max-w-[160px] truncate" title={String(rec[f] ?? '')}>
-                            {rec[f] != null ? String(rec[f]) : <span className="text-slate-300 dark:text-slate-600">—</span>}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Result */}
-          {step === 4 && result && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center dark:border-emerald-800/40 dark:bg-emerald-950/20">
-                  <p className="text-3xl font-black text-emerald-700 dark:text-emerald-300 font-currency">{result.inserted}</p>
-                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-1">منتج جديد أُضيف</p>
-                </div>
-                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-center dark:border-indigo-800/40 dark:bg-indigo-950/20">
-                  <p className="text-3xl font-black text-indigo-700 dark:text-indigo-300 font-currency">{result.updated}</p>
-                  <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mt-1">منتج مُحدَّث</p>
-                </div>
-                <div className={`rounded-2xl border p-4 text-center ${result.errors > 0 ? 'border-rose-200 bg-rose-50 dark:border-rose-800/40 dark:bg-rose-950/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700/50 dark:bg-slate-800/40'}`}>
-                  <p className={`text-3xl font-black font-currency ${result.errors > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-slate-400 dark:text-slate-500'}`}>{result.errors}</p>
-                  <p className={`text-xs font-bold mt-1 ${result.errors > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>خطأ</p>
-                </div>
-              </div>
-
-              {result.inserted + result.updated > 0 && (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 dark:border-emerald-800/40 dark:bg-emerald-950/20">
-                  <CheckCircle2 className="text-emerald-600 dark:text-emerald-400 shrink-0" size={18} />
-                  <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">
-                    تم الاستيراد بنجاح — المنتجات ظهرت في المخزن
-                  </p>
+              {/* تنبيه الخطأ إن وجد */}
+              {parseError && (
+                <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300 text-xs font-bold">
+                  <AlertCircle size={18} className="shrink-0" />
+                  <span>{parseError}</span>
                 </div>
               )}
 
-              {result.errorList.length > 0 && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-3 dark:border-rose-800/40 dark:bg-rose-950/20 space-y-1.5 max-h-40 overflow-y-auto">
-                  <p className="text-xs font-black text-rose-800 dark:text-rose-200 mb-2">تفاصيل الأخطاء:</p>
-                  {result.errorList.map((e, i) => (
-                    <p key={i} className="text-[11px] text-rose-700 dark:text-rose-300">
-                      <span className="font-bold">{e.row}</span>: {e.msg}
-                    </p>
+              {/* ملاحظة ترتيب الأعمدة المتوقعة */}
+              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-slate-800/40 text-xs text-slate-600 dark:text-slate-300">
+                <div className="flex items-center gap-2 font-black text-slate-800 dark:text-white mb-2">
+                  <Table2 size={16} className="text-emerald-600" />
+                  <span>ترتيب الأعمدة المتوقع في ملف الإكسل (يتم تجاهل السطر الأول كعناوين):</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]" dir="ltr">
+                  {[
+                    '1. اسم الصنف',
+                    '2. رصيد الصنف',
+                    '3. الوحدة',
+                    '4. معدل السعر',
+                    '5. اجمالي',
+                    '6. اّخر سعر شراء',
+                    '7. باركود',
+                  ].map((col, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-1 rounded-lg bg-white border border-slate-200 dark:bg-slate-900 dark:border-white/10 text-slate-700 dark:text-slate-200 font-bold"
+                    >
+                      {col}
+                    </span>
                   ))}
+                </div>
+              </div>
+
+              {/* معاينة أول 10 صفوف وحقل نسبة الربح */}
+              {parsedRows.length > 0 && (
+                <div className="space-y-4">
+                  {/* شريط التحكم بنسبة الربح ومعلومات الإجمالي */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl border border-indigo-100 bg-indigo-50/50 dark:border-white/10 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                        <Percent size={18} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-black text-slate-800 dark:text-white">
+                          نسبة الربح % المحتسبة لسعر البيع:
+                        </label>
+                        <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                          سعر البيع = آخر سعر شراء × (1 + نسبة الربح/100)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={profitMargin}
+                        onChange={(e) => setProfitMargin(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-24 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-center text-sm font-black font-currency text-indigo-700 focus:border-indigo-500 focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-indigo-300"
+                        dir="ltr"
+                      />
+                      <span className="text-xs font-black text-slate-600 dark:text-slate-400">%</span>
+                    </div>
+                  </div>
+
+                  {/* جدول معاينة أول 10 صفوف */}
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-slate-900">
+                    <div className="p-3 bg-slate-100/70 border-b border-slate-200 dark:bg-slate-800/60 dark:border-white/10 flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800 dark:text-white">
+                        معاينة أول 10 صفوف من الملف
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                        إجمالي الأصناف بالملف: {(parsedRows.length).toLocaleString('en-US')} صنف
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-right min-w-[620px]">
+                        <thead>
+                          <tr className="bg-slate-900 text-white dark:bg-slate-950 font-black">
+                            <th className="p-2.5 w-10 text-center">#</th>
+                            <th className="p-2.5">اسم الصنف</th>
+                            <th className="p-2.5 font-mono" dir="ltr">الباركود</th>
+                            <th className="p-2.5 text-center">الوحدة</th>
+                            <th className="p-2.5 text-center">رصيد المخزون</th>
+                            <th className="p-2.5 text-center font-currency">سعر الشراء</th>
+                            <th className="p-2.5 text-center font-currency text-emerald-300">
+                              سعر البيع المحسوب ({profitMargin}%)
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                          {previewRows.map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                              <td className="p-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-2.5 font-black text-slate-900 dark:text-white">{row.name}</td>
+                              <td className="p-2.5 font-mono text-slate-500 dark:text-slate-400" dir="ltr">
+                                {row.barcode || '—'}
+                              </td>
+                              <td className="p-2.5 text-center text-slate-600 dark:text-slate-300">{row.unit}</td>
+                              <td className="p-2.5 text-center font-black font-currency text-slate-800 dark:text-white" dir="ltr">
+                                {row.stockCount}
+                              </td>
+                              <td className="p-2.5 text-center font-currency text-slate-600 dark:text-slate-400" dir="ltr">
+                                ₪{row.purchasePrice.toFixed(2)}
+                              </td>
+                              <td className="p-2.5 text-center font-black font-currency text-emerald-600 dark:text-emerald-400" dir="ltr">
+                                ₪{row.salePrice.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* مرحلة 2: شريط التقدم أثناء الاستيراد */}
+          {stage === 'importing' && (
+            <div className="py-12 px-4 flex flex-col items-center justify-center text-center space-y-6">
+              <div className="relative flex items-center justify-center">
+                <Loader2 className="animate-spin text-emerald-600 dark:text-emerald-400" size={54} />
+              </div>
+
+              <div className="space-y-2 max-w-md w-full">
+                <h4 className="text-lg font-black text-slate-900 dark:text-white">
+                  جاري استيراد الأصناف إلى المخزون...
+                </h4>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  يتم إدخال البيانات على دفعات بحجم {BATCH_SIZE} صنف بكل دفعة لضمان الاستقرار وسرعة المعالجة
+                </p>
+
+                {/* شريط التقدم Progress Bar */}
+                <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden dark:bg-slate-800 border border-slate-200 dark:border-white/10 mt-4">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress.percent}%` }}
+                  />
+                </div>
+
+                {/* العداد اللحظي */}
+                <div className="flex items-center justify-between text-xs font-black text-slate-700 dark:text-slate-300 pt-1">
+                  <span>تم استيراد {progress.current.toLocaleString('en-US')} من {progress.total.toLocaleString('en-US')} صنف</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400">{progress.percent}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* مرحلة 3: ملخص الانتهاء */}
+          {stage === 'summary' && (
+            <div className="space-y-5 py-4">
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-6 text-center dark:border-emerald-900/50 dark:bg-emerald-950/30">
+                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300">
+                  <CheckCircle2 size={36} />
+                </div>
+                <h4 className="text-xl font-black text-emerald-900 dark:text-emerald-200">
+                  اكتملت عملية الاستيراد بنجاح!
+                </h4>
+                <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 mt-1">
+                  تمت معالجة ملف الإكسل وإضافة الأصناف إلى جدول المخزون.
+                </p>
+              </div>
+
+              {/* بطاقات الإحصائيات */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-400">الأصناف المستوردة بنجاح</p>
+                    <p className="text-2xl font-black font-currency text-emerald-600 dark:text-emerald-400 mt-1">
+                      {importSummary.success.toLocaleString('en-US')}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-100/60 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    <Check size={22} />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-400">الصفوف التي فشلت</p>
+                    <p className={`text-2xl font-black font-currency mt-1 ${importSummary.failed > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                      {importSummary.failed.toLocaleString('en-US')}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    <AlertTriangle size={22} />
+                  </div>
+                </div>
+              </div>
+
+              {/* تفاصيل الأخطاء إن وجدت */}
+              {importSummary.errors.length > 0 && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/30 space-y-2">
+                  <h5 className="text-xs font-black text-rose-800 dark:text-rose-300 flex items-center gap-2">
+                    <AlertCircle size={16} />
+                    <span>تفاصيل الصفوف التي تعذر استيرادها:</span>
+                  </h5>
+                  <div className="max-h-36 overflow-y-auto space-y-1 text-xs text-rose-700 dark:text-rose-400 font-bold">
+                    {importSummary.errors.map((err, i) => (
+                      <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white/70 dark:bg-slate-900/70">
+                        <span>الدفعة: {err.batch}</span>
+                        <span className="text-[11px]">{err.message}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/80 dark:bg-slate-800/30">
-          <div>
-            {step > 1 && step < 4 && (
-              <button
-                type="button"
-                onClick={() => setStep((s) => s - 1)}
-                disabled={importing}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-              >
-                <ChevronRight size={16} />
-                رجوع
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {step < 4 && (
-              <button
-                type="button"
-                onClick={() => !importing && onClose()}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300"
-              >
-                إلغاء
-              </button>
-            )}
-
-            {step === 2 && (
-              <button
-                type="button"
-                onClick={() => setStep(3)}
-                disabled={!Object.values(mapping).some((v) => v !== IGNORE)}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-md"
-              >
-                معاينة
-                <ChevronLeft size={16} />
-              </button>
-            )}
-
-            {step === 3 && (
-              <button
-                type="button"
-                onClick={handleImport}
-                disabled={importing}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-md"
-              >
-                {importing ? (
-                  <>
-                    <Loader2 className="animate-spin" size={16} />
-                    جاري الاستيراد…
-                  </>
-                ) : (
-                  <>
-                    <Table2 size={16} />
-                    استيراد {rawRows.length} منتج
-                  </>
-                )}
-              </button>
-            )}
-
-            {step === 4 && (
+        {/* شريط الإجراءات السفلي Modal Footer */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/50 dark:border-white/10 dark:bg-slate-900/60 shrink-0">
+          {stage === 'upload' && (
+            <>
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-black text-white hover:bg-indigo-700 transition-colors"
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 text-xs font-bold transition-all"
               >
-                <CheckCircle2 size={16} />
-                إغلاق
+                إلغاء
               </button>
-            )}
-          </div>
+
+              <button
+                type="button"
+                onClick={handleExecuteImport}
+                disabled={parsedRows.length === 0}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <Check size={16} />
+                <span>
+                  تأكيد استيراد {parsedRows.length > 0 ? `(${parsedRows.length.toLocaleString('en-US')} صنف)` : ''}
+                </span>
+              </button>
+            </>
+          )}
+
+          {stage === 'importing' && (
+            <div className="w-full text-center text-xs font-bold text-slate-400">
+              يرجى عدم إغلاق الصفحة أثناء المعالجة...
+            </div>
+          )}
+
+          {stage === 'summary' && (
+            <div className="w-full flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleReset}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 text-xs font-bold transition-all"
+              >
+                <RefreshCw size={14} />
+                <span>استيراد ملف آخر</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (onImported) onImported();
+                  else onClose();
+                }}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black shadow-lg shadow-emerald-600/20 transition-all"
+              >
+                <Check size={16} />
+                <span>إغلاق وتحديث المخزون</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

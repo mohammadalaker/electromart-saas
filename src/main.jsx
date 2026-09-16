@@ -130,6 +130,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/purchases/lines" element={<EntitlementGuard module="purchase_lines"><PurchaseInvoiceLinesPage /></EntitlementGuard>} />
           <Route path="/purchases/history" element={<EntitlementGuard module="purchase_history"><PurchaseHistoryPage /></EntitlementGuard>} />
           <Route path="/purchases/supplier-statement" element={<EntitlementGuard module="supplier_statement"><SupplierAccountStatementPage /></EntitlementGuard>} />
+          <Route path="/customers/statement" element={<EntitlementGuard module="customer_statement"><CustomerAccountStatementPage /></EntitlementGuard>} />
           <Route path="/sales/customer-statement" element={<EntitlementGuard module="customer_statement"><CustomerAccountStatementPage /></EntitlementGuard>} />
           <Route path="/vouchers" element={<Navigate to="/vouchers/receipt" replace />} />
           <Route path="/vouchers/receipt" element={<EntitlementGuard module="vouchers"><VoucherPage type="receipt" /></EntitlementGuard>} />

@@ -370,7 +370,7 @@ export default function FinancialCenterPage() {
                       الذمم والديون ←
                     </Link>
                     <Link
-                      to="/sales/customer-statement"
+                      to="/customers/statement"
                       className="text-[11px] font-black text-indigo-600 hover:underline dark:text-indigo-400"
                     >
                       كشف حساب زبون ←

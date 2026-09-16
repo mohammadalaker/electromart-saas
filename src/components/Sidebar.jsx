@@ -99,8 +99,8 @@ const CATEGORIES = [
           { to: '/purchases/rfq', icon: FileQuestion, label: 'طلبات عرض سعر', module: 'purchase_rfq' },
           { to: '/purchases/price-history', icon: Tag, label: 'آخر أسعار شراء', module: 'purchase_price_history' },
           { to: '/purchases/history', icon: ClipboardList, label: 'سجل المشتريات', module: 'purchase_history' },
-          { to: '/purchases/supplier-statement', icon: FileText, label: 'كشف مورد', module: 'supplier_statement' },
-          { to: '/sales/customer-statement', icon: UserCircle, label: 'كشف زبون', module: 'customer_statement' },
+          { to: '/purchases/supplier-statement', icon: FileText, label: 'كشف حساب مورد', module: 'supplier_statement' },
+          { to: '/customers/statement', icon: UserCircle, label: 'كشف حساب زبون', module: 'customer_statement' },
         ],
       },
       {
@@ -125,6 +125,7 @@ const CATEGORIES = [
           { to: '/customers', icon: Users, label: 'الزبائن والموردين', module: 'customers' },
           { to: '/customers/crm', icon: HeartHandshake, label: 'إدارة العملاء (CRM)', module: 'customers' },
           { to: '/customers/debt', icon: Wallet, label: 'الذمم والديون', module: 'debt_ledger' },
+          { to: '/customers/statement', icon: FileText, label: 'كشف حساب زبون', module: 'customer_statement' },
         ],
       },
       {

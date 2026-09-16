@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
-import { Loader2, FileText, Printer, Truck, Wallet, X, Eye, Receipt, CreditCard, Calendar, Hash } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Loader2, FileText, Printer, Truck, Wallet, X, Eye, Receipt, CreditCard, Calendar, Hash, Search, Edit3, Trash2, Plus, Save } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import PrintSupplierStatement from '../components/PrintSupplierStatement';
+import NegativeStockConfirmModal from '../components/NegativeStockConfirmModal';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
+import {
+  calculateStockDeltas,
+  checkNegativeStockIssues,
+  executePurchaseInvoiceEdit,
+  searchProductsAndUnits,
+  lookupProductOrUnitByBarcode,
+} from '../utils/invoiceEditExecution';
 
 const PURCHASES_TABLE = 'store_purchases';
 const RETURNS_TABLE = 'store_purchase_returns';
@@ -145,8 +153,33 @@ function parseCheckLines(v) {
 export default function SupplierAccountStatementPage() {
   const { store, loading: storeLoading } = useStore();
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const urlContactId = searchParams.get('contactId') || searchParams.get('supplierId') || '';
   const [suppliers, setSuppliers] = useState([]);
-  const [contactId, setContactId] = useState('');
+  const [contactId, setContactId] = useState(urlContactId);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const qContact = searchParams.get('contactId') || searchParams.get('supplierId');
+    if (qContact && qContact !== contactId) {
+      setContactId(qContact);
+    }
+  }, [searchParams, contactId]);
+
+  const filteredSuppliers = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return suppliers;
+    const qDigits = q.replace(/\D/g, '');
+    return suppliers.filter((s) => {
+      const name = (s.name || '').toLowerCase();
+      const phone = (s.phone || '').trim();
+      return (
+        name.includes(q) ||
+        phone.toLowerCase().includes(q) ||
+        (qDigits && phone.replace(/\D/g, '').includes(qDigits))
+      );
+    });
+  }, [suppliers, searchTerm]);
   const [loading, setLoading] = useState(true);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [error, setError] = useState(null);
@@ -439,10 +472,215 @@ export default function SupplierAccountStatementPage() {
     };
   }, [viewPurchaseId, store?.id, purchases, toast]);
 
+  // حالات تعديل فاتورة المشتريات
+  const [isEditingPurchase, setIsEditingPurchase] = useState(false);
+  const [editablePurchaseLines, setEditablePurchaseLines] = useState([]);
+  const [savingPurchaseEdit, setSavingPurchaseEdit] = useState(false);
+  const [purchaseSearchTerm, setPurchaseSearchTerm] = useState('');
+  const [purchaseSearchResults, setPurchaseSearchResults] = useState([]);
+  const [purchaseSearchLoading, setPurchaseSearchLoading] = useState(false);
+  const [negativePurchaseIssues, setNegativePurchaseIssues] = useState([]);
+  const [showNegativePurchaseModal, setShowNegativePurchaseModal] = useState(false);
+  const purchaseSearchDebounceRef = useRef(null);
+
+  const startEditingPurchase = () => {
+    const raw = parseLineItems(purchaseDetail?.line_items);
+    setEditablePurchaseLines(
+      raw.map((l, idx) => ({
+        key: l.key || `pline_${idx}_${Date.now()}`,
+        product_id: l.product_id || l.productId || null,
+        barcode: l.barcode || '',
+        reference: l.reference || '',
+        name: l.name || l.item_name || l.description || 'صنف مشتريات',
+        unit: l.unit || 'قطعة',
+        conversion_factor: Number(l.conversion_factor || l.conversionFactor || 1),
+        qty: Number(l.qty ?? l.quantity ?? 1),
+        unit_price: Number(l.unit_price ?? l.unitPrice ?? 0),
+        discount_percent: Number(l.discount_percent || 0),
+        line_total: Number(
+          l.line_total ??
+            l.lineTotal ??
+            Math.max(
+              0,
+              Math.round(
+                Number(l.qty || 1) *
+                  Number(l.unit_price || 0) *
+                  (1 - Number(l.discount_percent || 0) / 100) *
+                  100
+              ) / 100
+            )
+        ),
+      }))
+    );
+    setIsEditingPurchase(true);
+  };
+
+  const cancelEditingPurchase = () => {
+    setIsEditingPurchase(false);
+    setPurchaseSearchTerm('');
+    setPurchaseSearchResults([]);
+  };
+
+  const updatePurchaseLine = (idx, field, val) => {
+    setEditablePurchaseLines((prev) => {
+      const next = [...prev];
+      const cur = { ...next[idx] };
+      if (field === 'qty') {
+        const q = Math.max(0, parseFloat(val) || 0);
+        cur.qty = val;
+        cur.line_total = Math.max(
+          0,
+          Math.round(
+            q * Number(cur.unit_price || 0) * (1 - Number(cur.discount_percent || 0) / 100) * 100
+          ) / 100
+        );
+      } else if (field === 'unit_price') {
+        const p = Math.max(0, parseFloat(val) || 0);
+        cur.unit_price = val;
+        cur.line_total = Math.max(
+          0,
+          Math.round(
+            Number(cur.qty || 0) * p * (1 - Number(cur.discount_percent || 0) / 100) * 100
+          ) / 100
+        );
+      }
+      next[idx] = cur;
+      return next;
+    });
+  };
+
+  const deletePurchaseLine = (idx) => {
+    setEditablePurchaseLines((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handlePurchaseSearch = (q) => {
+    setPurchaseSearchTerm(q);
+    if (purchaseSearchDebounceRef.current) clearTimeout(purchaseSearchDebounceRef.current);
+    if (!q.trim()) {
+      setPurchaseSearchResults([]);
+      return;
+    }
+    purchaseSearchDebounceRef.current = setTimeout(async () => {
+      setPurchaseSearchLoading(true);
+      const res = await searchProductsAndUnits(store?.id, q, supabase);
+      setPurchaseSearchResults(res);
+      setPurchaseSearchLoading(false);
+    }, 200);
+  };
+
+  const addProductToPurchaseFromSearch = (p) => {
+    setEditablePurchaseLines((prev) => [
+      ...prev,
+      {
+        key: `new_${Date.now()}_${Math.random()}`,
+        product_id: p.productId,
+        barcode: p.barcode,
+        reference: '',
+        name: p.name,
+        unit: p.unit,
+        conversion_factor: p.conversionFactor,
+        qty: 1,
+        unit_price: p.costPrice || p.price || 0,
+        discount_percent: 0,
+        line_total: p.costPrice || p.price || 0,
+      },
+    ]);
+    setPurchaseSearchTerm('');
+    setPurchaseSearchResults([]);
+  };
+
+  const handlePurchaseSearchKeyDown = async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = purchaseSearchTerm.trim();
+    if (!q) return;
+
+    try {
+      setPurchaseSearchLoading(true);
+      const match = await lookupProductOrUnitByBarcode(q, store?.id, supabase);
+      setPurchaseSearchLoading(false);
+      if (match) {
+        addProductToPurchaseFromSearch(match);
+        toast.success(`تمت إضافة: ${match.name} (${match.unit || 'قطعة'})`);
+        return;
+      }
+    } catch (err) {
+      setPurchaseSearchLoading(false);
+      console.error('[handlePurchaseSearchKeyDown] lookup error:', err);
+    }
+
+    if (purchaseSearchResults.length === 1) {
+      const single = purchaseSearchResults[0];
+      addProductToPurchaseFromSearch(single);
+      toast.success(`تمت إضافة: ${single.name}`);
+      return;
+    }
+
+    if (purchaseSearchResults.length > 1) {
+      toast.info('توجد عدة نتائج مطابقة، اختر الصنف من القائمة المنسدلة.');
+    } else {
+      toast.warning('لم يتم العثور على صنف مطابق بهذا الباركود.');
+    }
+  };
+
+  const handleSavePurchaseEdit = async () => {
+    const valid = editablePurchaseLines.filter((l) => Number(l.qty) > 0);
+    if (valid.length === 0) {
+      toast.warning('يجب أن تحتوي الفاتورة على سطر واحد على الأقل بكمية صالحة.');
+      return;
+    }
+    const oldLines = parseLineItems(purchaseDetail?.line_items);
+    const deltas = calculateStockDeltas(oldLines, valid);
+    const issues = await checkNegativeStockIssues(store?.id, deltas, 'purchase', supabase);
+    if (issues.length > 0) {
+      setNegativePurchaseIssues(issues);
+      setShowNegativePurchaseModal(true);
+      return;
+    }
+    await doSavePurchaseEdit(valid);
+  };
+
+  const doSavePurchaseEdit = async (linesToSave = null) => {
+    setShowNegativePurchaseModal(false);
+    const valid = (linesToSave || editablePurchaseLines).filter((l) => Number(l.qty) > 0);
+    setSavingPurchaseEdit(true);
+    try {
+      const newTotal = valid.reduce((sum, l) => sum + Number(l.line_total || 0), 0);
+      const result = await executePurchaseInvoiceEdit({
+        storeId: store?.id,
+        purchaseId: viewPurchaseId,
+        oldPurchase: purchaseDetail,
+        newLines: valid,
+        newTotal,
+        supabase,
+      });
+
+      const stockSign = result.totalStockDiff > 0 ? '+' : '';
+      const debtSign = result.debtDiff > 0 ? '+' : '';
+      toast.success(
+        `تم التعديل، الفرق بالمخزون: ${stockSign}${result.totalStockDiff}، الفرق بالرصيد: ${debtSign}${result.debtDiff.toFixed(2)} ₪`
+      );
+
+      setIsEditingPurchase(false);
+      setPurchaseDetailOverride({
+        ...purchaseDetail,
+        line_items: valid,
+        total_amount: newTotal,
+      });
+      await loadLedger();
+    } catch (err) {
+      console.error('[SupplierAccountStatementPage] save purchase edit error:', err);
+      toast.error(err.message || 'فشل حفظ تعديل فاتورة المشتريات');
+    } finally {
+      setSavingPurchaseEdit(false);
+    }
+  };
+
   const closeInvoiceModal = () => {
     setViewPurchaseId(null);
     setPurchaseDetailOverride(null);
     setDetailLoading(false);
+    setIsEditingPurchase(false);
   };
 
   const closeVoucherModal = () => {
@@ -801,17 +1039,34 @@ export default function SupplierAccountStatementPage() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-wrap gap-4 items-end dark:border-gray-700/50 dark:bg-gray-900/70 dark:shadow-[0_4px_24px_-4px_rgba(0,0,0,0.35)]">
-          <div className="flex-1 min-w-[220px]">
+          <div className="flex-1 min-w-[220px] space-y-2">
             <label className="text-xs font-black text-slate-600 dark:text-slate-300 block mb-2">اختر المورد</label>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute right-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400"
+                aria-hidden
+              />
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="بحث سريع بالاسم أو الهاتف…"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pr-9 pl-3 text-xs font-bold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:bg-white dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:border-teal-500"
+              />
+            </div>
             <select
               value={contactId}
               onChange={(e) => setContactId(e.target.value)}
               className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold bg-slate-50 dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-100"
             >
-              <option value="">— اختر مورداً —</option>
-              {suppliers.map((s) => (
+              <option value="">
+                {filteredSuppliers.length === 0 && searchTerm
+                  ? '— لا توجد نتائج مطابقة —'
+                  : '— اختر مورداً —'}
+              </option>
+              {filteredSuppliers.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name || s.phone || s.id}
+                  {s.name || s.phone || s.id} {s.phone && s.name ? `(${s.phone})` : ''}
                 </option>
               ))}
             </select>
@@ -1094,14 +1349,32 @@ export default function SupplierAccountStatementPage() {
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">من سجل فواتير المشتريات المرتبطة بالمورد</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={closeInvoiceModal}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400 transition-colors"
-                aria-label="إغلاق"
-              >
-                <X size={22} />
-              </button>
+              <div className="flex items-center gap-2">
+                {purchaseDetail && (
+                  <button
+                    type="button"
+                    onClick={isEditingPurchase ? cancelEditingPurchase : startEditingPurchase}
+                    disabled={detailLoading || savingPurchaseEdit}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black shadow-sm transition-all disabled:opacity-50 ${
+                      isEditingPurchase
+                        ? 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200'
+                        : 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                    }`}
+                    title="تعديل الفاتورة والأصناف"
+                  >
+                    <Edit3 size={15} />
+                    <span>{isEditingPurchase ? 'معاينة الفاتورة' : 'تعديل الفاتورة'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={closeInvoiceModal}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400 transition-colors"
+                  aria-label="إغلاق"
+                >
+                  <X size={22} />
+                </button>
+              </div>
             </div>
 
             {detailLoading && !purchaseDetail ? (
@@ -1157,80 +1430,285 @@ export default function SupplierAccountStatementPage() {
                   </div>
                 )}
 
-                {/* جدول الأصناف */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200">
-                      الأصناف الواردة بالفاتورة ({parseLineItems(purchaseDetail.line_items).length})
-                    </h4>
-                  </div>
+                {isEditingPurchase ? (
+                  /* وضع التعديل المباشر لفاتورة المشتريات */
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-teal-200 bg-teal-50/80 p-3 text-xs font-bold text-teal-950 dark:border-teal-900/40 dark:bg-teal-950/40 dark:text-teal-200">
+                      وضع تعديل بنود المشتريات — يتم تحديث المخزون وذمة المورد آلياً بناءً على الفروقات.
+                    </div>
 
-                  {parseLineItems(purchaseDetail.line_items).length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400 py-3 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40">
-                      لا توجد بنود أسطر مسجلة في الفاتورة.
-                    </p>
-                  ) : (
                     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/10">
-                      <table className="w-full text-xs text-right min-w-[500px]">
+                      <table className="w-full text-xs text-right min-w-[550px]">
                         <thead>
                           <tr className="bg-slate-900 text-white dark:bg-slate-950">
                             <th className="p-2.5 w-8 text-center">#</th>
-                            <th className="p-2.5">اسم الصنف / البيان</th>
+                            <th className="p-2.5">اسم الصنف</th>
                             <th className="p-2.5 font-mono" dir="ltr">الباركود</th>
-                            <th className="p-2.5 font-mono" dir="ltr">المرجع</th>
-                            <th className="p-2.5 text-center">الكمية</th>
-                            <th className="p-2.5 text-center font-bold" dir="ltr">سعر الوحدة</th>
+                            <th className="p-2.5 text-center">الوحدة</th>
+                            <th className="p-2.5 text-center w-24">الكمية</th>
+                            <th className="p-2.5 text-center w-24">سعر الوحدة</th>
                             <th className="p-2.5 text-center font-bold" dir="ltr">المجموع</th>
+                            <th className="p-2.5 text-center w-10">حذف</th>
                           </tr>
                         </thead>
-                        <tbody>
-                          {parseLineItems(purchaseDetail.line_items).map((line, idx) => (
-                            <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/80 odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-800/30 dark:even:bg-slate-800/50">
-                              <td className="p-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
-                              <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">
-                                {line.name || line.item_name || line.description || line.reference || 'صنف مشتريات'}
-                              </td>
-                              <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
-                                {line.barcode || '—'}
-                              </td>
-                              <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
-                                {line.reference || '—'}
-                              </td>
-                              <td className="p-2.5 text-center font-currency font-bold text-slate-800 dark:text-slate-200" dir="ltr">
-                                {line.qty ?? '—'}
-                              </td>
-                              <td className="p-2.5 text-center font-currency text-slate-700 dark:text-slate-300" dir="ltr">
-                                ₪{Number(line.unit_price ?? 0).toFixed(2)}
-                              </td>
-                              <td className="p-2.5 text-center font-black font-currency text-teal-900 dark:text-teal-200" dir="ltr">
-                                ₪{Number(line.line_total ?? 0).toFixed(2)}
+                        <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                          {editablePurchaseLines.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="p-6 text-center text-slate-400 font-bold">
+                                لا توجد أسطر في الفاتورة. استخدم البحث لإضافة أصناف.
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            editablePurchaseLines.map((line, idx) => (
+                              <tr key={line.key || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                                <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="p-2 font-bold text-slate-900 dark:text-white">{line.name}</td>
+                                <td className="p-2 font-mono text-slate-500 dark:text-slate-400 text-[11px]" dir="ltr">
+                                  {line.barcode || '—'}
+                                </td>
+                                <td className="p-2 text-center">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                                    {line.unit || 'قطعة'}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-center">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0.001"
+                                    value={line.qty}
+                                    onChange={(e) => updatePurchaseLine(idx, 'qty', e.target.value)}
+                                    className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1 text-center font-bold font-currency text-slate-900 focus:border-teal-500 focus:bg-white dark:border-white/10 dark:bg-slate-800 dark:text-white"
+                                    dir="ltr"
+                                  />
+                                </td>
+                                <td className="p-2 text-center">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={line.unit_price}
+                                    onChange={(e) => updatePurchaseLine(idx, 'unit_price', e.target.value)}
+                                    className="w-20 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1 text-center font-bold font-currency text-slate-900 focus:border-teal-500 focus:bg-white dark:border-white/10 dark:bg-slate-800 dark:text-white"
+                                    dir="ltr"
+                                  />
+                                </td>
+                                <td className="p-2 text-center font-black font-currency text-teal-900 dark:text-teal-200" dir="ltr">
+                                  ₪{Number(line.line_total ?? 0).toFixed(2)}
+                                </td>
+                                <td className="p-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => deletePurchaseLine(idx)}
+                                    className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700"
+                                    title="حذف السطر"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </div>
 
-                {/* ملخص الإجمالي المالي */}
-                <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-3.5 dark:border-teal-900/40 dark:bg-teal-950/40 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black text-teal-900/70 dark:text-teal-300/70">إجمالي فاتورة الشراء</p>
-                    <p className="text-2xl font-black font-currency text-teal-900 dark:text-teal-100" dir="ltr">
-                      ₪{Number(purchaseDetail.total_amount ?? 0).toFixed(2)}
-                    </p>
-                  </div>
+                    {/* حقل البحث لإضافة صنف جديد */}
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 dark:border-white/10 dark:bg-slate-800/30">
+                      <label className="block text-xs font-black text-slate-700 dark:text-slate-300 mb-1.5">
+                        إضافة صنف مشتريات جديد:
+                      </label>
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        <input
+                          type="search"
+                          value={purchaseSearchTerm}
+                          onChange={(e) => handlePurchaseSearch(e.target.value)}
+                          onKeyDown={handlePurchaseSearchKeyDown}
+                          placeholder="ابحث باسم الصنف، الباركود (أو امسح الباركود واضغط Enter)..."
+                          className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 outline-none transition focus:border-teal-500 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+                        />
+                        {purchaseSearchLoading && (
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                            <Loader2 className="animate-spin text-teal-600" size={15} />
+                          </div>
+                        )}
+                      </div>
 
-                  {Number(purchaseDetail.landed_cost_extra ?? 0) > 0 && (
-                    <div className="text-xs">
-                      <span className="text-slate-500 dark:text-slate-400">مصاريف شحن واصلة: </span>
-                      <span className="font-bold font-currency text-slate-800 dark:text-slate-200" dir="ltr">
-                        ₪{Number(purchaseDetail.landed_cost_extra).toFixed(2)}
-                      </span>
+                      {/* لا توجد نتائج مطابقة */}
+                      {!purchaseSearchLoading && purchaseSearchTerm.trim() && purchaseSearchResults.length === 0 && (
+                        <div className="mt-2 p-2.5 text-center rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-400 dark:bg-slate-900 dark:border-white/10">
+                          لا توجد نتائج مطابقة لـ &quot;{purchaseSearchTerm}&quot;
+                        </div>
+                      )}
+
+                      {purchaseSearchResults.length > 0 && (
+                        <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-slate-900 divide-y divide-slate-100 dark:divide-white/5">
+                          {purchaseSearchResults.map((p, idx) => (
+                            <button
+                              key={p.unitId ? `u_${p.unitId}` : p.id || idx}
+                              type="button"
+                              onClick={() => addProductToPurchaseFromSearch(p)}
+                              className="w-full px-3 py-2 text-right flex items-center justify-between hover:bg-teal-50/80 dark:hover:bg-teal-950/40 transition-colors"
+                            >
+                              <div>
+                                <div className="font-black text-slate-900 dark:text-white text-xs">{p.name}</div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                  {p.barcode && <span className="font-mono">باركود: {p.barcode}</span>}
+                                  <span>الوحدة: {p.unit}</span>
+                                  <span>المخزون الحالي: {p.stockCount}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-currency font-black text-teal-700 dark:text-teal-300 text-xs" dir="ltr">
+                                  ₪{Number(p.costPrice || p.price).toFixed(2)}
+                                </span>
+                                <span className="px-2 py-1 rounded bg-teal-100 text-teal-800 dark:bg-teal-900/60 dark:text-teal-200 text-[11px] font-bold inline-flex items-center gap-1">
+                                  <Plus size={12} /> إضافة
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+
+                    {/* ملخص الفروقات المالية وأزرار الحفظ */}
+                    {(() => {
+                      const newTotal = editablePurchaseLines.reduce((s, l) => s + (Number(l.line_total) || 0), 0);
+                      const oldTotal = Number(purchaseDetail?.total_amount ?? 0);
+                      const diff = Math.round((newTotal - oldTotal) * 100) / 100;
+                      return (
+                        <div className="rounded-xl border border-teal-100 bg-teal-50/70 p-4 dark:border-teal-900/40 dark:bg-teal-950/40 flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex flex-wrap items-center gap-5 text-xs">
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400">الإجمالي السابق</p>
+                              <p className="text-base font-black font-currency text-slate-600 dark:text-slate-300" dir="ltr">
+                                ₪{oldTotal.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400">الإجمالي الجديد</p>
+                              <p className="text-xl font-black font-currency text-teal-900 dark:text-teal-100" dir="ltr">
+                                ₪{newTotal.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400">الفرق في الذمة</p>
+                              <p
+                                className={`text-base font-black font-currency ${
+                                  diff > 0
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : diff < 0
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-slate-500'
+                                }`}
+                                dir="ltr"
+                              >
+                                {diff > 0 ? `+₪${diff.toFixed(2)}` : diff < 0 ? `-₪${Math.abs(diff).toFixed(2)}` : '₪0.00'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={cancelEditingPurchase}
+                              disabled={savingPurchaseEdit}
+                              className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 dark:border-white/10 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all disabled:opacity-50"
+                            >
+                              إلغاء
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSavePurchaseEdit}
+                              disabled={savingPurchaseEdit || editablePurchaseLines.length === 0}
+                              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white text-xs font-black shadow-lg shadow-teal-600/20 transition-all disabled:opacity-50"
+                            >
+                              {savingPurchaseEdit ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                              <span>حفظ التعديلات وتحديث الذمة</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  /* جدول الأصناف الأصلي (عرض فقط) */
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-black text-slate-800 dark:text-slate-200">
+                        الأصناف الواردة بالفاتورة ({parseLineItems(purchaseDetail.line_items).length})
+                      </h4>
+                    </div>
+
+                    {parseLineItems(purchaseDetail.line_items).length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 py-3 text-center rounded-xl bg-slate-50 dark:bg-slate-800/40">
+                        لا توجد بنود أسطر مسجلة في الفاتورة.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/10">
+                        <table className="w-full text-xs text-right min-w-[500px]">
+                          <thead>
+                            <tr className="bg-slate-900 text-white dark:bg-slate-950">
+                              <th className="p-2.5 w-8 text-center">#</th>
+                              <th className="p-2.5">اسم الصنف / البيان</th>
+                              <th className="p-2.5 font-mono" dir="ltr">الباركود</th>
+                              <th className="p-2.5 font-mono" dir="ltr">المرجع</th>
+                              <th className="p-2.5 text-center">الكمية</th>
+                              <th className="p-2.5 text-center font-bold" dir="ltr">سعر الوحدة</th>
+                              <th className="p-2.5 text-center font-bold" dir="ltr">المجموع</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                            {parseLineItems(purchaseDetail.line_items).map((line, idx) => (
+                              <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/80 odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-800/30 dark:even:bg-slate-800/50">
+                                <td className="p-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="p-2.5 font-bold text-slate-800 dark:text-slate-100">
+                                  {line.name || line.item_name || line.description || line.reference || 'صنف مشتريات'}
+                                </td>
+                                <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+                                  {line.barcode || '—'}
+                                </td>
+                                <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+                                  {line.reference || '—'}
+                                </td>
+                                <td className="p-2.5 text-center font-currency font-bold text-slate-800 dark:text-slate-200" dir="ltr">
+                                  {line.qty ?? '—'}
+                                </td>
+                                <td className="p-2.5 text-center font-currency text-slate-700 dark:text-slate-300" dir="ltr">
+                                  ₪{Number(line.unit_price ?? 0).toFixed(2)}
+                                </td>
+                                <td className="p-2.5 text-center font-black font-currency text-teal-900 dark:text-teal-200" dir="ltr">
+                                  ₪{Number(line.line_total ?? 0).toFixed(2)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* ملخص الإجمالي المالي */}
+                    <div className="mt-4 rounded-xl border border-teal-100 bg-teal-50/60 p-3.5 dark:border-teal-900/40 dark:bg-teal-950/40 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black text-teal-900/70 dark:text-teal-300/70">إجمالي فاتورة الشراء</p>
+                        <p className="text-2xl font-black font-currency text-teal-900 dark:text-teal-100" dir="ltr">
+                          ₪{Number(purchaseDetail.total_amount ?? 0).toFixed(2)}
+                        </p>
+                      </div>
+
+                      {Number(purchaseDetail.landed_cost_extra ?? 0) > 0 && (
+                        <div className="text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">مصاريف شحن واصلة: </span>
+                          <span className="font-bold font-currency text-slate-800 dark:text-slate-200" dir="ltr">
+                            ₪{Number(purchaseDetail.landed_cost_extra).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* الملاحظات */}
                 {purchaseDetail.notes && (
@@ -1262,6 +1740,14 @@ export default function SupplierAccountStatementPage() {
           </div>
         </div>
       ) : null}
+
+      <NegativeStockConfirmModal
+        isOpen={showNegativePurchaseModal}
+        items={negativePurchaseIssues}
+        onConfirm={() => doSavePurchaseEdit()}
+        onCancel={() => setShowNegativePurchaseModal(false)}
+        loading={savingPurchaseEdit}
+      />
 
       {voucherModal ? (
         <div

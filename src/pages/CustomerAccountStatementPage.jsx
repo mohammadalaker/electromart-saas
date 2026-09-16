@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   Eye,
@@ -18,6 +18,7 @@ import {
   Tag,
   DollarSign,
   CheckCircle2,
+  Search,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import PrintCustomerStatement from '../components/PrintCustomerStatement';
@@ -375,11 +376,36 @@ async function fetchSalesForCustomerStatement(supabaseClient, storeId, contactId
 
 export default function CustomerAccountStatementPage() {
   const { store, loading: storeLoading } = useStore();
+  const [searchParams] = useSearchParams();
+  const urlContactId = searchParams.get('contactId') || searchParams.get('customerId') || '';
   const [customers, setCustomers] = useState([]);
-  const [contactId, setContactId] = useState('');
+  const [contactId, setContactId] = useState(urlContactId);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const qContact = searchParams.get('contactId') || searchParams.get('customerId');
+    if (qContact && qContact !== contactId) {
+      setContactId(qContact);
+    }
+  }, [searchParams, contactId]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return customers;
+    const qDigits = q.replace(/\D/g, '');
+    return customers.filter((c) => {
+      const name = (c.name || '').toLowerCase();
+      const phone = (c.phone || '').trim();
+      return (
+        name.includes(q) ||
+        phone.toLowerCase().includes(q) ||
+        (qDigits && phone.replace(/\D/g, '').includes(qDigits))
+      );
+    });
+  }, [customers, searchTerm]);
 
   const [selectedContact, setSelectedContact] = useState(null);
   const [ledgerRows, setLedgerRows] = useState([]);
@@ -806,18 +832,37 @@ export default function CustomerAccountStatementPage() {
           </div>
 
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-black text-slate-600 dark:text-slate-300 mb-2">الزبون</label>
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-600 dark:text-slate-300">
+                ابحث واختر الزبون
+              </label>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute right-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  aria-hidden
+                />
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="بحث سريع بالاسم أو الهاتف…"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pr-9 pl-3 text-xs font-bold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:border-indigo-500"
+                />
+              </div>
               <select
                 value={contactId}
                 disabled={loading}
                 onChange={(e) => setContactId(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 disabled:opacity-60 dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-100"
               >
-                <option value="">— اختر زبوناً —</option>
-                {customers.map((c) => (
+                <option value="">
+                  {filteredCustomers.length === 0 && searchTerm
+                    ? '— لا توجد نتائج مطابقة —'
+                    : '— اختر زبوناً —'}
+                </option>
+                {filteredCustomers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name || c.phone || c.id}
+                    {c.name} {c.phone ? `(${c.phone})` : ''}
                   </option>
                 ))}
               </select>
@@ -1140,6 +1185,10 @@ export default function CustomerAccountStatementPage() {
         saleId={viewSaleId}
         onClose={closeInvoiceModal}
         store={store}
+        onInvoiceUpdated={async () => {
+          await loadLedger();
+          await fetchCustomers();
+        }}
       />
 
       {typeof document !== 'undefined' &&

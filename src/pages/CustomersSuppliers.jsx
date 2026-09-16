@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Loader2,
   RefreshCw,
@@ -50,9 +50,12 @@ const emptyForm = {
 };
 
 export default function CustomersSuppliers() {
+  const navigate = useNavigate();
   const { store, loading: storeLoading } = useStore();
   const toast = useToast();
   const [tab, setTab] = useState('customer');
+  const [supplierSubTab, setSupplierSubTab] = useState('balances');
+  const [onlyWithBalance, setOnlyWithBalance] = useState(true);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -263,6 +266,38 @@ export default function CustomersSuppliers() {
   const formatStatMoney = (n) =>
     Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const totalSupplierDue = useMemo(() => {
+    if (tab !== 'supplier') return 0;
+    return rows.reduce((sum, r) => sum + Math.max(0, Number(r.outstanding_amount ?? 0)), 0);
+  }, [tab, rows]);
+
+  const suppliersWithBalanceCount = useMemo(() => {
+    if (tab !== 'supplier') return 0;
+    return rows.filter((r) => Number(r.outstanding_amount ?? 0) > 0).length;
+  }, [tab, rows]);
+
+  const balanceRows = useMemo(() => {
+    if (tab !== 'supplier') return [];
+    let list = rows;
+    if (onlyWithBalance) {
+      list = list.filter((r) => Number(r.outstanding_amount ?? 0) > 0);
+    }
+    const q = contactSearch.trim().toLowerCase();
+    if (!q) return list;
+    const qDigits = q.replace(/\D/g, '');
+    return list.filter((r) => {
+      const name = (r.name || '').toLowerCase();
+      const phoneRaw = (r.phone || '').trim();
+      const phoneNorm = phoneRaw.replace(/\s/g, '');
+      const phoneLc = phoneRaw.toLowerCase();
+      return (
+        name.includes(q) ||
+        phoneLc.includes(q) ||
+        (qDigits.length > 0 && phoneNorm.includes(qDigits))
+      );
+    });
+  }, [tab, rows, onlyWithBalance, contactSearch]);
+
   if (storeLoading) {
     return (
       <DashboardLayout>
@@ -327,41 +362,85 @@ export default function CustomersSuppliers() {
         }
       `}</style>
       <div className="space-y-4" dir="rtl">
-        <div className="flex flex-wrap gap-2 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80 w-fit max-w-full dark:bg-slate-800/80 dark:border-slate-600/50">
-          <button
-            type="button"
-            onClick={() => setTab('customer')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${
-              tab === 'customer'
-                ? 'bg-white text-indigo-700 shadow-md dark:bg-indigo-950/60 dark:text-indigo-200 dark:shadow-lg dark:shadow-black/20'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-            }`}
-          >
-            <Users size={18} />
-            الزبائن
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('supplier')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${
-              tab === 'supplier'
-                ? 'bg-white text-indigo-700 shadow-md dark:bg-indigo-950/60 dark:text-indigo-200 dark:shadow-lg dark:shadow-black/20'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-            }`}
-          >
-            <Truck size={18} />
-            الموردين
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80 w-fit max-w-full dark:bg-slate-800/80 dark:border-slate-600/50">
+            <button
+              type="button"
+              onClick={() => setTab('customer')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${
+                tab === 'customer'
+                  ? 'bg-white text-indigo-700 shadow-md dark:bg-indigo-950/60 dark:text-indigo-200 dark:shadow-lg dark:shadow-black/20'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              <Users size={18} />
+              الزبائن
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('supplier')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${
+                tab === 'supplier'
+                  ? 'bg-white text-indigo-700 shadow-md dark:bg-indigo-950/60 dark:text-indigo-200 dark:shadow-lg dark:shadow-black/20'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              <Truck size={18} />
+              الموردين
+            </button>
+          </div>
+
+          {tab === 'supplier' && (
+            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80 dark:bg-slate-800/80 dark:border-slate-600/50">
+              <button
+                type="button"
+                onClick={() => setSupplierSubTab('balances')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                  supplierSubTab === 'balances'
+                    ? 'bg-white text-amber-800 shadow-sm dark:bg-amber-950/60 dark:text-amber-200'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                }`}
+              >
+                <Wallet size={16} />
+                الأرصدة
+                {suppliersWithBalanceCount > 0 && (
+                  <span className="mr-1 inline-flex items-center justify-center px-2 py-0.5 text-[10px] rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 font-bold">
+                    {suppliersWithBalanceCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSupplierSubTab('directory')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                  supplierSubTab === 'directory'
+                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-indigo-950/60 dark:text-indigo-200'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                }`}
+              >
+                <Truck size={16} />
+                دليل الموردين
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_4px_32px_-8px_rgba(15,23,42,0.12)] overflow-hidden dark:border-gray-700/50 dark:bg-gray-900/70 dark:shadow-[0_4px_32px_-8px_rgba(0,0,0,0.45)]">
           <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-l from-violet-50/50 to-white dark:border-slate-700/60 dark:from-indigo-950/40 dark:to-gray-900/90 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                {tab === 'customer' ? 'دليل الزبائن' : 'دليل الموردين'}
+                {tab === 'customer'
+                  ? 'دليل الزبائن'
+                  : supplierSubTab === 'balances'
+                  ? 'أرصدة الموردين المستحقة'
+                  : 'دليل الموردين'}
               </h3>
               <p className="text-xs text-slate-500 mt-1 font-medium dark:text-slate-400">
-                سجّل بيانات التواصل لاستخدامها لاحقاً في الطلبات والمشتريات
+                {tab === 'customer'
+                  ? 'سجّل بيانات التواصل لاستخدامها لاحقاً في الطلبات والمشتريات'
+                  : supplierSubTab === 'balances'
+                  ? 'متابعة المبالغ والذمم المستحقة لكل مورد مع إمكانية الانتقال المباشر لكشف الحساب'
+                  : 'سجّل بيانات التواصل لاستخدامها لاحقاً في الطلبات والمشتريات'}
               </p>
             </div>
             {tab === 'customer' && bouncedCount > 0 && (
@@ -445,6 +524,165 @@ export default function CustomersSuppliers() {
           {loading ? (
             <div className="flex justify-center py-20">
               <Loader2 className="animate-spin text-indigo-500 dark:text-indigo-400" size={36} />
+            </div>
+          ) : tab === 'supplier' && supplierSubTab === 'balances' ? (
+            <div className="space-y-4">
+              {/* سطر الإجمالي البارز فوق الجدول + فلتر الأرصدة */}
+              <div className="mx-4 mt-2 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-500/10 via-amber-50/50 to-orange-500/5 p-4 sm:p-5 dark:border-amber-800/40 dark:from-amber-950/40 dark:via-amber-950/20 dark:to-transparent">
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-500/20">
+                    <Wallet size={24} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                      إجمالي المستحق لكل الموردين
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-black text-amber-950 dark:text-amber-100" dir="ltr" lang="en">
+                      ₪ {formatStatMoney(totalSupplierDue)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnlyWithBalance((prev) => !prev)}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-black transition-all ${
+                      onlyWithBalance
+                        ? 'border-amber-300 bg-white text-amber-900 shadow-sm dark:border-amber-700/60 dark:bg-slate-800 dark:text-amber-200'
+                        : 'border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    <Filter size={14} className={onlyWithBalance ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'} />
+                    <span>{onlyWithBalance ? 'عرض الموردين ذوي المستحقات فقط' : 'عرض جميع الموردين'}</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
+                      {onlyWithBalance ? suppliersWithBalanceCount : rows.length}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* جدول الأرصدة */}
+              {balanceRows.length === 0 ? (
+                <div className="py-16 text-center text-slate-500 dark:text-slate-400">
+                  <div className="inline-flex flex-col items-center gap-3 px-8 py-6 rounded-2xl bg-gradient-to-b from-slate-50/80 to-transparent dark:from-slate-800/40 dark:to-transparent">
+                    <Wallet className="text-emerald-400 dark:text-emerald-600" size={48} />
+                    <p className="font-bold text-slate-700 dark:text-slate-200">
+                      {contactSearch.trim()
+                        ? 'لا توجد نتائج بحث مطابقة'
+                        : onlyWithBalance
+                        ? 'لا توجد مبالغ مستحقة لأي مورد حالياً'
+                        : 'لا يوجد موردون مسجلون بعد'}
+                    </p>
+                    {onlyWithBalance && rows.length > 0 && !contactSearch.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setOnlyWithBalance(false)}
+                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline"
+                      >
+                        عرض جميع الموردين ({rows.length})
+                      </button>
+                    )}
+                    {contactSearch.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setContactSearch('')}
+                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline"
+                      >
+                        مسح البحث
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 pt-0">
+                  <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900/60">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-sm">
+                        <thead className="border-b border-slate-200/80 bg-slate-50/80 text-xs font-black text-slate-600 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-300">
+                          <tr>
+                            <th className="px-5 py-3.5 w-14 text-center">#</th>
+                            <th className="px-5 py-3.5">اسم المورد</th>
+                            <th className="px-5 py-3.5">رقم الهاتف</th>
+                            <th className="px-5 py-3.5">المبلغ المستحق عليه</th>
+                            <th className="px-5 py-3.5 text-center w-36">كشف الحساب</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                          {balanceRows.map((row, idx) => {
+                            const due = Number(row.outstanding_amount ?? 0);
+                            const phoneTrim = (row.phone || '').trim();
+                            return (
+                              <tr
+                                key={row.id}
+                                onClick={() => navigate(`/purchases/supplier-statement?contactId=${row.id}`)}
+                                className="group cursor-pointer transition-colors hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30"
+                                title="انقر لفتح كشف حساب المورد مباشرة"
+                              >
+                                <td className="px-5 py-4 text-center text-xs font-bold text-slate-400">
+                                  {idx + 1}
+                                </td>
+                                <td className="px-5 py-4 font-black text-slate-900 dark:text-white">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-black text-white group-hover:scale-105 transition-transform">
+                                      {(row.name && row.name.trim().charAt(0)) || '?'}
+                                    </div>
+                                    <div>
+                                      <span className="group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                        {row.name || '—'}
+                                      </span>
+                                      {row.address?.trim() && (
+                                        <p className="text-[11px] font-normal text-slate-400 dark:text-slate-500 truncate max-w-xs">
+                                          📍 {row.address.trim()}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-5 py-4 text-slate-600 dark:text-slate-300 font-medium">
+                                  {phoneTrim ? (
+                                    <div className="flex items-center gap-2" dir="ltr">
+                                      <span className="text-xs">{phoneTrim}</span>
+                                      <a
+                                        href={`tel:${phoneTrim.replace(/\s/g, '')}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+                                        title="اتصال"
+                                      >
+                                        <Phone size={14} />
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </td>
+                                <td className="px-5 py-4">
+                                  <span
+                                    className={`inline-block rounded-xl px-3 py-1 text-sm font-black ${
+                                      due > 0
+                                        ? 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900/50'
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50'
+                                    }`}
+                                    dir="ltr"
+                                  >
+                                    ₪ {formatStatMoney(due)}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-4 text-center">
+                                  <span className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 px-3 py-1.5 text-xs font-black text-indigo-700 shadow-sm transition-all group-hover:bg-indigo-600 group-hover:text-white dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-300 dark:group-hover:bg-indigo-600 dark:group-hover:text-white">
+                                    <FileText size={14} />
+                                    كشف الحساب ←
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : displayRows.length === 0 ? (
             <div className="py-16 text-center text-slate-500 dark:text-slate-400">
@@ -638,6 +876,16 @@ export default function CustomersSuppliers() {
                           className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-purple-600 transition-colors hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/50"
                           title="الملف"
                           aria-label="الملف"
+                        >
+                          <FileText size={18} />
+                        </Link>
+                      )}
+                      {tab === 'supplier' && (
+                        <Link
+                          to={`/purchases/supplier-statement?contactId=${row.id}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-purple-600 transition-colors hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                          title="كشف الحساب"
+                          aria-label="كشف الحساب"
                         >
                           <FileText size={18} />
                         </Link>
