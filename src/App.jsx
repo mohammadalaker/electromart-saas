@@ -187,6 +187,7 @@ function App() {
     brand_group: '',
     name: '',
     product_type: '',
+    purchase_price: '',
     price: '',
     price_after_disc: '',
     stock_count: '',
@@ -1183,6 +1184,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
       name: '',
       product_type: '',
       appliance_size: '',
+      purchase_price: '',
       price: '',
       price_after_disc: '',
       stock_count: '',
@@ -1202,6 +1204,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
       name: item.name || '',
       product_type: productTypeToFormDisplay(item.productType || ''),
       appliance_size: item.applianceSize || '',
+      purchase_price:
+        item.purchasePrice != null && item.purchasePrice !== ''
+          ? String(item.purchasePrice)
+          : '',
       price:
         item.price != null && item.price !== '' ? String(item.price) : '',
       price_after_disc:
@@ -1234,6 +1240,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
       name: item.name || '',
       product_type: productTypeToFormDisplay(item.productType || ''),
       appliance_size: item.applianceSize || '',
+      purchase_price:
+        item.purchasePrice != null && item.purchasePrice !== ''
+          ? String(item.purchasePrice)
+          : '',
       price: item.price != null && item.price !== '' ? String(item.price) : '',
       price_after_disc:
         item.priceAfterDiscount != null && item.priceAfterDiscount !== ''
@@ -1267,6 +1277,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
         imageUrlValue = await uploadProductImageFile(store.id, selectedImageFile);
       }
 
+      const costVal = formData.purchase_price
+        ? parseFloat(normalizeDigitsToLatin(String(formData.purchase_price)))
+        : null;
+
       const payload = {
         barcode: normalizeDigitsToLatin(formData.barcode.trim()),
         reference: normalizeDigitsToLatin(formData.reference.trim()) || null,
@@ -1274,6 +1288,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
         eng_name: formData.name.trim() || null,
         product_type: normalizeProductTypeForDb(formData.product_type),
         appliance_size: String(formData.appliance_size || '').trim() || null,
+        purchase_price: costVal,
+        last_purchase_price: costVal,
+        avg_purchase_price: costVal,
         full_price: formData.price
           ? parseFloat(normalizeDigitsToLatin(String(formData.price)))
           : null,

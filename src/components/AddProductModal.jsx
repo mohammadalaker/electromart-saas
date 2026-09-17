@@ -207,7 +207,7 @@ export default function AddProductModal({
     const { name, value: raw } = e.target;
     const value = normalizeDigitsToLatin(raw);
     if (!name) return;
-    if (name === 'price' || name === 'price_after_disc') {
+    if (name === 'price' || name === 'price_after_disc' || name === 'purchase_price') {
       setFormData((prev) => ({ ...prev, [name]: handleDecimalInput(value) }));
       return;
     }
@@ -472,6 +472,27 @@ export default function AddProductModal({
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 نفس أسلوب «تصفية سريعة» في المخزن — اضغط مجموعة واحدة أو «كتابة يدوية» لاسم جديد.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-200">سعر التكلفة (₪)</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  name="purchase_price"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0.00"
+                  value={String(formData.purchase_price ?? '')}
+                  onChange={handleChange}
+                  dir="ltr"
+                  lang="en"
+                  className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all pr-12 font-currency text-gray-900 dark:text-white placeholder:text-slate-400"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-currency text-lg pointer-events-none" lang="en">
+                  ₪
+                </span>
+              </div>
             </div>
 
             <div className="space-y-2">

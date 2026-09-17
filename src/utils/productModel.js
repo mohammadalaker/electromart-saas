@@ -4,7 +4,7 @@
 
 /** بدون appliance_size — للاستخدام إذا لم تُنفَّذ migration بعد */
 export const PRODUCTS_SELECT_BASE =
-  'id, barcode, eng_name, brand_group, reference, box_count, product_type, full_price, price_after_disc, stock_count, image_url, warranty_months';
+  'id, barcode, eng_name, brand_group, reference, box_count, product_type, full_price, price_after_disc, purchase_price, stock_count, image_url, warranty_months';
 
 export const PRODUCTS_SELECT = `${PRODUCTS_SELECT_BASE}, appliance_size`;
 
@@ -50,6 +50,7 @@ export function normalizeItemFromSupabase(row) {
   if (!row) return null;
   const full = toNumOrNull(row.full_price);
   const afterDisc = toNumOrNull(row.price_after_disc);
+  const cost = toNumOrNull(row.purchase_price) ?? toNumOrNull(row.last_purchase_price) ?? null;
   return {
     id: row.id != null ? String(row.id) : String(row.barcode ?? ''),
     barcode: row.barcode ?? '',
@@ -62,6 +63,9 @@ export function normalizeItemFromSupabase(row) {
     price: full ?? 0,
     /** إن وُجد عمود بعد الخصم (حتى 0) يُستخدم؛ وإلا سعر القائمة */
     priceAfterDiscount: afterDisc !== null ? afterDisc : (full ?? 0),
+    /** سعر التكلفة / الشراء */
+    purchasePrice: cost,
+    purchase_price: cost,
     stock: row.stock_count,
     image: (row.image_url ?? '').toString().trim() || null,
     /** مدة الضمان بالأشهر — من عمود warranty_months (0 = لا يوجد) */

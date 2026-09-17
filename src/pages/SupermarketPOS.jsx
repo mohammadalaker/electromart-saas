@@ -37,6 +37,7 @@ import {
   Calendar,
   Truck,
   Boxes,
+  Pencil,
 } from 'lucide-react';
 import { supabase, PRODUCTS_TABLE, PRODUCTS_STOCK_COLUMN } from '../lib/supabaseClient';
 import { normalizeItemFromSupabase, isUuid, roundMoney, runProductsSelectWithFallback } from '../utils/productModel';
@@ -49,6 +50,10 @@ import { useHtmlDarkClass, applyExplicitTheme } from '../lib/theme';
 import Sidebar from '../components/Sidebar';
 import PrintPosReceiptSimple from '../components/PrintPosReceiptSimple';
 import POSCheckoutFullForm from '../components/POSCheckoutFullForm';
+import AddProductModal from '../components/AddProductModal';
+import { uploadProductImageFile } from '../utils/uploadProductImage';
+import { normalizeProductTypeForDb, productTypeToFormDisplay } from '../utils/productTypes';
+import { syncShopLocationStockFromProductRow } from '../utils/storeLocations';
 import { brandStorageKey } from '../constants/brand.js';
 import {
   COMMON_UNIT_PRESETS,
@@ -68,6 +73,12 @@ function readSidebarCollapsed() {
     return false;
   }
 }
+
+const getDraftInvoiceStorageKey = (storeId, sessionId) =>
+  brandStorageKey(`pos_draft_invoice_${storeId || 'default'}_${sessionId || 'default'}`);
+
+const getLastSessionStorageKey = (storeId) =>
+  brandStorageKey(`pos_last_session_${storeId || 'default'}`);
 
 /** نغمة صوتية سريعة لمسح الباركود */
 function playScanBeep(success = true) {
@@ -441,6 +452,393 @@ export default function SupermarketPOS() {
   const [tenderedAmount, setTenderedAmount] = useState('');
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const [simpleReceiptPrint, setSimpleReceiptPrint] = useState(null);
+
+  // استرجاع وحفظ مسودة الفاتورة في localStorage لضمان عدم ضياع الأصناف عند التنقل
+  const invoiceRestoredRef = useRef(false);
+
+  // استرجاع الفاتورة عند توفر الشيفت الحالي للمتجر
+  useEffect(() => {
+    if (!activeShift?.id || !store?.id) return;
+
+    // حفظ معرف الشيفت النشط للمتجر
+    try {
+      localStorage.setItem(getLastSessionStorageKey(store.id), activeShift.id);
+    } catch {
+      /* ignore */
+    }
+
+    if (invoiceRestoredRef.current) return;
+
+    const draftKey = getDraftInvoiceStorageKey(store.id, activeShift.id);
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setOrderItems((current) => {
+            if (current.length === 0) return parsed;
+            return current;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[SupermarketPOS] Error restoring draft invoice:', err);
+    } finally {
+      invoiceRestoredRef.current = true;
+    }
+  }, [activeShift?.id, store?.id]);
+
+  // حفظ الفاتورة تلقائياً عند أي تعديل (إضافة، تعديل، حذف) بـ debounce لمنع التأخير
+  useEffect(() => {
+    if (!activeShift?.id || !store?.id) return;
+    if (!invoiceRestoredRef.current) return;
+
+    const draftKey = getDraftInvoiceStorageKey(store.id, activeShift.id);
+
+    const timer = setTimeout(() => {
+      try {
+        if (orderItems && orderItems.length > 0) {
+          localStorage.setItem(draftKey, JSON.stringify(orderItems));
+        } else {
+          localStorage.removeItem(draftKey);
+        }
+      } catch (err) {
+        console.warn('[SupermarketPOS] Error saving draft invoice:', err);
+      }
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+      try {
+        if (orderItems && orderItems.length > 0) {
+          localStorage.setItem(draftKey, JSON.stringify(orderItems));
+        } else {
+          localStorage.removeItem(draftKey);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [orderItems, activeShift?.id, store?.id]);
+
+  // ── قائمة السياق وتعديل الصنف من جدول الفاتورة ──
+  const [contextMenu, setContextMenu] = useState({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    line: null,
+  });
+
+  const [editProductModalOpen, setEditProductModalOpen] = useState(false);
+  const [editingProductItem, setEditingProductItem] = useState(null);
+  const [editProductFormData, setEditProductFormData] = useState({
+    barcode: '',
+    reference: '',
+    brand_group: '',
+    name: '',
+    product_type: '',
+    appliance_size: '',
+    purchase_price: '',
+    price: '',
+    price_after_disc: '',
+    stock_count: '',
+    warranty_months: '',
+    image_url: '',
+  });
+  const [editProductPendingImage, setEditProductPendingImage] = useState(null);
+  const [savingProductEdit, setSavingProductEdit] = useState(false);
+
+  // خيارات تصنيفات البراند من الأصناف المحملة
+  const brandGroupOptions = useMemo(() => {
+    return Array.from(new Set(items.map((i) => i.group).filter(Boolean)));
+  }, [items]);
+
+  // إغلاق قائمة السياق بـ Escape
+  useEffect(() => {
+    if (!contextMenu.isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setContextMenu({ isOpen: false, x: 0, y: 0, line: null });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [contextMenu.isOpen]);
+
+  // فتح قائمة السياق عند النقر بالزر الأيمن على أي صف بجدول الفاتورة
+  const handleRowContextMenu = (e, line) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 230;
+    const menuHeight = 90;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 12);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 12);
+    setContextMenu({
+      isOpen: true,
+      x: Math.max(12, x),
+      y: Math.max(12, y),
+      line,
+    });
+  };
+
+  // فتح مودال تعديل الصنف وجلب بياناته الكاملة
+  const handleOpenEditProductModal = async (line) => {
+    if (!line) return;
+
+    let productData = null;
+    try {
+      if (line.productId && isUuid(line.productId)) {
+        const { data, error } = await runProductsSelectWithFallback((sel) =>
+          supabase
+            .from(PRODUCTS_TABLE)
+            .select(sel)
+            .eq('id', line.productId)
+            .eq('store_id', store.id)
+            .maybeSingle()
+        );
+        if (!error && data) productData = normalizeItemFromSupabase(data);
+      }
+      if (!productData && line.barcode && line.barcode !== '—') {
+        const { data, error } = await runProductsSelectWithFallback((sel) =>
+          supabase
+            .from(PRODUCTS_TABLE)
+            .select(sel)
+            .eq('barcode', line.barcode)
+            .eq('store_id', store.id)
+            .maybeSingle()
+        );
+        if (!error && data) productData = normalizeItemFromSupabase(data);
+      }
+    } catch (err) {
+      console.warn('[SupermarketPOS] Error fetching product for edit modal:', err);
+    }
+
+    if (!productData) {
+      productData =
+        items.find(
+          (i) =>
+            (line.productId && i.id === line.productId) ||
+            (line.barcode && line.barcode !== '—' && i.barcode === line.barcode)
+        ) || {
+          id: line.productId,
+          barcode: line.barcode !== '—' ? line.barcode : '',
+          name: line.baseName || line.name,
+          price: line.basePrice || line.unitPrice,
+          priceAfterDiscount: line.unitPrice,
+          stock: 0,
+        };
+    }
+
+    setEditingProductItem(productData);
+    setEditProductPendingImage(null);
+    setEditProductFormData({
+      barcode: productData.barcode || '',
+      reference: productData.reference ?? '',
+      brand_group: productData.group || '',
+      name: productData.name || '',
+      product_type: productTypeToFormDisplay(productData.productType || ''),
+      appliance_size: productData.applianceSize || '',
+      purchase_price:
+        productData.purchasePrice != null && productData.purchasePrice !== ''
+          ? String(productData.purchasePrice)
+          : (productData.purchase_price != null && productData.purchase_price !== '' ? String(productData.purchase_price) : ''),
+      price:
+        productData.price != null && productData.price !== ''
+          ? String(productData.price)
+          : '',
+      price_after_disc:
+        productData.priceAfterDiscount != null && productData.priceAfterDiscount !== ''
+          ? String(productData.priceAfterDiscount)
+          : '',
+      stock_count:
+        productData.stock != null && productData.stock !== ''
+          ? String(productData.stock)
+          : '',
+      warranty_months:
+        productData.warrantyMonths != null && productData.warrantyMonths !== ''
+          ? String(productData.warrantyMonths)
+          : '',
+      image_url: productData.image || '',
+    });
+    setEditProductModalOpen(true);
+  };
+
+  // حفظ التعديلات على جدول products ومزامنة السعر والإجمالي فوراً في الفاتورة الحالية
+  const handleSaveProductEdit = async (e, selectedImageFile = editProductPendingImage) => {
+    if (e?.preventDefault) e.preventDefault();
+
+    if (!store?.id) {
+      toast.error('خطأ: لا يوجد متجر مرتبط بهذا الحساب.');
+      return;
+    }
+
+    setSavingProductEdit(true);
+    try {
+      let imageUrlValue = editProductFormData.image_url?.trim() || null;
+      if (selectedImageFile) {
+        imageUrlValue = await uploadProductImageFile(store.id, selectedImageFile);
+      }
+
+      const costVal = editProductFormData.purchase_price
+        ? parseFloat(normalizeDigitsToLatin(String(editProductFormData.purchase_price)))
+        : null;
+
+      const payload = {
+        barcode: normalizeDigitsToLatin(editProductFormData.barcode.trim()),
+        reference: normalizeDigitsToLatin(editProductFormData.reference.trim()) || null,
+        brand_group: editProductFormData.brand_group.trim() || null,
+        eng_name: editProductFormData.name.trim() || null,
+        product_type: normalizeProductTypeForDb(editProductFormData.product_type),
+        appliance_size: String(editProductFormData.appliance_size || '').trim() || null,
+        purchase_price: costVal,
+        last_purchase_price: costVal,
+        avg_purchase_price: costVal,
+        full_price: editProductFormData.price
+          ? parseFloat(normalizeDigitsToLatin(String(editProductFormData.price)))
+          : null,
+        price_after_disc: editProductFormData.price_after_disc
+          ? parseFloat(normalizeDigitsToLatin(String(editProductFormData.price_after_disc)))
+          : null,
+        stock_count: editProductFormData.stock_count
+          ? parseInt(normalizeDigitsToLatin(String(editProductFormData.stock_count)), 10)
+          : 0,
+        warranty_months: (() => {
+          const t = String(editProductFormData.warranty_months ?? '').trim();
+          if (!t) return null;
+          const n = parseInt(normalizeDigitsToLatin(t), 10);
+          if (Number.isNaN(n)) return null;
+          return Math.min(240, Math.max(0, n));
+        })(),
+        image_url: imageUrlValue,
+      };
+
+      let savedRow = null;
+      if (editingProductItem) {
+        let updateBuilder = supabase.from(PRODUCTS_TABLE).update(payload);
+        if (editingProductItem.id && isUuid(editingProductItem.id)) {
+          updateBuilder = updateBuilder.eq('id', editingProductItem.id);
+        } else {
+          updateBuilder = updateBuilder.eq('barcode', editingProductItem.barcode);
+        }
+        const { data, error } = await runProductsSelectWithFallback((sel) =>
+          updateBuilder.eq('store_id', store.id).select(sel).single()
+        );
+        if (error) throw error;
+        savedRow = data;
+      } else {
+        const { data, error } = await runProductsSelectWithFallback((sel) =>
+          supabase
+            .from(PRODUCTS_TABLE)
+            .insert({ ...payload, store_id: store.id })
+            .select(sel)
+            .single()
+        );
+        if (error) throw error;
+        savedRow = data;
+      }
+
+      const afterSaveTasks = [];
+      if (editingProductItem && savedRow) {
+        const oldStock = Number(editingProductItem.stock ?? 0);
+        const newStock = Number(savedRow.stock_count ?? 0);
+        if (oldStock !== newStock) {
+          const normForLog = normalizeItemFromSupabase(savedRow);
+          afterSaveTasks.push(
+            insertInventoryLog({
+              storeId: store.id,
+              productId: normForLog && isUuid(normForLog.id) ? normForLog.id : null,
+              barcode: normForLog?.barcode ?? editingProductItem.barcode,
+              productName: normForLog?.name ?? editingProductItem.name,
+              qtyBefore: oldStock,
+              qtyAfter: newStock,
+              reason: 'adjustment',
+            })
+          );
+        }
+      }
+      if (savedRow) {
+        afterSaveTasks.push(syncShopLocationStockFromProductRow(store.id, savedRow));
+      }
+      await Promise.all(afterSaveTasks);
+
+      const merged = savedRow ? normalizeItemFromSupabase(savedRow) : null;
+      if (merged) {
+        // 1. تحديث قائمة المنتجات المخزنة محلياً
+        setItems((prev) => {
+          const idx = prev.findIndex(
+            (i) =>
+              (merged.id && i.id === merged.id) ||
+              String(i.barcode) === String(merged.barcode) ||
+              (editingProductItem?.id && i.id === editingProductItem.id) ||
+              (editingProductItem?.barcode && String(i.barcode) === String(editingProductItem.barcode))
+          );
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = merged;
+            return next;
+          }
+          return [merged, ...prev];
+        });
+
+        // 2. تحديث السطر في الفاتورة الحالية فوراً وإعادة حساب الإجمالي
+        const newSalePrice = roundMoney(
+          merged.priceAfterDiscount != null && merged.priceAfterDiscount !== ''
+            ? Number(merged.priceAfterDiscount)
+            : Number(merged.price ?? 0)
+        );
+        const newProdName = merged.name || '';
+
+        setOrderItems((prev) =>
+          prev.map((line) => {
+            const isTargetLine =
+              (merged.id && line.productId === merged.id) ||
+              (merged.barcode && line.barcode === merged.barcode) ||
+              (editingProductItem?.id && line.productId === editingProductItem.id) ||
+              (editingProductItem?.barcode && line.barcode === editingProductItem.barcode);
+
+            if (!isTargetLine) return line;
+
+            let updatedUnitPrice = newSalePrice;
+            if (line.conversionFactor && line.conversionFactor > 1 && line.unit && line.unit !== 'قطعة') {
+              const units = (line.productId && productUnitsMap[line.productId]) || [];
+              const foundUnit = units.find((u) => u.unit_name === line.unit);
+              if (foundUnit && foundUnit.sale_price != null) {
+                updatedUnitPrice = Number(foundUnit.sale_price);
+              } else {
+                updatedUnitPrice = roundMoney(newSalePrice * line.conversionFactor);
+              }
+            }
+
+            const baseTitle = newProdName || line.baseName || line.name;
+            const displayTitle =
+              line.unit && line.unit !== 'قطعة' ? `${baseTitle} (${line.unit})` : baseTitle;
+            const updatedLineTotal = roundMoney(
+              Math.max(0, line.qty * updatedUnitPrice - (line.discount || 0))
+            );
+
+            return {
+              ...line,
+              name: displayTitle,
+              baseName: baseTitle,
+              barcode: merged.barcode || line.barcode,
+              basePrice: newSalePrice,
+              unitPrice: updatedUnitPrice,
+              lineTotal: updatedLineTotal,
+            };
+          })
+        );
+      }
+
+      setEditProductPendingImage(null);
+      setEditProductModalOpen(false);
+      toast.success('تم حفظ الصنف وتحديث السعر في الفاتورة بنجاح');
+    } catch (err) {
+      console.error('Error saving product in POS:', err);
+      toast.error(err.message || 'فشل حفظ التعديلات');
+    } finally {
+      setSavingProductEdit(false);
+    }
+  };
 
   // خريطة وحدات المنتجات المسجلة في جدول product_units للأصناف الحالية
   const [productUnitsMap, setProductUnitsMap] = useState({});
@@ -1242,6 +1640,13 @@ export default function SupermarketPOS() {
   const clearInvoice = () => {
     setOrderItems([]);
     setTenderedAmount('');
+    if (activeShift?.id && store?.id) {
+      try {
+        localStorage.removeItem(getDraftInvoiceStorageKey(store.id, activeShift.id));
+      } catch {
+        /* ignore */
+      }
+    }
     setTimeout(() => barcodeInputRef.current?.focus(), 30);
   };
 
@@ -2147,7 +2552,9 @@ export default function SupermarketPOS() {
                     {orderItems.map((line, idx) => (
                       <tr
                         key={line.id}
-                        className="hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 transition group"
+                        onContextMenu={(e) => handleRowContextMenu(e, line)}
+                        className="hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 transition group cursor-pointer"
+                        title="انقر بالزر الأيمن لعرض / تعديل تفاصيل وسعر الصنف"
                       >
                         {/* تسلسل */}
                         <td className="py-2.5 px-1.5 w-10 text-center font-mono text-slate-400 dark:text-slate-500 font-bold text-[11px]">
@@ -3467,6 +3874,65 @@ export default function SupermarketPOS() {
           </div>
         </div>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          قائمة السياق (Context Menu) بالزر الأيمن على سطر الفاتورة
+         ───────────────────────────────────────────────────────────── */}
+      {contextMenu.isOpen && contextMenu.line && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-transparent"
+            onClick={() => setContextMenu({ isOpen: false, x: 0, y: 0, line: null })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ isOpen: false, x: 0, y: 0, line: null });
+            }}
+          />
+          <div
+            style={{
+              top: contextMenu.y,
+              left: contextMenu.x,
+            }}
+            className="fixed z-50 min-w-[210px] rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none text-right"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-1.5 text-[11px] font-bold text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-white/5 truncate max-w-[230px]">
+              {contextMenu.line.name || contextMenu.line.baseName || 'خيارات السطر'}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const targetLine = contextMenu.line;
+                setContextMenu({ isOpen: false, x: 0, y: 0, line: null });
+                handleOpenEditProductModal(targetLine);
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition text-right group"
+            >
+              <Pencil size={15} className="text-indigo-500 shrink-0 group-hover:scale-110 transition" />
+              <span>تفاصيل الصنف / تعديل</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          مودال تعديل الصنف (AddProductModal)
+         ───────────────────────────────────────────────────────────── */}
+      <AddProductModal
+        isOpen={editProductModalOpen}
+        onClose={() => {
+          setEditProductPendingImage(null);
+          setEditProductModalOpen(false);
+        }}
+        editingItem={editingProductItem}
+        formData={editProductFormData}
+        setFormData={setEditProductFormData}
+        onSubmit={handleSaveProductEdit}
+        onImageFileSelect={setEditProductPendingImage}
+        saving={savingProductEdit}
+        brandGroupOptions={brandGroupOptions}
+      />
     </div>
   );
 }
