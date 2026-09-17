@@ -59,7 +59,36 @@ export function StoreProvider({ children }) {
         setStore(null);
       }
     } else {
-      setStore(data);
+      let storeData = data;
+      // تفعيل المتجر بشكل دائم وتحويله إلى باقة الأعمال وإلغاء التجريبي
+      if (storeData && (storeData.plan === 'trial' || storeData.trial_ends_at !== null || !storeData.is_active)) {
+        supabase
+          .from('stores')
+          .update({
+            plan: 'business',
+            is_active: true,
+            trial_ends_at: null,
+          })
+          .eq('id', storeData.id)
+          .then(({ error: updateErr }) => {
+            if (updateErr) {
+              console.warn('[StoreContext] Auto-activation notice:', updateErr.message);
+            } else {
+              console.log('[StoreContext] Store permanently activated to business plan:', storeData.id);
+            }
+          })
+          .catch((err) => {
+            console.warn('[StoreContext] Auto-activation error:', err);
+          });
+
+        storeData = {
+          ...storeData,
+          plan: 'business',
+          is_active: true,
+          trial_ends_at: null,
+        };
+      }
+      setStore(storeData);
     }
 
     setLoading(false);

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Package, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react';
 import { isInventoryOutOfStock } from '../lib/inventoryStock';
 
@@ -12,7 +13,7 @@ const cardBase =
  * @param {number | null} salesTodayNis — مجموع total_amount لمبيعات اليوم من جدول sales؛ null أثناء التحميل
  * @param {Array} [itemsForOutOfStockCount] — نفس نطاق فلتر «منتهية» (بعد المجموعة والبحث)
  */
-export default function StatsBar({ items, itemsForOutOfStockCount, loading, salesTodayNis = null }) {
+function StatsBar({ items, itemsForOutOfStockCount, loading, salesTodayNis = null }) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
@@ -83,3 +84,5 @@ export default function StatsBar({ items, itemsForOutOfStockCount, loading, sale
     </div>
   );
 }
+
+export default memo(StatsBar);

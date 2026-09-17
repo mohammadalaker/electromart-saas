@@ -26,6 +26,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import StorageObjectImage from '../components/StorageObjectImage';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { uploadPurchaseInvoiceScan } from '../utils/uploadProductImage';
 import { useStore } from '../context/StoreContext';
@@ -177,6 +178,16 @@ export default function PurchasesPage() {
   const [productSearchResults, setProductSearchResults] = useState([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const productSearchInputRef = useRef(null);
+  const modalSearchTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (productSearchOpen) {
+      const t = setTimeout(() => {
+        productSearchInputRef.current?.focus();
+      }, 60);
+      return () => clearTimeout(t);
+    }
+  }, [productSearchOpen]);
 
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProductSaving, setNewProductSaving] = useState(false);
@@ -694,19 +705,20 @@ export default function PurchasesPage() {
   const searchProductsForModal = useCallback(
     async (q) => {
       const term = q.trim();
-      if (!store?.id || term.length < 2) {
+      if (!store?.id || term.length < 1) {
         setProductSearchResults([]);
+        setProductSearchLoading(false);
         return;
       }
       setProductSearchLoading(true);
       const safe = escapeIlike(term);
       const pattern = `%${safe}%`;
-      const sel = 'id, barcode, reference, eng_name, full_price, price_after_disc, brand_group, stock_count';
+      const sel = 'id, barcode, reference, eng_name, full_price, price_after_disc, purchase_price, brand_group, stock_count, image_url';
       try {
         const [r1, r2, r3, rUnits] = await Promise.all([
-          supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('eng_name', pattern).limit(12),
-          supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('barcode', pattern).limit(8),
-          supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('reference', pattern).limit(8),
+          supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('eng_name', pattern).limit(15),
+          supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('barcode', pattern).limit(10),
+          supabase.from(PRODUCTS_TABLE).select(sel).eq('store_id', store.id).ilike('reference', pattern).limit(10),
           supabase
             .from(PRODUCT_UNITS_TABLE)
             .select(`
@@ -724,13 +736,15 @@ export default function PurchasesPage() {
                 eng_name,
                 full_price,
                 price_after_disc,
+                purchase_price,
                 brand_group,
-                stock_count
+                stock_count,
+                image_url
               )
             `)
             .eq('store_id', store.id)
             .ilike('barcode', pattern)
-            .limit(8)
+            .limit(10)
             .then((res) => res)
             .catch(() => ({ data: [] })),
         ]);
@@ -748,7 +762,18 @@ export default function PurchasesPage() {
             });
           }
         });
-        setProductSearchResults(Array.from(map.values()).slice(0, 20));
+
+        // Exact match prioritized at top
+        const cleanTerm = normalizeDigitsToLatin(term).toLowerCase();
+        const results = Array.from(map.values()).sort((a, b) => {
+          const aBc = normalizeDigitsToLatin(String(a.unitData?.barcode || a.barcode || '')).toLowerCase();
+          const bBc = normalizeDigitsToLatin(String(b.unitData?.barcode || b.barcode || '')).toLowerCase();
+          if (aBc === cleanTerm && bBc !== cleanTerm) return -1;
+          if (bBc === cleanTerm && aBc !== cleanTerm) return 1;
+          return 0;
+        });
+
+        setProductSearchResults(results.slice(0, 30));
       } catch (e) {
         console.warn('product modal search error', e);
         setProductSearchResults([]);
@@ -764,12 +789,15 @@ export default function PurchasesPage() {
     const fp = Number(p.full_price) || 0;
     const u = p.unitData;
     const factor = u ? Number(u.conversion_factor) || 1 : 1;
+    // Prefer unit cost_price or product purchase_price
     const unitCost =
       u && Number(u.cost_price) > 0
         ? Number(u.cost_price)
-        : fp > 0
-          ? fp * factor
-          : null;
+        : p.purchase_price != null && Number(p.purchase_price) > 0
+          ? Number(p.purchase_price) * factor
+          : fp > 0
+            ? fp * factor
+            : null;
 
     setLines((prev) => {
       // Find first empty line or append
@@ -814,6 +842,87 @@ export default function PurchasesPage() {
     setProductSearchQuery('');
     setProductSearchResults([]);
   }, [store?.id]);
+
+  const handleModalSearchChange = useCallback(
+    (val) => {
+      setProductSearchQuery(val);
+      if (modalSearchTimerRef.current) {
+        clearTimeout(modalSearchTimerRef.current);
+      }
+      const trimmed = val.trim();
+      if (!trimmed) {
+        setProductSearchResults([]);
+        setProductSearchLoading(false);
+        return;
+      }
+      setProductSearchLoading(true);
+      modalSearchTimerRef.current = setTimeout(() => {
+        searchProductsForModal(trimmed);
+      }, 180);
+    },
+    [searchProductsForModal]
+  );
+
+  const handleModalSearchKeyDown = useCallback(
+    async (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const raw = productSearchQuery.trim();
+      const clean = normalizeDigitsToLatin(raw);
+      if (!clean || !store?.id) return;
+
+      // 1. Exact match in current search results
+      const exactMatch = productSearchResults.find((p) => {
+        const bc = normalizeDigitsToLatin(String(p.unitData?.barcode || p.barcode || '')).trim();
+        const ref = normalizeDigitsToLatin(String(p.reference || '')).trim();
+        return (
+          (bc && bc.toLowerCase() === clean.toLowerCase()) ||
+          (ref && ref.toLowerCase() === clean.toLowerCase())
+        );
+      });
+
+      if (exactMatch) {
+        addProductFromSearch(exactMatch);
+        return;
+      }
+
+      // 2. If only 1 result exists in list, pick it
+      if (productSearchResults.length === 1) {
+        addProductFromSearch(productSearchResults[0]);
+        return;
+      }
+
+      // 3. Direct DB lookup for scanned barcode
+      setProductSearchLoading(true);
+      try {
+        const { data: prodData } = await supabase
+          .from(PRODUCTS_TABLE)
+          .select('id, barcode, reference, eng_name, full_price, price_after_disc, purchase_price, brand_group, stock_count, image_url')
+          .eq('store_id', store.id)
+          .eq('barcode', clean)
+          .maybeSingle();
+
+        if (prodData) {
+          addProductFromSearch(prodData);
+          return;
+        }
+
+        const unitMatch = await findUnitByBarcode(clean, store.id);
+        if (unitMatch && unitMatch.product) {
+          addProductFromSearch({
+            ...unitMatch.product,
+            unitData: unitMatch,
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn('Direct barcode Enter lookup error', err);
+      } finally {
+        setProductSearchLoading(false);
+      }
+    },
+    [productSearchQuery, store?.id, productSearchResults, addProductFromSearch]
+  );
 
   const handleNewProductSubmit = useCallback(
     async (e) => {
@@ -1135,22 +1244,22 @@ export default function PurchasesPage() {
         {/* ------------------------------------------------------------- */}
         {/* 1. HEADER: Single Narrow Horizontal Strip */}
         {/* ------------------------------------------------------------- */}
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-3.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center gap-3.5">
             {/* Title / Icon badge */}
-            <div className="flex items-center gap-2 pe-3 border-e border-slate-200 dark:border-slate-800 shrink-0">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
-                <ShoppingBag size={17} />
+            <div className="flex items-center gap-2.5 pe-3.5 border-e border-slate-200 dark:border-slate-800 shrink-0">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                <ShoppingBag size={18} />
               </div>
-              <span className="text-sm font-black text-slate-900 dark:text-white whitespace-nowrap">
+              <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white whitespace-nowrap">
                 فاتورة مشتريات
               </span>
             </div>
 
             {/* Supplier Search / Input with Autocomplete */}
-            <div className="relative min-w-[200px] flex-1" ref={supplierDropdownRef}>
-              <div className="flex items-center justify-between mb-0.5">
-                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">
+            <div className="relative min-w-[220px] flex-1" ref={supplierDropdownRef}>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">
                   المورد <span className="text-rose-500">*</span>
                 </label>
                 {selectedSupplierId && (
@@ -1161,7 +1270,7 @@ export default function PurchasesPage() {
                       setSupplierCompanyName('');
                       setSupplierPhone('');
                     }}
-                    className="text-[10px] text-violet-600 dark:text-violet-400 hover:underline font-bold"
+                    className="text-xs text-violet-600 dark:text-violet-400 hover:underline font-bold"
                   >
                     تغيير المورد
                   </button>
@@ -1176,29 +1285,29 @@ export default function PurchasesPage() {
                     setSupplierDropdownOpen(true);
                   }}
                   onFocus={() => setSupplierDropdownOpen(true)}
-                  className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
                   placeholder="ابحث أو اكتب اسم المورد…"
                 />
                 {selectedSupplierId && (
-                  <UserCheck size={14} className="absolute left-2.5 top-2 text-emerald-600 dark:text-emerald-400" />
+                  <UserCheck size={16} className="absolute left-3 top-3 text-emerald-600 dark:text-emerald-400" />
                 )}
               </div>
 
               {/* Autocomplete Dropdown for Suppliers */}
               {supplierDropdownOpen && filteredSuppliers.length > 0 && (
-                <ul className="absolute z-50 right-0 left-0 mt-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-xs">
+                <ul className="absolute z-50 right-0 left-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-xs">
                   {filteredSuppliers.map((s) => (
                     <li key={s.id}>
                       <button
                         type="button"
-                        className="w-full text-right px-3 py-2 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex items-center justify-between"
+                        className="w-full text-right px-3.5 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex items-center justify-between"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           selectSupplier(s);
                         }}
                       >
-                        <span className="font-bold text-slate-900 dark:text-slate-100">{s.name}</span>
-                        <div className="flex items-center gap-3 text-[11px] font-currency text-slate-500 dark:text-slate-400" dir="ltr">
+                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{s.name}</span>
+                        <div className="flex items-center gap-3 text-xs font-currency text-slate-500 dark:text-slate-400" dir="ltr">
                           {s.phone && <span>{s.phone}</span>}
                           {Number(s.outstanding_amount) > 0 && (
                             <span className="text-amber-600 dark:text-amber-400 font-bold">
@@ -1214,8 +1323,8 @@ export default function PurchasesPage() {
             </div>
 
             {/* Supplier Phone */}
-            <div className="w-32 sm:w-36">
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+            <div className="w-36 sm:w-44">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
                 هاتف المورد {selectedSupplierId ? '(مسجّل)' : <span className="text-rose-500">*</span>}
               </label>
               <input
@@ -1227,10 +1336,10 @@ export default function PurchasesPage() {
                     setSupplierPhone(normalizeDigitsToLatin(e.target.value));
                   }
                 }}
-                className={`h-8.5 w-full rounded-lg border px-2.5 text-xs font-currency font-bold outline-none transition-colors ${
+                className={`h-10 w-full rounded-xl border px-3 text-sm font-currency font-bold outline-none transition-all ${
                   selectedSupplierId
                     ? 'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-400 select-none'
-                    : 'border-slate-200 bg-slate-50/70 text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
                 }`}
                 dir="ltr"
                 lang="en"
@@ -1240,14 +1349,14 @@ export default function PurchasesPage() {
             </div>
 
             {/* Invoice Number (Optional) */}
-            <div className="w-32 sm:w-36">
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+            <div className="w-36 sm:w-44">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
                 رقم الفاتورة <span className="text-slate-400 font-normal">(اختياري)</span>
               </label>
               <input
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(normalizeDigitsToLatin(e.target.value))}
-                className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-xs font-currency font-bold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
                 dir="ltr"
                 lang="en"
                 placeholder="تلقائي إن تُرِك فارغاً"
@@ -1255,8 +1364,8 @@ export default function PurchasesPage() {
             </div>
 
             {/* Invoice Date */}
-            <div className="w-32 sm:w-36">
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+            <div className="w-36 sm:w-44">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
                 تاريخ الفاتورة <span className="text-rose-500">*</span>
               </label>
               <input
@@ -1268,15 +1377,15 @@ export default function PurchasesPage() {
                     setPaymentDueDate(addDaysISO(e.target.value, 30));
                   }
                 }}
-                className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2 text-xs font-currency text-slate-800 focus:bg-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900 transition-all"
                 dir="ltr"
                 lang="en"
               />
             </div>
 
             {/* Payment Mode (Cash / Credit) */}
-            <div className="w-28 sm:w-32">
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+            <div className="w-32 sm:w-36">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
                 طريقة الدفع
               </label>
               <select
@@ -1288,10 +1397,10 @@ export default function PurchasesPage() {
                     setPaymentDueDate(addDaysISO(invoiceDate, 30));
                   }
                 }}
-                className={`h-8.5 w-full rounded-lg border px-2 text-xs font-bold outline-none cursor-pointer ${
+                className={`h-10 w-full rounded-xl border px-3 text-sm font-bold outline-none cursor-pointer transition-all ${
                   paymentMode === 'credit'
                     ? 'border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-700'
-                    : 'border-slate-200 bg-slate-50/70 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
                 }`}
               >
                 <option value="cash">نقداً (كاش)</option>
@@ -1301,15 +1410,15 @@ export default function PurchasesPage() {
 
             {/* Due Date (only if Credit) */}
             {paymentMode === 'credit' && (
-              <div className="w-32 sm:w-36 animate-fadeIn">
-                <label className="block text-[11px] font-bold text-amber-800 dark:text-amber-300 mb-0.5">
+              <div className="w-36 sm:w-44 animate-fadeIn">
+                <label className="block text-xs font-bold text-amber-800 dark:text-amber-300 mb-1">
                   استحقاق السداد <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="date"
                   value={paymentDueDate}
                   onChange={(e) => setPaymentDueDate(e.target.value)}
-                  className="h-8.5 w-full rounded-lg border border-amber-300 bg-amber-50/50 px-2 text-xs font-currency font-bold text-amber-950 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:[color-scheme:dark]"
+                  className="h-10 w-full rounded-xl border border-amber-300 bg-amber-50/50 px-3 text-sm font-currency font-bold text-amber-950 focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:[color-scheme:dark] transition-all"
                   dir="ltr"
                   lang="en"
                 />
@@ -1323,7 +1432,7 @@ export default function PurchasesPage() {
         {/* ------------------------------------------------------------- */}
         <div className="rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden dark:border-slate-800 dark:bg-slate-900">
           {/* Table Action Bar */}
-          <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+          <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-800/60 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-black text-slate-800 dark:text-slate-200">بنود الفاتورة</span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-bold">
@@ -1338,12 +1447,11 @@ export default function PurchasesPage() {
                   setProductSearchOpen(true);
                   setProductSearchQuery('');
                   setProductSearchResults([]);
-                  setTimeout(() => productSearchInputRef.current?.focus(), 50);
                 }}
-                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-300"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-300 shadow-xs transition-colors cursor-pointer"
                 title="بحث عن منتج في المخزن"
               >
-                <Search size={14} />
+                <Search size={15} />
                 بحث صنف
               </button>
 
@@ -1499,56 +1607,16 @@ export default function PurchasesPage() {
                           )}
                         </td>
 
-                        {/* 3. Product Name */}
-                        <td className="py-1.5 px-1.5 relative">
+                        {/* 3. Product Name (Manual Line Edit) */}
+                        <td className="py-1.5 px-1.5">
                           <input
                             value={row.productName}
                             onChange={(e) => {
-                              const v = e.target.value;
-                              updateLine(row.key, 'productName', v);
-                              setDropdownRowKey(row.key);
-                              setDropdownField('name');
-                              scheduleSearch(row.key, v);
-                            }}
-                            onFocus={() => {
-                              setDropdownRowKey(row.key);
-                              setDropdownField('name');
-                              if ((row.productName || '').trim().length >= 2) {
-                                fetchProductSuggestions(row.key, row.productName);
-                              }
+                              updateLine(row.key, 'productName', e.target.value);
                             }}
                             className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-bold text-slate-800 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                             placeholder="اسم الصنف أو الوصف…"
                           />
-
-                          {searchLoadingKey === row.key && dropdownField === 'name' && (
-                            <Loader2 className="absolute left-3 top-3 w-3.5 h-3.5 animate-spin text-violet-500" />
-                          )}
-
-                          {/* Suggestions popup (under name) */}
-                          {showDrop && dropdownField === 'name' && (
-                            <ul className="absolute z-50 right-0 left-0 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-[11px]">
-                              {sug.map((p) => (
-                                <li key={p.unitData ? `u-${p.unitData.id}` : p.id}>
-                                  <button
-                                    type="button"
-                                    className="w-full text-right px-2.5 py-2 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-50 dark:border-slate-700/50 last:border-0"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      pickProduct(row.key, p);
-                                    }}
-                                  >
-                                    <span className="font-bold text-slate-800 dark:text-slate-100 block truncate">
-                                      {p.eng_name || '—'} {p.unitData ? `(${p.unitData.unit_name})` : ''}
-                                    </span>
-                                    <span className="font-currency text-slate-500 dark:text-slate-400" dir="ltr" lang="en">
-                                      {p.unitData?.barcode || p.barcode} · مرجع {p.reference || '—'}
-                                    </span>
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
                         </td>
 
                         {/* 4. Unit */}
@@ -2034,7 +2102,7 @@ export default function PurchasesPage() {
         {/* Modal: Fast Product Search */}
         {productSearchOpen && (
           <div
-            className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-[10vh] bg-black/50 backdrop-blur-xs"
+            className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-[6vh] sm:pt-[8vh] bg-black/60 backdrop-blur-sm animate-fadeIn"
             role="dialog"
             aria-modal="true"
             onClick={() => {
@@ -2044,25 +2112,25 @@ export default function PurchasesPage() {
             }}
           >
             <div
-              className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden dark:border-slate-800 dark:bg-slate-900"
+              className="w-full max-w-2xl sm:max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden dark:border-slate-800 dark:bg-slate-900 flex flex-col max-h-[84vh]"
               dir="rtl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/60">
-                <Search size={18} className="text-indigo-500 shrink-0" />
-                <input
-                  ref={productSearchInputRef}
-                  type="text"
-                  value={productSearchQuery}
-                  onChange={(e) => {
-                    setProductSearchQuery(e.target.value);
-                    searchProductsForModal(e.target.value);
-                  }}
-                  placeholder="ابحث بالاسم أو الباركود أو المرجع… (حرفان كحد أدنى)"
-                  className="flex-1 bg-transparent text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
-                  autoComplete="off"
-                />
-                {productSearchLoading && <Loader2 size={16} className="animate-spin text-indigo-400 shrink-0" />}
+              {/* Modal Top Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                    <Search size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                      بحث عن صنف في المخزن
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      ابحث بالاسم أو الباركود أو الموديل — اختر الصنف لإدراجه فوراً بالفاتورة
+                    </p>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -2070,59 +2138,175 @@ export default function PurchasesPage() {
                     setProductSearchResults([]);
                     setProductSearchQuery('');
                   }}
-                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 shrink-0"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition-colors"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="max-h-[60vh] overflow-y-auto">
-                {productSearchQuery.trim().length < 2 ? (
-                  <p className="py-10 text-center text-sm text-slate-400 font-bold">
-                    اكتب حرفين على الأقل للبحث في منتجات المخزن
-                  </p>
+              {/* Big Search Input */}
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <div className="relative flex items-center">
+                  <Search size={20} className="absolute right-3.5 text-indigo-500 pointer-events-none" />
+                  <input
+                    ref={productSearchInputRef}
+                    type="text"
+                    value={productSearchQuery}
+                    onChange={(e) => handleModalSearchChange(e.target.value)}
+                    onKeyDown={handleModalSearchKeyDown}
+                    placeholder="امسح الباركود بالسكانر أو اكتب اسم المنتج أو المرجع…"
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50/80 pr-11 pl-20 text-base font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:bg-slate-800 dark:placeholder:text-slate-500 transition-all"
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  <div className="absolute left-3 flex items-center gap-1.5">
+                    {productSearchLoading && (
+                      <Loader2 size={18} className="animate-spin text-indigo-500" />
+                    )}
+                    {productSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProductSearchQuery('');
+                          setProductSearchResults([]);
+                          productSearchInputRef.current?.focus();
+                        }}
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md"
+                        title="مسح البحث"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Results List */}
+              <div className="flex-1 overflow-y-auto min-h-[220px]">
+                {productSearchQuery.trim().length === 0 ? (
+                  <div className="py-14 text-center px-4">
+                    <div className="mx-auto w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mb-3">
+                      <Search size={22} />
+                    </div>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                      ابدأ بكتابة اسم المنتج أو مسح الباركود
+                    </p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                      ستظهر النتائج فورياً أثناء الكتابة
+                    </p>
+                  </div>
                 ) : productSearchResults.length === 0 && !productSearchLoading ? (
-                  <p className="py-10 text-center text-sm text-slate-400 font-bold">
-                    لا توجد منتجات مطابقة
-                  </p>
+                  <div className="py-12 text-center px-6">
+                    <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3 border border-amber-200/60 dark:border-amber-800/40">
+                      <AlertTriangle size={24} />
+                    </div>
+                    <h4 className="text-base font-black text-slate-800 dark:text-slate-100">
+                      لا توجد نتائج مطابقة
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-5 max-w-md mx-auto">
+                      لم نجد أي صنف يطابق «<span className="font-bold text-slate-700 dark:text-slate-200">{productSearchQuery}</span>» في المخزون الحالي.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const query = productSearchQuery.trim();
+                        setProductSearchOpen(false);
+                        setProductSearchResults([]);
+                        setProductSearchQuery('');
+                        const isLikelyBarcode = /^[0-9]+$/.test(query) && query.length >= 4;
+                        setNpEngName(isLikelyBarcode ? '' : query);
+                        setNpBarcode(isLikelyBarcode ? query : '');
+                        setNpRef('');
+                        setNpUnitPrice('');
+                        setNpDiscount('0');
+                        setNpQty('1');
+                        setNewProductOpen(true);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer"
+                    >
+                      <PackagePlus size={17} />
+                      إضافة «{productSearchQuery}» كصنف جديد للمخزن
+                    </button>
+                  </div>
                 ) : (
                   <ul className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {productSearchResults.map((p) => {
-                      const price =
-                        Number(p.price_after_disc) > 0 ? Number(p.price_after_disc) : Number(p.full_price) || 0;
+                      const u = p.unitData;
+                      const factor = u ? Number(u.conversion_factor) || 1 : 1;
+                      const unitCost =
+                        u && Number(u.cost_price) > 0
+                          ? Number(u.cost_price)
+                          : p.purchase_price != null && Number(p.purchase_price) > 0
+                            ? Number(p.purchase_price) * factor
+                            : p.full_price != null && Number(p.full_price) > 0
+                              ? Number(p.full_price) * factor
+                              : null;
                       const stock = p.stock_count != null ? Number(p.stock_count) : null;
+
                       return (
-                        <li key={p.unitData ? `u_${p.unitData.id}` : p.id}>
+                        <li key={u ? `u_${u.id}` : p.id}>
                           <button
                             type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              addProductFromSearch(p);
-                            }}
-                            className="w-full text-right px-4 py-3 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-start justify-between gap-3"
+                            onClick={() => addProductFromSearch(p)}
+                            className="w-full text-right px-4 py-3 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 flex items-center justify-between gap-3 transition-colors group cursor-pointer"
                           >
-                            <div className="min-w-0 flex-1">
-                              <p className="font-black text-sm text-slate-900 dark:text-slate-100 truncate">
-                                {p.eng_name || '—'} {p.unitData ? `(${p.unitData.unit_name})` : ''}
-                              </p>
-                              <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-0.5" dir="ltr">
-                                {p.unitData?.barcode || p.barcode || '—'}
-                                {p.reference ? ` · ${p.reference}` : ''}
-                              </p>
+                            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                              {/* Thumbnail */}
+                              <div className="w-12 h-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                                <StorageObjectImage
+                                  srcValue={p.image_url || p.product?.image_url}
+                                  alt={p.eng_name}
+                                  className="w-full h-full object-cover"
+                                  iconSize={20}
+                                  fallbackClassName="text-slate-400 dark:text-slate-500"
+                                />
+                              </div>
+
+                              {/* Product Info */}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                                    {p.eng_name || '—'}
+                                  </p>
+                                  {u && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300 text-xs font-black shrink-0">
+                                      {u.unit_name}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                  <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px]" dir="ltr">
+                                    {u?.barcode || p.barcode || 'بدون باركود'}
+                                  </span>
+                                  {p.reference && <span>· مرجع: {p.reference}</span>}
+                                  {p.brand_group && <span>· {p.brand_group}</span>}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-left shrink-0 space-y-0.5">
-                              <p className="text-sm font-black text-indigo-700 dark:text-indigo-400 font-currency" dir="ltr">
-                                ₪{price.toFixed(2)}
-                              </p>
-                              {stock != null && (
-                                <p
-                                  className={`text-[11px] font-bold ${
-                                    stock > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                                  }`}
-                                >
-                                  مخزون: {stock}
-                                </p>
-                              )}
+
+                            {/* Price & Stock */}
+                            <div className="text-left shrink-0 space-y-1">
+                              <div className="text-xs text-slate-500 dark:text-slate-400">
+                                <span className="me-1">آخر شراء:</span>
+                                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 font-currency" dir="ltr">
+                                  {unitCost != null ? `₪${Number(unitCost).toFixed(2)}` : '—'}
+                                </span>
+                              </div>
+                              <div>
+                                {stock != null ? (
+                                  stock > 0 ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60">
+                                      المخزون: {stock}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60">
+                                      نافد (0)
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[11px] text-slate-400">—</span>
+                                )}
+                              </div>
                             </div>
                           </button>
                         </li>
@@ -2131,8 +2315,15 @@ export default function PurchasesPage() {
                   </ul>
                 )}
               </div>
-              <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-400 text-center font-bold dark:border-slate-800 dark:bg-slate-800/60">
-                اضغط على المنتج لإضافته لسطر الفاتورة
+
+              {/* Modal Footer */}
+              <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50/90 text-xs text-slate-500 flex items-center justify-between dark:border-slate-800 dark:bg-slate-800/80">
+                <span className="font-bold">
+                  اضغط على أي صنف لإضافته مباشرة لسطر الفاتورة
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Enter / نقرة للإضافة
+                </span>
               </div>
             </div>
           </div>

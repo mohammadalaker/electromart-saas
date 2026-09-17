@@ -29,7 +29,7 @@ export default function RequireAuth() {
 
     const { data: store, error } = await supabase
       .from('stores')
-      .select('plan, trial_ends_at')
+      .select('id, plan, trial_ends_at, is_active')
       .eq('owner_id', userId)
       .maybeSingle();
 
@@ -38,15 +38,20 @@ export default function RequireAuth() {
       return 'ok';
     }
 
-    const trialEndsAt = store?.trial_ends_at ? new Date(store.trial_ends_at) : null;
-    const isTrial = store?.plan === 'trial';
-    const isExpired =
-      isTrial &&
-      trialEndsAt instanceof Date &&
-      !Number.isNaN(trialEndsAt.getTime()) &&
-      trialEndsAt.getTime() <= Date.now();
+    // ترقية الحساب وتفعيله دائماً تلقائياً في حال كان تجريبي
+    if (store && (store.plan === 'trial' || store.trial_ends_at !== null || store.is_active === false)) {
+      supabase
+        .from('stores')
+        .update({
+          plan: 'business',
+          is_active: true,
+          trial_ends_at: null,
+        })
+        .eq('id', store.id)
+        .then(() => {});
+    }
 
-    return isExpired ? 'trial_expired' : 'ok';
+    return 'ok';
   }, []);
 
   useEffect(() => {

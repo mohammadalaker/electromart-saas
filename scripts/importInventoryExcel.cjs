@@ -4,7 +4,7 @@ const XLSX = require('xlsx');
 
 const SUPABASE_URL = 'https://mjiucapmxwkscsqfgcvx.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qaXVjYXBteHdrc2NzcWZnY3Z4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxOTk1NTEsImV4cCI6MjA5MDc3NTU1MX0.8FjHgYsSx375Gc7AMGHcBofc_dp3gh45MI4XFLaFzVY';
-const STORE_ID = '5c073247-cf36-41c5-b4b3-9457c7123cab';
+const STORE_ID = process.argv[2] || 'd3acecd5-7908-40c4-89b2-54308ba14529'; // سوبر ماركت مرمش
 const PROFIT_MARGIN = 20; // 20%
 const BATCH_SIZE = 500;
 
@@ -114,9 +114,21 @@ async function runImport() {
   const startTime = Date.now();
 
   for (let i = 0; i < total; i += BATCH_SIZE) {
-    const batch = items.slice(i, i + BATCH_SIZE);
+    const batchSlice = items.slice(i, i + BATCH_SIZE);
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(total / BATCH_SIZE);
+
+    // إلغاء تكرار الباركود داخل نفس الدفعة لتفادي خطأ ON CONFLICT في PostgreSQL
+    const seenBarcodes = new Set();
+    const batch = [];
+    for (let j = batchSlice.length - 1; j >= 0; j--) {
+      const it = batchSlice[j];
+      if (it.barcode) {
+        if (seenBarcodes.has(it.barcode)) continue;
+        seenBarcodes.add(it.barcode);
+      }
+      batch.unshift(it);
+    }
 
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/products?on_conflict=store_id,barcode`, {

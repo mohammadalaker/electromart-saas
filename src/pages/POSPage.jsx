@@ -409,7 +409,6 @@ export default function POSPage() {
             .from(PRODUCTS_TABLE)
             .select(sel)
             .eq('store_id', store.id)
-            .gt(PRODUCTS_STOCK_COLUMN, 0)
             .order('brand_group', { ascending: true })
             .order('eng_name', { ascending: true })
             .range(from, to)
@@ -654,23 +653,65 @@ export default function POSPage() {
     return () => observer.disconnect();
   }, [hasMore, loadingMore, items.length]);
 
+  const [serverSearchResults, setServerSearchResults] = useState([]);
+
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search.trim()), 110);
     return () => window.clearTimeout(id);
   }, [search]);
 
+  // استعلام مباشر من قاعدة البيانات لكافة الـ 10,715 صنفاً حتى تظهر الأصناف ذات الرصيد 0 وغير المحمّلة محلياً
+  useEffect(() => {
+    const q = normalizeDigitsToLatin(String(debouncedSearch || '').trim());
+    if (!q || q.length < 2 || !store?.id) {
+      setServerSearchResults([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await runProductsSelectWithFallback((sel) =>
+          supabase
+            .from(PRODUCTS_TABLE)
+            .select(sel)
+            .eq('store_id', store.id)
+            .or(`eng_name.ilike.%${q}%,barcode.ilike.%${q}%,reference.ilike.%${q}%`)
+            .limit(20)
+        );
+        if (!cancelled && data) {
+          const norm = data.map(normalizeItemFromSupabase).filter(Boolean);
+          setServerSearchResults(norm);
+        }
+      } catch (err) {
+        console.error('POS server search error:', err);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [debouncedSearch, store?.id]);
+
   const searchedItems = useMemo(() => {
     const q = debouncedSearch;
     if (!q) return items;
-    return items.filter((i) => productMatchesPosSearch(i, q));
-  }, [items, debouncedSearch]);
+    const map = new Map();
+    items.filter((i) => productMatchesPosSearch(i, q)).forEach((i) => map.set(i.id || i.barcode, i));
+    serverSearchResults.forEach((i) => map.set(i.id || i.barcode, i));
+    return Array.from(map.values());
+  }, [items, debouncedSearch, serverSearchResults]);
 
   /** نتائج البحث الجزئي المعروضة في القائمة المنسدلة أسفل حقل الباركود */
   const partialMatches = useMemo(() => {
     const q = normalizeDigitsToLatin(String(search || '').trim()).toLowerCase();
     if (!q) return [];
-    return items.filter((i) => productMatchesPosSearch(i, q)).slice(0, 10);
-  }, [items, search]);
+    const map = new Map();
+    items.filter((i) => productMatchesPosSearch(i, q)).forEach((i) => map.set(i.id || i.barcode, i));
+    serverSearchResults.forEach((i) => map.set(i.id || i.barcode, i));
+    return Array.from(map.values()).slice(0, 12);
+  }, [items, search, serverSearchResults]);
 
   /** تطبيق الفلاتر على نتيجة البحث فقط — تفاعل AND (مثلاً Samsung + "65" → سامسونج التي اسمها يحتوي 65) */
   const filteredItems = useMemo(

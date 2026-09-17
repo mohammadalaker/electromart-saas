@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Layers, RefreshCw, Save, Settings } from 'lucide-react';
+import { Loader2, Layers, RefreshCw, Save, Settings, CheckCircle2, Sparkles, ShieldCheck } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
@@ -18,6 +18,40 @@ export default function SubscriptionPlanPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [savedOk, setSavedOk] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+
+  const handleActivateStore = async (targetPlan = 'business') => {
+    if (!store?.id) return;
+    setActivating(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase
+        .from('stores')
+        .update({
+          plan: targetPlan,
+          is_active: true,
+          trial_ends_at: null,
+        })
+        .eq('id', store.id);
+      if (err) throw err;
+      await refreshStore();
+      setSavedOk(true);
+    } catch (e) {
+      console.error('Failed to activate store:', e);
+      setError(e.message || 'فشل تفعيل الحساب');
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!store?.id) return;
+    if (store.plan === 'trial' || store.trial_ends_at !== null || !store.is_active) {
+      handleActivateStore('business');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store?.id, store?.plan, store?.trial_ends_at, store?.is_active]);
 
   const disabledSignature = useMemo(
     () => normalizeDisabledModules(store?.disabled_modules).join('\0'),
@@ -160,27 +194,106 @@ export default function SubscriptionPlanPage() {
       }
     >
       <div className="max-w-3xl mx-auto space-y-6" dir="rtl">
-        {isTrial && (
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
-              trialExpired
-                ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200'
-                : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200'
-            }`}
-          >
-            {trialExpired ? (
-              <p>Your trial has ended. Please choose a plan to continue.</p>
-            ) : (
-              <p>
-                {trialEndDateLabel
-                  ? `Your free trial ends on ${trialEndDateLabel} — ${trialDaysRemaining} day${
-                      trialDaysRemaining === 1 ? '' : 's'
-                    } remaining`
-                  : 'Your free trial is active.'}
-              </p>
-            )}
+        {isTrial ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3.5 text-sm font-bold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200 flex items-center justify-between shadow-sm">
+            <span className="flex items-center gap-2">
+              <Loader2 className="animate-spin text-amber-600 shrink-0" size={18} />
+              <span>جاري ضبط وتفعيل الحساب دائماً إلى باقة الأعمال...</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => handleActivateStore('business')}
+              disabled={activating}
+              className="text-xs bg-amber-700 hover:bg-amber-800 text-white font-black px-3 py-1.5 rounded-xl shadow transition"
+            >
+              {activating ? 'جاري التفعيل...' : 'تأكيد التفعيل الدائم'}
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-l from-emerald-50 via-white to-white px-5 py-4 text-sm font-black text-emerald-900 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 shrink-0">
+                <Sparkles size={22} />
+              </div>
+              <div>
+                <p className="font-black text-emerald-950 dark:text-emerald-100">حساب المتجر مفعّل ونشط دائم (باقة الأعمال غير محدودة)</p>
+                <p className="text-xs font-normal text-emerald-700 dark:text-emerald-300">تم تفعيل كامل الصلاحيات لمتجر {store?.name || ''} بدون أي فترات تجريبية أو قيود زمنية.</p>
+              </div>
+            </div>
+            <span className="rounded-full bg-emerald-600 text-white text-xs px-3.5 py-1 font-black shadow-sm flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+              مفعل دائماً ✓
+            </span>
           </div>
         )}
+
+        {/* بطاقة حالة الاشتراك والتفعيل الدائم */}
+        <div className="rounded-2xl border border-indigo-200/80 bg-gradient-to-l from-indigo-50/70 via-white to-white p-6 shadow-sm dark:border-indigo-800/40 dark:bg-slate-900/80">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-black text-slate-900 dark:text-white">
+                  حالة حساب المتجر:
+                </span>
+                {isTrial ? (
+                  <span className="rounded-full bg-amber-100 px-3 py-0.5 text-xs font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                    تجريبي (Trial)
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-black text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" />
+                    مفعّل ونشط دائم (Active — باقة الأعمال)
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl">
+                {isTrial
+                  ? 'الحساب حالياً في الفترة التجريبية. يمكنك تفعيله كحساب نشط دائم بدون أي قيود زمنية وتفعيل كامل الميزات.'
+                  : 'الحساب نشط بكامل الصلاحيات، ولا توجد أي قيود على الاستخدام أو فترات انتهاء.'}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-600 dark:text-slate-400">
+                <span>اسم المتجر: <strong className="text-slate-900 dark:text-white">{store.name || 'متجرك'}</strong></span>
+                <span className="text-slate-300 dark:text-slate-700">|</span>
+                <span>معرّف المتجر:</span>
+                <code className="font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px] font-bold text-slate-700 dark:text-slate-300 select-all" dir="ltr">
+                  {store.id}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(store.id);
+                    setCopiedId(true);
+                    setTimeout(() => setCopiedId(false), 2000);
+                  }}
+                  className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold"
+                >
+                  {copiedId ? 'تم النسخ ✓' : 'نسخ المعرّف'}
+                </button>
+              </div>
+            </div>
+
+            {isTrial ? (
+              <button
+                type="button"
+                onClick={() => handleActivateStore('business')}
+                disabled={activating}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-sm font-black shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"
+              >
+                {activating ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <ShieldCheck size={18} />
+                )}
+                <span>تفعيل الحساب الآن (تحويل إلى نشط دائم)</span>
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40 text-xs font-black">
+                <CheckCircle2 size={16} />
+                <span>الحساب نشط ومعتمد</span>
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="rounded-2xl border border-white/20 bg-white/80 p-6 shadow-sm backdrop-blur-md dark:border-gray-700/30 dark:bg-gray-900/50">
           <h1 className="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">

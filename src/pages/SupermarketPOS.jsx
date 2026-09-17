@@ -38,19 +38,33 @@ import {
   Truck,
   Boxes,
   Pencil,
+  Pause,
+  Volume2,
+  VolumeX,
+  Clock,
+  History,
+  MoreHorizontal,
+  Palette,
 } from 'lucide-react';
 import { supabase, PRODUCTS_TABLE, PRODUCTS_STOCK_COLUMN } from '../lib/supabaseClient';
 import { normalizeItemFromSupabase, isUuid, roundMoney, runProductsSelectWithFallback } from '../utils/productModel';
 import { normalizeDigitsToLatin, normalizePriceInput } from '../utils/normalizeDigits';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
-import { applyCashSaleToMainCashFund } from '../utils/saleAccounting';
+import {
+  applyCashSaleToMainCashFund,
+  applyCashSaleReturnFromFund,
+  applyCreditSaleReturn,
+} from '../utils/saleAccounting';
 import { insertInventoryLog } from '../lib/inventoryLogs';
 import { useHtmlDarkClass, applyExplicitTheme } from '../lib/theme';
 import Sidebar from '../components/Sidebar';
 import PrintPosReceiptSimple from '../components/PrintPosReceiptSimple';
 import POSCheckoutFullForm from '../components/POSCheckoutFullForm';
-import AddProductModal from '../components/AddProductModal';
+import ProductFormModal from '../components/ProductFormModal';
+import ProductSearchModal from '../components/ProductSearchModal';
+import HeldInvoicesModal from '../components/HeldInvoicesModal';
+import RecentInvoicesModal from '../components/RecentInvoicesModal';
 import { uploadProductImageFile } from '../utils/uploadProductImage';
 import { normalizeProductTypeForDb, productTypeToFormDisplay } from '../utils/productTypes';
 import { syncShopLocationStockFromProductRow } from '../utils/storeLocations';
@@ -77,11 +91,23 @@ function readSidebarCollapsed() {
 const getDraftInvoiceStorageKey = (storeId, sessionId) =>
   brandStorageKey(`pos_draft_invoice_${storeId || 'default'}_${sessionId || 'default'}`);
 
+const getHeldInvoicesStorageKey = (storeId, sessionId) =>
+  brandStorageKey(`pos_held_invoices_${storeId || 'default'}_${sessionId || 'default'}`);
+
 const getLastSessionStorageKey = (storeId) =>
   brandStorageKey(`pos_last_session_${storeId || 'default'}`);
 
+const SOUND_ENABLED_KEY = brandStorageKey('pos_sound_enabled');
+
+let globalSoundEnabled = true;
+try {
+  const savedSound = localStorage.getItem(SOUND_ENABLED_KEY);
+  if (savedSound !== null) globalSoundEnabled = savedSound === 'true';
+} catch {}
+
 /** نغمة صوتية سريعة لمسح الباركود */
 function playScanBeep(success = true) {
+  if (!globalSoundEnabled) return;
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
@@ -103,6 +129,7 @@ function playScanBeep(success = true) {
 
 /** نغمة تأكيد إتمام الفاتورة (صوت كاشير مميز) */
 function playCashChime() {
+  if (!globalSoundEnabled) return;
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
@@ -140,11 +167,122 @@ const QUICK_SECTIONS = [
   { id: 'custom', label: 'صنف يدوي ⚡', defaultUnit: 'قطعة', defaultPrice: 0 },
 ];
 
+// ثيمات وألوان شاشة نقطة البيع
+const POS_THEME_STORAGE_KEY = 'pos_color_theme';
+
+const POS_COLOR_THEMES = {
+  emerald: {
+    id: 'emerald',
+    name: 'الأخضر التجاري (Fresh Emerald)',
+    shortName: 'أخضر تجاري 🌿',
+    dotColor: 'bg-emerald-500',
+    darkBg: 'bg-[linear-gradient(135deg,#061a17_0%,#04231f_40%,#063b33_100%)]',
+    lightBg: 'bg-gradient-to-br from-slate-100 via-emerald-50/25 to-teal-50/35',
+    brandGradient: 'from-emerald-600 via-emerald-500 to-teal-600 shadow-emerald-500/20',
+    accentText: 'text-emerald-600 dark:text-emerald-400',
+    accentBg: 'bg-emerald-600',
+    accentBorder: 'border-emerald-500',
+    inputBorder: 'border-emerald-500/40 dark:border-emerald-500/30',
+    inputBg: 'from-slate-50 via-white to-emerald-50/40 dark:from-slate-900/95 dark:via-slate-900/85 dark:to-emerald-950/70',
+    inputFocus: 'focus:border-emerald-500 focus:ring-emerald-500 focus:shadow-emerald-500/10',
+    inputIcon: 'text-emerald-500 dark:text-emerald-400',
+    totalBox: 'border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-white to-teal-50/40 dark:from-emerald-950/80 dark:via-slate-900 dark:to-teal-950/60 shadow-lg dark:shadow-emerald-950/40 ring-1 ring-emerald-500/30',
+    totalLabel: 'text-emerald-700 dark:text-emerald-300',
+    searchBtn: 'border-emerald-200/90 dark:border-emerald-800/60 bg-emerald-50/90 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300',
+    searchKbd: 'bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border-emerald-300/40 dark:border-emerald-700/40',
+    tabActive: 'bg-white dark:bg-emerald-600 text-emerald-700 dark:text-white shadow-sm',
+    tabBadge: 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-300',
+    dropdownActive: 'bg-emerald-50 dark:bg-emerald-950/70 border-r-4 border-emerald-500',
+    dropdownBtn: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+    salesBadgeBorder: 'border-r-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300',
+    salesText: 'text-emerald-700 dark:text-emerald-300',
+    salesIcon: 'text-emerald-600 dark:text-emerald-400',
+    cardBtn: 'bg-teal-600 hover:bg-teal-700 active:bg-teal-800 shadow-teal-600/30 hover:shadow-teal-600/40 border-t border-teal-400/30',
+  },
+  indigo: {
+    id: 'indigo',
+    name: 'النيلي الكلاسيكي (Classic Indigo)',
+    shortName: 'نيلي كلاسيكي 🟣',
+    dotColor: 'bg-indigo-500',
+    darkBg: 'bg-[linear-gradient(135deg,#0f172a_0%,#0f172a_40%,#1e1b4b_100%)]',
+    lightBg: 'bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/25',
+    brandGradient: 'from-indigo-600 to-violet-600 shadow-indigo-500/20',
+    accentText: 'text-indigo-600 dark:text-indigo-400',
+    accentBg: 'bg-indigo-600',
+    accentBorder: 'border-indigo-500',
+    inputBorder: 'border-indigo-500/40 dark:border-indigo-500/30',
+    inputBg: 'from-slate-50 via-white to-indigo-50/40 dark:from-slate-900/95 dark:via-slate-900/85 dark:to-indigo-950/70',
+    inputFocus: 'focus:border-indigo-500 focus:ring-indigo-500 focus:shadow-indigo-500/10',
+    inputIcon: 'text-indigo-500 dark:text-indigo-400',
+    totalBox: 'border-indigo-500/40 bg-gradient-to-br from-indigo-50 via-white to-slate-50 dark:from-indigo-950/60 dark:via-slate-900 dark:to-slate-950 shadow-lg dark:shadow-2xl ring-1 ring-indigo-500/20',
+    totalLabel: 'text-indigo-600 dark:text-indigo-300',
+    searchBtn: 'border-indigo-200/90 dark:border-indigo-800/60 bg-indigo-50/90 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300',
+    searchKbd: 'bg-indigo-200/60 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 border-indigo-300/40 dark:border-indigo-700/40',
+    tabActive: 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-sm',
+    tabBadge: 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300',
+    dropdownActive: 'bg-indigo-50 dark:bg-indigo-950/70 border-r-4 border-indigo-500',
+    dropdownBtn: 'bg-indigo-600 hover:bg-indigo-500 text-white',
+    salesBadgeBorder: 'border-r-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 text-slate-700 dark:text-slate-200',
+    salesText: 'text-indigo-700 dark:text-indigo-300',
+    salesIcon: 'text-indigo-600 dark:text-indigo-400',
+    cardBtn: 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-indigo-600/30 hover:shadow-indigo-600/40 border-t border-indigo-400/30',
+  },
+  charcoal: {
+    id: 'charcoal',
+    name: 'الفحمي الهادئ (Dark Charcoal)',
+    shortName: 'فحمي هادئ ⚫',
+    dotColor: 'bg-zinc-500',
+    darkBg: 'bg-[linear-gradient(135deg,#09090b_0%,#18181b_50%,#09090b_100%)]',
+    lightBg: 'bg-gradient-to-br from-zinc-100 via-stone-50 to-zinc-200/40',
+    brandGradient: 'from-zinc-700 to-zinc-900 shadow-zinc-500/20',
+    accentText: 'text-zinc-600 dark:text-zinc-300',
+    accentBg: 'bg-zinc-700',
+    accentBorder: 'border-zinc-500',
+    inputBorder: 'border-zinc-500/40 dark:border-zinc-600/40',
+    inputBg: 'from-zinc-50 via-white to-zinc-100/50 dark:from-zinc-900 dark:via-zinc-900/90 dark:to-zinc-950',
+    inputFocus: 'focus:border-zinc-400 focus:ring-zinc-400 focus:shadow-zinc-500/10',
+    inputIcon: 'text-zinc-400 dark:text-zinc-400',
+    totalBox: 'border-zinc-500/40 bg-gradient-to-br from-zinc-100 via-white to-zinc-50 dark:from-zinc-900 dark:via-zinc-950 dark:to-black shadow-lg dark:shadow-black/50 ring-1 ring-zinc-500/30',
+    totalLabel: 'text-zinc-700 dark:text-zinc-300',
+    searchBtn: 'border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200',
+    searchKbd: 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-600',
+    tabActive: 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-white shadow-sm',
+    tabBadge: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300',
+    dropdownActive: 'bg-zinc-100 dark:bg-zinc-800 border-r-4 border-zinc-500',
+    dropdownBtn: 'bg-zinc-700 hover:bg-zinc-600 text-white',
+    salesBadgeBorder: 'border-r-zinc-500 bg-zinc-100/70 dark:bg-zinc-800/40 text-slate-700 dark:text-slate-200',
+    salesText: 'text-zinc-800 dark:text-zinc-200',
+    salesIcon: 'text-zinc-600 dark:text-zinc-400',
+    cardBtn: 'bg-slate-700 hover:bg-slate-800 active:bg-slate-900 shadow-slate-700/30 hover:shadow-slate-700/40 border-t border-slate-500/30',
+  },
+};
+
 export default function SupermarketPOS() {
   const { store } = useStore();
   const toast = useToast();
   const navigate = useNavigate();
   const isDark = useHtmlDarkClass();
+
+  // ثيم الألوان المختار (افتراضياً: الأخضر التجاري)
+  const [colorTheme, setColorTheme] = useState(() => {
+    try {
+      return localStorage.getItem(POS_THEME_STORAGE_KEY) || 'emerald';
+    } catch {
+      return 'emerald';
+    }
+  });
+  const [paletteMenuOpen, setPaletteMenuOpen] = useState(false);
+  const paletteMenuRef = useRef(null);
+
+  const activeTheme = POS_COLOR_THEMES[colorTheme] || POS_COLOR_THEMES.emerald;
+
+  const changeColorTheme = (themeId) => {
+    setColorTheme(themeId);
+    try {
+      localStorage.setItem(POS_THEME_STORAGE_KEY, themeId);
+    } catch {}
+    toast.success(`تم تفعيل ثيم: ${POS_COLOR_THEMES[themeId]?.name || themeId}`);
+  };
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     typeof window !== 'undefined' ? readSidebarCollapsed() : false
@@ -386,6 +524,14 @@ export default function SupermarketPOS() {
       toast.success('تم إغلاق الصندوق وإنهاء الشيفت بنجاح!');
       setCloseShiftModalOpen(false);
       clearInvoice();
+      if (store?.id && activeShift?.id) {
+        try {
+          localStorage.removeItem(getHeldInvoicesStorageKey(store.id, activeShift.id));
+        } catch {
+          /* ignore */
+        }
+      }
+      setHeldInvoices([]);
       setActiveShift(false);
       setOpeningAmountInput('');
       setOpeningNotes('');
@@ -406,12 +552,12 @@ export default function SupermarketPOS() {
   const [activeDropdownIndex, setActiveDropdownIndex] = useState(-1);
   const barcodeInputRef = useRef(null);
   const searchContainerRef = useRef(null);
+  const moreMenuRef = useRef(null);
 
   // جلب المنتجات المسجلة في المتجر للاقتراحات والباركود السريع
-  useEffect(() => {
+  const fetchStoreProducts = useCallback(async () => {
     if (!store?.id) return;
-    let cancelled = false;
-    (async () => {
+    try {
       const { data, error } = await runProductsSelectWithFallback((sel) =>
         supabase
           .from(PRODUCTS_TABLE)
@@ -420,29 +566,71 @@ export default function SupermarketPOS() {
           .order('created_at', { ascending: false })
           .limit(300)
       );
-      if (cancelled) return;
       if (!error && Array.isArray(data)) {
         setItems(data.map(normalizeItemFromSupabase).filter(Boolean));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch (err) {
+      console.error('Error fetching store products:', err);
+    }
   }, [store?.id]);
 
-  // البحث الجزئي للاقتراحات
+  useEffect(() => {
+    fetchStoreProducts();
+  }, [fetchStoreProducts]);
+
+  const [serverSearchResults, setServerSearchResults] = useState([]);
+
+  // استعلام مباشر من قاعدة البيانات لكافة الـ 10,715 صنفاً حتى تظهر الأصناف ذات الرصيد 0 وغير المحمّلة محلياً
+  useEffect(() => {
+    const raw = normalizeDigitsToLatin(String(search || '').trim());
+    if (!raw || raw.length < 2 || !store?.id) {
+      setServerSearchResults([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await runProductsSelectWithFallback((sel) =>
+          supabase
+            .from(PRODUCTS_TABLE)
+            .select(sel)
+            .eq('store_id', store.id)
+            .or(`eng_name.ilike.%${raw}%,barcode.ilike.%${raw}%,reference.ilike.%${raw}%`)
+            .limit(20)
+        );
+        if (!cancelled && data) {
+          const norm = data.map(normalizeItemFromSupabase).filter(Boolean);
+          setServerSearchResults(norm);
+        }
+      } catch (err) {
+        console.error('SupermarketPOS server search error:', err);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search, store?.id]);
+
+  // البحث الجزئي للاقتراحات (دمج الذاكرة مع نتائج قاعدة البيانات لكامل الأصناف)
   const partialMatches = useMemo(() => {
     const q = normalizeDigitsToLatin(String(search || '').trim()).toLowerCase();
     if (!q) return [];
-    return items
+    const map = new Map();
+    items
       .filter((i) => {
         const fields = [i.name, i.barcode, i.reference, i.group];
         return fields.some((f) =>
           normalizeDigitsToLatin(String(f ?? '')).toLowerCase().includes(q)
         );
       })
-      .slice(0, 8);
-  }, [items, search]);
+      .forEach((i) => map.set(i.id || i.barcode, i));
+
+    serverSearchResults.forEach((i) => map.set(i.id || i.barcode, i));
+    return Array.from(map.values()).slice(0, 15);
+  }, [items, search, serverSearchResults]);
 
   // ─────────────────────────────────────────────────────────────
   // 3. بنود جدول الفاتورة المباشر (Direct Invoice Table)
@@ -452,6 +640,264 @@ export default function SupermarketPOS() {
   const [tenderedAmount, setTenderedAmount] = useState('');
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const [simpleReceiptPrint, setSimpleReceiptPrint] = useState(null);
+
+  // ── الفواتير المعلّقة (Parked / Held Invoices) ──
+  const [heldInvoices, setHeldInvoices] = useState([]);
+  const [heldInvoicesModalOpen, setHeldInvoicesModalOpen] = useState(false);
+
+  // استرجاع الفواتير المعلقة الخاصة بالشيفت الحالي
+  useEffect(() => {
+    if (!activeShift?.id || !store?.id) {
+      setHeldInvoices([]);
+      return;
+    }
+    const heldKey = getHeldInvoicesStorageKey(store.id, activeShift.id);
+    try {
+      const raw = localStorage.getItem(heldKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setHeldInvoices(parsed);
+        } else {
+          setHeldInvoices([]);
+        }
+      } else {
+        setHeldInvoices([]);
+      }
+    } catch (err) {
+      console.warn('[SupermarketPOS] Error restoring held invoices:', err);
+      setHeldInvoices([]);
+    }
+  }, [activeShift?.id, store?.id]);
+
+  // ── تفضيل كتم / تشغيل صوت التنبيه ──
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SOUND_ENABLED_KEY);
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      globalSoundEnabled = next;
+      try {
+        localStorage.setItem(SOUND_ENABLED_KEY, String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // ── قائمة "..." للشاشات الصغيرة في الشريط العلوي ──
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+
+  // ── آخر فواتير الشيفت الحالي (Recent Invoices) ──
+  const [recentInvoicesModalOpen, setRecentInvoicesModalOpen] = useState(false);
+  const [shiftRecentInvoices, setShiftRecentInvoices] = useState([]);
+  const [loadingRecentInvoices, setLoadingRecentInvoices] = useState(false);
+
+  // جلب آخر 5 فواتير في الشيفت الحالي
+  const fetchShiftRecentInvoices = useCallback(async () => {
+    if (!activeShift?.id || !store?.id) {
+      setShiftRecentInvoices([]);
+      return;
+    }
+    setLoadingRecentInvoices(true);
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select('id, total_amount, payment_mode, payment_method, contact_id, notes, line_items, created_at, session_id')
+        .eq('store_id', store.id)
+        .gte('created_at', activeShift.opened_at)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!error && Array.isArray(data)) {
+        const filtered = data
+          .filter((s) => {
+            const notesStr = String(s.notes || '');
+            return (
+              (s.session_id && s.session_id === activeShift.id) ||
+              notesStr.includes(activeShift.id) ||
+              (!notesStr.includes('جلسة الصندوق') && new Date(s.created_at) >= new Date(activeShift.opened_at))
+            );
+          })
+          .slice(0, 5);
+        setShiftRecentInvoices(filtered);
+      }
+    } catch (err) {
+      console.warn('Error fetching recent shift invoices:', err);
+    } finally {
+      setLoadingRecentInvoices(false);
+    }
+  }, [activeShift?.id, activeShift?.opened_at, store?.id]);
+
+  useEffect(() => {
+    fetchShiftRecentInvoices();
+  }, [fetchShiftRecentInvoices]);
+
+  // ── عداد مبيعات الوردية اللحظي ──
+  const [shiftSalesTotals, setShiftSalesTotals] = useState({
+    paidTotal: 0,
+    creditTotal: 0,
+    count: 0,
+  });
+
+  const fetchShiftSalesTotals = useCallback(async () => {
+    if (!activeShift?.id || !store?.id) {
+      setShiftSalesTotals({ paidTotal: 0, creditTotal: 0, count: 0 });
+      return;
+    }
+    try {
+      const { data: sales, error } = await supabase
+        .from('sales')
+        .select('id, total_amount, payment_mode, payment_method, notes, created_at, session_id')
+        .eq('store_id', store.id)
+        .gte('created_at', activeShift.opened_at);
+
+      if (error || !sales) return;
+
+      let paid = 0;
+      let credit = 0;
+      let count = 0;
+
+      for (const s of sales) {
+        const notesStr = String(s.notes || '');
+        const matchesSession =
+          (s.session_id && s.session_id === activeShift.id) ||
+          notesStr.includes(activeShift.id) ||
+          (!notesStr.includes('جلسة الصندوق') && new Date(s.created_at) >= new Date(activeShift.opened_at));
+
+        if (!matchesSession) continue;
+
+        count++;
+        const val = Number(s.total_amount || 0);
+        const mode = (s.payment_mode || '').toLowerCase();
+        const method = (s.payment_method || '').toLowerCase();
+
+        const isCredit = mode === 'credit' || method === 'deferred' || method === 'credit';
+        if (isCredit) {
+          credit += val;
+        } else {
+          paid += val;
+        }
+      }
+
+      setShiftSalesTotals({
+        paidTotal: roundMoney(paid),
+        creditTotal: roundMoney(credit),
+        count,
+      });
+    } catch (err) {
+      console.warn('Error fetching shift sales totals:', err);
+    }
+  }, [activeShift?.id, activeShift?.opened_at, store?.id]);
+
+  useEffect(() => {
+    fetchShiftSalesTotals();
+  }, [fetchShiftSalesTotals]);
+
+  // ── أصناف سريعة (الأكثر مبيعاً + آخر أصناف الفاتورة السابقة) ──
+  const [quickItemsTab, setQuickItemsTab] = useState('top_selling');
+  const [topSellingProducts, setTopSellingProducts] = useState([]);
+  const [loadingTopSelling, setLoadingTopSelling] = useState(false);
+
+  // جلب أكثر 8 أصناف مبيعاً في آخر 7 أيام
+  const fetchTopSellingProducts = useCallback(async () => {
+    if (!store?.id) return;
+    setLoadingTopSelling(true);
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentSales, error } = await supabase
+        .from('sales')
+        .select('line_items')
+        .eq('store_id', store.id)
+        .gte('created_at', sevenDaysAgo)
+        .limit(150);
+
+      if (!error && Array.isArray(recentSales)) {
+        const countMap = new Map();
+        for (const s of recentSales) {
+          let lines = [];
+          if (Array.isArray(s.line_items)) lines = s.line_items;
+          else if (typeof s.line_items === 'string') {
+            try {
+              lines = JSON.parse(s.line_items);
+            } catch {}
+          }
+
+          for (const line of lines) {
+            const key = line.product_id || line.barcode || line.name;
+            if (!key) continue;
+            const existing = countMap.get(key) || {
+              id: line.product_id || null,
+              productId: line.product_id || null,
+              barcode: line.barcode || '',
+              name: line.name || '',
+              price: Number(line.unit_price || line.price || 0),
+              priceAfterDiscount: Number(line.unit_price || line.price || 0),
+              unit: line.unit || 'قطعة',
+              totalSold: 0,
+            };
+            existing.totalSold += Number(line.qty || 1);
+            countMap.set(key, existing);
+          }
+        }
+
+        const sorted = Array.from(countMap.values())
+          .sort((a, b) => b.totalSold - a.totalSold)
+          .slice(0, 8);
+
+        setTopSellingProducts(sorted);
+      }
+    } catch (err) {
+      console.warn('Error fetching top selling products:', err);
+    } finally {
+      setLoadingTopSelling(false);
+    }
+  }, [store?.id]);
+
+  useEffect(() => {
+    fetchTopSellingProducts();
+  }, [fetchTopSellingProducts]);
+
+  // أصناف آخر فاتورة سابقة
+  const lastInvoiceProducts = useMemo(() => {
+    if (lastReceiptData?.lines && lastReceiptData.lines.length > 0) {
+      return lastReceiptData.lines.map((l, i) => ({
+        id: l.productId || l.id || `last-${i}`,
+        productId: l.productId || null,
+        name: l.name,
+        barcode: l.barcode || '',
+        price: l.unitPrice,
+        priceAfterDiscount: l.unitPrice,
+        unit: l.unit || 'قطعة',
+      }));
+    }
+    if (shiftRecentInvoices.length > 0) {
+      const first = shiftRecentInvoices[0];
+      let lines = [];
+      if (Array.isArray(first.line_items)) lines = first.line_items;
+      else if (typeof first.line_items === 'string') {
+        try {
+          lines = JSON.parse(first.line_items);
+        } catch {}
+      }
+      return lines.map((l, i) => ({
+        id: l.product_id || l.id || `last-inv-${i}`,
+        productId: l.product_id || null,
+        name: l.name,
+        barcode: l.barcode || '',
+        price: Number(l.unit_price || l.price || 0),
+        priceAfterDiscount: Number(l.unit_price || l.price || 0),
+        unit: l.unit || 'قطعة',
+      }));
+    }
+    return [];
+  }, [lastReceiptData, shiftRecentInvoices]);
 
   // استرجاع وحفظ مسودة الفاتورة في localStorage لضمان عدم ضياع الأصناف عند التنقل
   const invoiceRestoredRef = useRef(false);
@@ -531,27 +977,6 @@ export default function SupermarketPOS() {
 
   const [editProductModalOpen, setEditProductModalOpen] = useState(false);
   const [editingProductItem, setEditingProductItem] = useState(null);
-  const [editProductFormData, setEditProductFormData] = useState({
-    barcode: '',
-    reference: '',
-    brand_group: '',
-    name: '',
-    product_type: '',
-    appliance_size: '',
-    purchase_price: '',
-    price: '',
-    price_after_disc: '',
-    stock_count: '',
-    warranty_months: '',
-    image_url: '',
-  });
-  const [editProductPendingImage, setEditProductPendingImage] = useState(null);
-  const [savingProductEdit, setSavingProductEdit] = useState(false);
-
-  // خيارات تصنيفات البراند من الأصناف المحملة
-  const brandGroupOptions = useMemo(() => {
-    return Array.from(new Set(items.map((i) => i.group).filter(Boolean)));
-  }, [items]);
 
   // إغلاق قائمة السياق بـ Escape
   useEffect(() => {
@@ -630,214 +1055,83 @@ export default function SupermarketPOS() {
     }
 
     setEditingProductItem(productData);
-    setEditProductPendingImage(null);
-    setEditProductFormData({
-      barcode: productData.barcode || '',
-      reference: productData.reference ?? '',
-      brand_group: productData.group || '',
-      name: productData.name || '',
-      product_type: productTypeToFormDisplay(productData.productType || ''),
-      appliance_size: productData.applianceSize || '',
-      purchase_price:
-        productData.purchasePrice != null && productData.purchasePrice !== ''
-          ? String(productData.purchasePrice)
-          : (productData.purchase_price != null && productData.purchase_price !== '' ? String(productData.purchase_price) : ''),
-      price:
-        productData.price != null && productData.price !== ''
-          ? String(productData.price)
-          : '',
-      price_after_disc:
-        productData.priceAfterDiscount != null && productData.priceAfterDiscount !== ''
-          ? String(productData.priceAfterDiscount)
-          : '',
-      stock_count:
-        productData.stock != null && productData.stock !== ''
-          ? String(productData.stock)
-          : '',
-      warranty_months:
-        productData.warrantyMonths != null && productData.warrantyMonths !== ''
-          ? String(productData.warrantyMonths)
-          : '',
-      image_url: productData.image || '',
-    });
     setEditProductModalOpen(true);
   };
 
-  // حفظ التعديلات على جدول products ومزامنة السعر والإجمالي فوراً في الفاتورة الحالية
-  const handleSaveProductEdit = async (e, selectedImageFile = editProductPendingImage) => {
-    if (e?.preventDefault) e.preventDefault();
+  // مزامنة الصنف المعدل في الفاتورة الحالية وقائمة الأصناف
+  const handleProductEditSuccess = async (updatedProd, isNew, unitsToSave) => {
+    await fetchStoreProducts();
 
-    if (!store?.id) {
-      toast.error('خطأ: لا يوجد متجر مرتبط بهذا الحساب.');
-      return;
+    if (updatedProd?.id && unitsToSave) {
+      setProductUnitsMap((prev) => ({
+        ...prev,
+        [updatedProd.id]: unitsToSave,
+      }));
     }
 
-    setSavingProductEdit(true);
-    try {
-      let imageUrlValue = editProductFormData.image_url?.trim() || null;
-      if (selectedImageFile) {
-        imageUrlValue = await uploadProductImageFile(store.id, selectedImageFile);
-      }
+    const newSalePrice = roundMoney(
+      updatedProd.price_after_disc != null && updatedProd.price_after_disc !== ''
+        ? Number(updatedProd.price_after_disc)
+        : Number(updatedProd.full_price ?? updatedProd.price ?? 0)
+    );
+    const newProdName = updatedProd.eng_name || updatedProd.name || '';
 
-      const costVal = editProductFormData.purchase_price
-        ? parseFloat(normalizeDigitsToLatin(String(editProductFormData.purchase_price)))
-        : null;
+    setOrderItems((prev) =>
+      prev.map((line) => {
+        const isTargetLine =
+          (updatedProd.id && line.productId === updatedProd.id) ||
+          (updatedProd.barcode && line.barcode === updatedProd.barcode) ||
+          (editingProductItem?.id && line.productId === editingProductItem.id) ||
+          (editingProductItem?.barcode && line.barcode === editingProductItem.barcode);
 
-      const payload = {
-        barcode: normalizeDigitsToLatin(editProductFormData.barcode.trim()),
-        reference: normalizeDigitsToLatin(editProductFormData.reference.trim()) || null,
-        brand_group: editProductFormData.brand_group.trim() || null,
-        eng_name: editProductFormData.name.trim() || null,
-        product_type: normalizeProductTypeForDb(editProductFormData.product_type),
-        appliance_size: String(editProductFormData.appliance_size || '').trim() || null,
-        purchase_price: costVal,
-        last_purchase_price: costVal,
-        avg_purchase_price: costVal,
-        full_price: editProductFormData.price
-          ? parseFloat(normalizeDigitsToLatin(String(editProductFormData.price)))
-          : null,
-        price_after_disc: editProductFormData.price_after_disc
-          ? parseFloat(normalizeDigitsToLatin(String(editProductFormData.price_after_disc)))
-          : null,
-        stock_count: editProductFormData.stock_count
-          ? parseInt(normalizeDigitsToLatin(String(editProductFormData.stock_count)), 10)
-          : 0,
-        warranty_months: (() => {
-          const t = String(editProductFormData.warranty_months ?? '').trim();
-          if (!t) return null;
-          const n = parseInt(normalizeDigitsToLatin(t), 10);
-          if (Number.isNaN(n)) return null;
-          return Math.min(240, Math.max(0, n));
-        })(),
-        image_url: imageUrlValue,
-      };
+        if (!isTargetLine) return line;
 
-      let savedRow = null;
-      if (editingProductItem) {
-        let updateBuilder = supabase.from(PRODUCTS_TABLE).update(payload);
-        if (editingProductItem.id && isUuid(editingProductItem.id)) {
-          updateBuilder = updateBuilder.eq('id', editingProductItem.id);
-        } else {
-          updateBuilder = updateBuilder.eq('barcode', editingProductItem.barcode);
-        }
-        const { data, error } = await runProductsSelectWithFallback((sel) =>
-          updateBuilder.eq('store_id', store.id).select(sel).single()
-        );
-        if (error) throw error;
-        savedRow = data;
-      } else {
-        const { data, error } = await runProductsSelectWithFallback((sel) =>
-          supabase
-            .from(PRODUCTS_TABLE)
-            .insert({ ...payload, store_id: store.id })
-            .select(sel)
-            .single()
-        );
-        if (error) throw error;
-        savedRow = data;
-      }
-
-      const afterSaveTasks = [];
-      if (editingProductItem && savedRow) {
-        const oldStock = Number(editingProductItem.stock ?? 0);
-        const newStock = Number(savedRow.stock_count ?? 0);
-        if (oldStock !== newStock) {
-          const normForLog = normalizeItemFromSupabase(savedRow);
-          afterSaveTasks.push(
-            insertInventoryLog({
-              storeId: store.id,
-              productId: normForLog && isUuid(normForLog.id) ? normForLog.id : null,
-              barcode: normForLog?.barcode ?? editingProductItem.barcode,
-              productName: normForLog?.name ?? editingProductItem.name,
-              qtyBefore: oldStock,
-              qtyAfter: newStock,
-              reason: 'adjustment',
-            })
-          );
-        }
-      }
-      if (savedRow) {
-        afterSaveTasks.push(syncShopLocationStockFromProductRow(store.id, savedRow));
-      }
-      await Promise.all(afterSaveTasks);
-
-      const merged = savedRow ? normalizeItemFromSupabase(savedRow) : null;
-      if (merged) {
-        // 1. تحديث قائمة المنتجات المخزنة محلياً
-        setItems((prev) => {
-          const idx = prev.findIndex(
-            (i) =>
-              (merged.id && i.id === merged.id) ||
-              String(i.barcode) === String(merged.barcode) ||
-              (editingProductItem?.id && i.id === editingProductItem.id) ||
-              (editingProductItem?.barcode && String(i.barcode) === String(editingProductItem.barcode))
-          );
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = merged;
-            return next;
+        let updatedUnitPrice = newSalePrice;
+        if (line.conversionFactor && line.conversionFactor > 1 && line.unit && line.unit !== 'قطعة') {
+          const units = unitsToSave || (line.productId && productUnitsMap[line.productId]) || [];
+          const foundUnit = units.find((u) => u.unit_name === line.unit);
+          if (foundUnit && foundUnit.sale_price != null) {
+            updatedUnitPrice = Number(foundUnit.sale_price);
+          } else {
+            updatedUnitPrice = roundMoney(newSalePrice * line.conversionFactor);
           }
-          return [merged, ...prev];
-        });
+        }
 
-        // 2. تحديث السطر في الفاتورة الحالية فوراً وإعادة حساب الإجمالي
-        const newSalePrice = roundMoney(
-          merged.priceAfterDiscount != null && merged.priceAfterDiscount !== ''
-            ? Number(merged.priceAfterDiscount)
-            : Number(merged.price ?? 0)
+        const baseTitle = newProdName || line.baseName || line.name;
+        const displayTitle =
+          line.unit && line.unit !== 'قطعة' ? `${baseTitle} (${line.unit})` : baseTitle;
+        const updatedLineTotal = roundMoney(
+          Math.max(0, line.qty * updatedUnitPrice - (line.discount || 0))
         );
-        const newProdName = merged.name || '';
 
-        setOrderItems((prev) =>
-          prev.map((line) => {
-            const isTargetLine =
-              (merged.id && line.productId === merged.id) ||
-              (merged.barcode && line.barcode === merged.barcode) ||
-              (editingProductItem?.id && line.productId === editingProductItem.id) ||
-              (editingProductItem?.barcode && line.barcode === editingProductItem.barcode);
+        return {
+          ...line,
+          name: displayTitle,
+          baseName: baseTitle,
+          barcode: updatedProd.barcode || line.barcode,
+          basePrice: newSalePrice,
+          unitPrice: updatedUnitPrice,
+          lineTotal: updatedLineTotal,
+        };
+      })
+    );
 
-            if (!isTargetLine) return line;
+    setEditProductModalOpen(false);
+    setEditingProductItem(null);
+  };
 
-            let updatedUnitPrice = newSalePrice;
-            if (line.conversionFactor && line.conversionFactor > 1 && line.unit && line.unit !== 'قطعة') {
-              const units = (line.productId && productUnitsMap[line.productId]) || [];
-              const foundUnit = units.find((u) => u.unit_name === line.unit);
-              if (foundUnit && foundUnit.sale_price != null) {
-                updatedUnitPrice = Number(foundUnit.sale_price);
-              } else {
-                updatedUnitPrice = roundMoney(newSalePrice * line.conversionFactor);
-              }
-            }
-
-            const baseTitle = newProdName || line.baseName || line.name;
-            const displayTitle =
-              line.unit && line.unit !== 'قطعة' ? `${baseTitle} (${line.unit})` : baseTitle;
-            const updatedLineTotal = roundMoney(
-              Math.max(0, line.qty * updatedUnitPrice - (line.discount || 0))
-            );
-
-            return {
-              ...line,
-              name: displayTitle,
-              baseName: baseTitle,
-              barcode: merged.barcode || line.barcode,
-              basePrice: newSalePrice,
-              unitPrice: updatedUnitPrice,
-              lineTotal: updatedLineTotal,
-            };
-          })
-        );
-      }
-
-      setEditProductPendingImage(null);
-      setEditProductModalOpen(false);
-      toast.success('تم حفظ الصنف وتحديث السعر في الفاتورة بنجاح');
-    } catch (err) {
-      console.error('Error saving product in POS:', err);
-      toast.error(err.message || 'فشل حفظ التعديلات');
-    } finally {
-      setSavingProductEdit(false);
-    }
+  const handleProductDeleteSuccess = async (deletedProd) => {
+    setOrderItems((prev) =>
+      prev.filter(
+        (it) =>
+          it.productId !== deletedProd?.id &&
+          it.barcode !== deletedProd?.barcode &&
+          it.productId !== editingProductItem?.id
+      )
+    );
+    await fetchStoreProducts();
+    setEditProductModalOpen(false);
+    setEditingProductItem(null);
   };
 
   // خريطة وحدات المنتجات المسجلة في جدول product_units للأصناف الحالية
@@ -986,6 +1280,18 @@ export default function SupermarketPOS() {
     [toast]
   );
 
+  // ── مودال البحث الشامل عن صنف في المخزون (F4 / Ctrl+K) ──
+  const [productSearchModalOpen, setProductSearchModalOpen] = useState(false);
+
+  const handleSelectProductFromSearch = useCallback(
+    (product, unitOverride) => {
+      addOrIncrementProduct(product, 1, unitOverride);
+      setProductSearchModalOpen(false);
+      setTimeout(() => barcodeInputRef.current?.focus(), 80);
+    },
+    [addOrIncrementProduct]
+  );
+
   // معالجة مسح الباركود أو الضغط على Enter في الحقل
   const handleBarcodeSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -1091,50 +1397,7 @@ export default function SupermarketPOS() {
   // 2.5 إدارة مودال تسجيل صنف جديد (بالسكانر أو مباشرة للمخزون)
   // ─────────────────────────────────────────────────────────────
   const [newProductModal, setNewProductModal] = useState(null); // { barcode: string, isInventoryOnly?: boolean } | null
-  const initialNewProductForm = {
-    name: '',
-    unit: 'قطعة',
-    price: '',
-    costPrice: '',
-    initialStock: '0',
-    minStockAlert: '5',
-    supplierId: '',
-    expiryDate: '',
-    category: 'مواد غذائية',
-    barcode: '',
-    additionalUnits: [],
-  };
-  const [newProductForm, setNewProductForm] = useState(initialNewProductForm);
-
-  const addAdditionalUnitRow = () => {
-    setNewProductForm((p) => ({
-      ...p,
-      additionalUnits: [
-        ...(p.additionalUnits || []),
-        { id: crypto.randomUUID(), unit_name: '', conversion_factor: '', barcode: '', sale_price: '' },
-      ],
-    }));
-  };
-
-  const removeAdditionalUnitRow = (id) => {
-    setNewProductForm((p) => ({
-      ...p,
-      additionalUnits: (p.additionalUnits || []).filter((u) => u.id !== id),
-    }));
-  };
-
-  const updateAdditionalUnitRow = (id, field, val) => {
-    setNewProductForm((p) => ({
-      ...p,
-      additionalUnits: (p.additionalUnits || []).map((u) =>
-        u.id === id ? { ...u, [field]: val } : u
-      ),
-    }));
-  };
   const [suppliersList, setSuppliersList] = useState([]);
-  const [savingNewProduct, setSavingNewProduct] = useState(false);
-  const newProductNameInputRef = useRef(null);
-  const newProductBarcodeInputRef = useRef(null);
 
   // جلب قائمة الموردين للمتجر الحالي
   useEffect(() => {
@@ -1161,17 +1424,11 @@ export default function SupermarketPOS() {
     };
   }, [store?.id]);
 
-  // فتح المودال عند مسح باركود غير معروف (يُضاف تلقائياً للفاتورة بعد الحفظ)
   const openNewProductModal = (barcode) => {
     setIsDropdownOpen(false);
     setSearch('');
     const cleanBc = String(barcode || '').trim();
     setNewProductModal({ barcode: cleanBc, isInventoryOnly: false });
-    setNewProductForm({
-      ...initialNewProductForm,
-      barcode: cleanBc,
-    });
-    setTimeout(() => newProductNameInputRef.current?.focus(), 120);
   };
 
   // فتح المودال من زر "إضافة صنف للمخزون" (حفظ للمخزون فقط دون إضافته للفاتورة الحالية)
@@ -1179,310 +1436,51 @@ export default function SupermarketPOS() {
     setIsDropdownOpen(false);
     setSearch('');
     setNewProductModal({ barcode: '', isInventoryOnly: true });
-    setNewProductForm({
-      ...initialNewProductForm,
-      barcode: '',
-    });
-    setTimeout(() => {
-      if (newProductBarcodeInputRef.current) {
-        newProductBarcodeInputRef.current.focus();
-      } else {
-        newProductNameInputRef.current?.focus();
-      }
-    }, 120);
   };
 
   const handleCancelNewProduct = () => {
     setNewProductModal(null);
-    setNewProductForm(initialNewProductForm);
     setTimeout(() => barcodeInputRef.current?.focus(), 50);
   };
 
-  const handleSaveNewProduct = async (e) => {
-    if (e) e.preventDefault();
-    if (!newProductModal || savingNewProduct) return;
-
-    const name = newProductForm.name.trim();
-    if (!name) {
-      toast.error('يرجى كتابة اسم المنتج');
-      newProductNameInputRef.current?.focus();
-      return;
+  const handleNewProductSuccess = async (inserted, isNew, unitsToSave) => {
+    await fetchStoreProducts();
+    if (inserted?.id && unitsToSave) {
+      setProductUnitsMap((prev) => ({ ...prev, [inserted.id]: unitsToSave }));
     }
 
-    const priceNum = roundMoney(parseFloat(normalizeDigitsToLatin(newProductForm.price)));
-    if (isNaN(priceNum) || priceNum < 0) {
-      toast.error('يرجى إدخال سعر بيع صحيح (0 أو أكثر)');
-      return;
-    }
-
-    const costPriceNum = roundMoney(parseFloat(normalizeDigitsToLatin(newProductForm.costPrice)));
-    if (isNaN(costPriceNum) || costPriceNum < 0) {
-      toast.error('يرجى إدخال سعر تكلفة صحيح (0 أو أكثر)');
-      return;
-    }
-
-    const parsedStock = parseFloat(normalizeDigitsToLatin(newProductForm.initialStock));
-    const stockNum = isNaN(parsedStock) || parsedStock < 0 ? 0 : roundMoney(parsedStock);
-
-    const parsedMinStock = parseFloat(normalizeDigitsToLatin(newProductForm.minStockAlert));
-    const minStockVal = isNaN(parsedMinStock) || parsedMinStock < 0 ? 5 : roundMoney(parsedMinStock);
-
-    const supplierVal = newProductForm.supplierId?.trim() || null;
-    const expiryVal = newProductForm.expiryDate?.trim() || null;
-
-    setSavingNewProduct(true);
-    try {
-      const isInvOnly = Boolean(newProductModal.isInventoryOnly);
-      const barcodeStr = isInvOnly
-        ? String(newProductForm.barcode || '').trim()
-        : String(newProductModal.barcode || '').trim();
-
-      const unitVal = newProductForm.unit || 'قطعة';
-      const catVal = newProductForm.category?.trim() || null;
-
-      const cleanMainBc = normalizeDigitsToLatin(String(barcodeStr || '').trim());
-      const rawAdditionalUnits = (newProductForm.additionalUnits || [])
-        .map((u) => ({
-          unit_name: String(u.unit_name || '').trim(),
-          barcode: normalizeDigitsToLatin(String(u.barcode || '').trim()),
-          conversion_factor: Number(u.conversion_factor) || 1,
-          sale_price: Number(u.sale_price) || 0,
-        }))
-        .filter((u) => u.unit_name);
-
-      const unitBarcodes = rawAdditionalUnits.filter((u) => Boolean(u.barcode));
-
-      // 1. فحص التعارض الداخلي: هل تستخدم وحدة إضافية نفس باركود الصنف الأساسي؟
-      if (cleanMainBc) {
-        const sameAsMain = unitBarcodes.find((u) => u.barcode === cleanMainBc);
-        if (sameAsMain) {
-          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${cleanMainBc}) مستخدم للوحدة الأساسية لنفس المنتج.`);
-          setSavingNewProduct(false);
-          return;
-        }
-      }
-
-      // 2. فحص التعارض الداخلي: هل هناك تكرار في باركودات الوحدات الإضافية المدخلة؟
-      const seenUnitBc = new Set();
-      for (const u of unitBarcodes) {
-        if (seenUnitBc.has(u.barcode)) {
-          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${u.barcode}) مكرر في أكثر من وحدة لنفس المنتج.`);
-          setSavingNewProduct(false);
-          return;
-        }
-        seenUnitBc.add(u.barcode);
-      }
-
-      // 3. فحص قاعدة البيانات: هل أي باركود وحدة إضافية مستخدم في products.barcode؟
-      for (const u of unitBarcodes) {
-        const { data: prodBcMatch } = await supabase
-          .from(PRODUCTS_TABLE)
-          .select('id, eng_name')
-          .eq('store_id', store.id)
-          .eq('barcode', u.barcode)
-          .maybeSingle();
-
-        if (prodBcMatch) {
-          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${u.barcode}) مسجل كباركود صنف للصنف «${prodBcMatch.eng_name || ''}».`);
-          setSavingNewProduct(false);
-          return;
-        }
-      }
-
-      // 4. فحص قاعدة البيانات: هل أي باركود وحدة إضافية مستخدم في product_units.barcode لأي صنف آخر أو وحدة أخرى؟
-      for (const u of unitBarcodes) {
-        const { data: puMatch } = await supabase
-          .from(PRODUCT_UNITS_TABLE)
-          .select('id, unit_name, product_id, product:products(eng_name)')
-          .eq('store_id', store.id)
-          .eq('barcode', u.barcode)
-          .maybeSingle();
-
-        if (puMatch) {
-          const prodTitle = puMatch.product?.eng_name ? ` للصنف «${puMatch.product.eng_name}»` : '';
-          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${u.barcode}) مسجل لوحدة «${puMatch.unit_name}»${prodTitle}.`);
-          setSavingNewProduct(false);
-          return;
-        }
-      }
-
-      // 5. فحص باركود الصنف الأساسي: هل هو مستخدم مسبقاً كباركود وحدة في product_units؟
-      if (cleanMainBc) {
-        const { data: mainPuMatch } = await supabase
-          .from(PRODUCT_UNITS_TABLE)
-          .select('id, unit_name, product:products(eng_name)')
-          .eq('store_id', store.id)
-          .eq('barcode', cleanMainBc)
-          .maybeSingle();
-
-        if (mainPuMatch) {
-          const prodTitle = mainPuMatch.product?.eng_name ? ` للصنف «${mainPuMatch.product.eng_name}»` : '';
-          toast.error(`هذا الباركود مستخدم مسبقاً: الباركود (${cleanMainBc}) مسجل كباركود لوحدة «${mainPuMatch.unit_name}»${prodTitle}.`);
-          setSavingNewProduct(false);
-          return;
-        }
-      }
-
-      // ── ربط الحقول بالأعمدة المطابقة في جدول products ──
-      // سعر البيع -> full_price و price_after_disc
-      // سعر التكلفة -> purchase_price و last_purchase_price و avg_purchase_price
-      // الكمية الافتتاحية -> stock_count
-      const confirmedPayload = {
-        store_id: store.id,
-        barcode: barcodeStr || null,
-        eng_name: name,
-        full_price: priceNum,
-        price_after_disc: priceNum,
-        purchase_price: costPriceNum,
-        last_purchase_price: costPriceNum,
-        avg_purchase_price: costPriceNum,
-        stock_count: stockNum,
-        box_count: 1, // حقل box_count في قاعدة البيانات نوعه integer
-        brand_group: catVal,
+    if (newProductModal && !newProductModal.isInventoryOnly) {
+      const unitVal =
+        unitsToSave?.find((u) => u.is_base_unit)?.unit_name ||
+        inserted?.product_units?.[0]?.unit_name ||
+        'قطعة';
+      const priceVal =
+        inserted?.full_price != null && inserted?.full_price !== ''
+          ? Number(inserted.full_price)
+          : Number(inserted?.price ?? 0);
+      const prodName = inserted?.eng_name || inserted?.name || 'منتج جديد';
+      const newLine = {
+        id: 'item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        productId: inserted?.id || null,
+        barcode: inserted?.barcode || '—',
+        name: prodName,
+        baseName: prodName,
+        unit: unitVal,
+        baseUnit: unitVal,
+        conversionFactor: 1,
+        unitPrice: priceVal,
+        basePrice: priceVal,
+        qty: 1,
+        discount: 0,
+        lineTotal: priceVal,
       };
 
-      const payloadWithExtras = {
-        ...confirmedPayload,
-        ...(supplierVal ? { supplier_id: supplierVal } : {}),
-        ...(expiryVal ? { expiry_date: expiryVal } : {}),
-        ...(minStockVal != null ? { min_stock_alert: minStockVal } : {}),
-      };
-
-      const payloadMinimal = {
-        store_id: store.id,
-        barcode: barcodeStr || null,
-        eng_name: name,
-        full_price: priceNum,
-        price_after_disc: priceNum,
-        purchase_price: costPriceNum,
-        stock_count: stockNum,
-      };
-
-      const attempts = [payloadWithExtras, confirmedPayload, payloadMinimal];
-      let inserted = null;
-      let insErr = null;
-
-      for (const p of attempts) {
-        const res = await supabase
-          .from(PRODUCTS_TABLE)
-          .insert([p])
-          .select()
-          .maybeSingle();
-
-        if (!res.error && res.data) {
-          inserted = res.data;
-          insErr = null;
-          break;
-        }
-        insErr = res.error;
-      }
-
-      if (insErr && !inserted) {
-        throw insErr;
-      }
-
-      // ── حفظ الوحدة الأساسية والوحدات الإضافية في جدول product_units ──
-      if (inserted?.id) {
-        try {
-          const unitsToSave = [
-            {
-              unit_name: unitVal,
-              conversion_factor: 1,
-              barcode: cleanMainBc || null,
-              sale_price: priceNum,
-              cost_price: costPriceNum,
-              is_base_unit: true,
-            },
-            ...rawAdditionalUnits.map((u) => ({
-              unit_name: u.unit_name,
-              conversion_factor: u.conversion_factor || 1,
-              barcode: u.barcode || null,
-              sale_price: u.sale_price || priceNum,
-              cost_price: costPriceNum * (u.conversion_factor || 1),
-              is_base_unit: false,
-            })),
-          ];
-
-          const saveRes = await saveProductUnits(inserted.id, store.id, unitsToSave);
-          if (!saveRes?.success) {
-            console.warn('[SupermarketPOS] Error saving product_units:', saveRes?.error);
-          }
-
-          setProductUnitsMap((prev) => ({
-            ...prev,
-            [inserted.id]: unitsToSave,
-          }));
-        } catch (unitSaveErr) {
-          console.warn('[SupermarketPOS] Error saving product_units:', unitSaveErr);
-        }
-      }
-
-      // توثيق حركة المخزون الافتتاحي في inventory_logs إذا كانت الكمية أكبر من 0
-      if (stockNum > 0 && inserted?.id) {
-        try {
-          await insertInventoryLog({
-            storeId: store.id,
-            productId: inserted.id,
-            barcode: barcodeStr,
-            productName: name,
-            qtyBefore: 0,
-            qtyAfter: stockNum,
-            reason: 'initial',
-          });
-        } catch (logErr) {
-          /* جدول inventory_logs اختياري */
-        }
-      }
-
-      // إضافة الصنف للذاكرة المحلية ليتعرف عليه السكانر فوراً في نفس الجلسة
-      const normProduct = inserted
-        ? normalizeItemFromSupabase(inserted)
-        : {
-            id: 'prod-' + Date.now(),
-            barcode: barcodeStr || '',
-            name: name,
-            price: priceNum,
-            priceAfterDiscount: priceNum,
-            stock: stockNum,
-            box: unitVal,
-          };
-
-      if (normProduct) {
-        setItems((prev) => [normProduct, ...prev]);
-      }
-
-      if (isInvOnly) {
-        // حالة: إضافة للمخزون فقط بدون إدراج بالفاتورة
-        playCashChime();
-        toast.success(`✓ تم حفظ الصنف "${name}" في المخزون بنجاح (الكمية: ${stockNum})`);
-      } else {
-        // حالة مسح باركود جديد: إضافة السطر للفاتورة الحالية مباشرة
-        const newLine = {
-          id: 'item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-          productId: inserted?.id || null,
-          barcode: barcodeStr || '—',
-          name: name,
-          unit: unitVal,
-          qty: 1,
-          unitPrice: priceNum,
-          discount: 0,
-          lineTotal: priceNum,
-        };
-
-        setOrderItems((prev) => [newLine, ...prev]);
-        playScanBeep(true);
-        toast.success(`✓ تم تسجيل الصنف وإضافته للفاتورة: ${name}`);
-      }
-
-      setNewProductModal(null);
-      setNewProductForm(initialNewProductForm);
-      setTimeout(() => barcodeInputRef.current?.focus(), 80);
-    } catch (err) {
-      console.error('Error saving new product:', err);
-      toast.error('حدث خطأ أثناء حفظ الصنف: ' + (err.message || ''));
-    } finally {
-      setSavingNewProduct(false);
+      setOrderItems((prev) => [newLine, ...prev]);
+      playScanBeep(true);
     }
+
+    setNewProductModal(null);
+    setTimeout(() => barcodeInputRef.current?.focus(), 80);
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -1732,6 +1730,264 @@ export default function SupermarketPOS() {
   const setQuickCash = (amt) => {
     setTenderedAmount(String(amt));
     setTimeout(() => barcodeInputRef.current?.focus(), 30);
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // 5.5 إدارة الفواتير المعلّقة (Hold / Park Sales)
+  // ─────────────────────────────────────────────────────────────
+  const saveHeldInvoices = useCallback(
+    (newHeldList) => {
+      setHeldInvoices(newHeldList);
+      if (!activeShift?.id || !store?.id) return;
+      const key = getHeldInvoicesStorageKey(store.id, activeShift.id);
+      try {
+        if (newHeldList && newHeldList.length > 0) {
+          localStorage.setItem(key, JSON.stringify(newHeldList));
+        } else {
+          localStorage.removeItem(key);
+        }
+      } catch (err) {
+        console.warn('[SupermarketPOS] Error persisting held invoices:', err);
+      }
+    },
+    [activeShift?.id, store?.id]
+  );
+
+  // تعليق الفاتورة الحالية (Hold Sale)
+  const handleHoldCurrentInvoice = () => {
+    if (!orderItems || orderItems.length === 0) {
+      toast.warning('لا توجد أصناف في الفاتورة الحالية لتعليقها.');
+      return;
+    }
+    const maxNum = heldInvoices.reduce((max, inv) => Math.max(max, Number(inv.number) || 0), 0);
+    const holdNum = maxNum + 1;
+    const now = new Date();
+    const newHeld = {
+      id: 'held-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      number: holdNum,
+      heldAt: now.toISOString(),
+      displayTime: now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      items: [...orderItems],
+      tenderedAmount: tenderedAmount || '',
+      totalAmount: invoiceTotals.payable,
+      totalUnits: invoiceTotals.totalUnits,
+      itemCount: orderItems.length,
+    };
+
+    const nextList = [newHeld, ...heldInvoices];
+    saveHeldInvoices(nextList);
+    clearInvoice();
+    toast.success(`✓ تم تعليق الفاتورة #${holdNum} بنجاح! الشاشة جاهزة لزبون جديد`);
+    setTimeout(() => barcodeInputRef.current?.focus(), 50);
+  };
+
+  // استرجاع فاتورة معلقة مباشرة (عندما تكون السلة الحالية فارغة)
+  const handleDirectRestoreHeldInvoice = (targetInv) => {
+    if (!targetInv) return;
+    const nextList = heldInvoices.filter((i) => i.id !== targetInv.id);
+    saveHeldInvoices(nextList);
+    setOrderItems(targetInv.items || []);
+    setTenderedAmount(targetInv.tenderedAmount || '');
+    setHeldInvoicesModalOpen(false);
+    toast.success(`✓ تم استرجاع الفاتورة المعلّقة #${targetInv.number}`);
+    setTimeout(() => barcodeInputRef.current?.focus(), 80);
+  };
+
+  // تعليق الفاتورة الحالية الجارية واسترجاع الفاتورة المعلّقة المختارة
+  const handleHoldCurrentAndRestore = (targetInv) => {
+    if (!targetInv) return;
+    const maxNum = heldInvoices.reduce((max, inv) => Math.max(max, Number(inv.number) || 0), 0);
+    const newHoldNum = maxNum + 1;
+    const now = new Date();
+    const currentHeld = {
+      id: 'held-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      number: newHoldNum,
+      heldAt: now.toISOString(),
+      displayTime: now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      items: [...orderItems],
+      tenderedAmount: tenderedAmount || '',
+      totalAmount: invoiceTotals.payable,
+      totalUnits: invoiceTotals.totalUnits,
+      itemCount: orderItems.length,
+    };
+
+    const nextList = [currentHeld, ...heldInvoices.filter((i) => i.id !== targetInv.id)];
+    saveHeldInvoices(nextList);
+    setOrderItems(targetInv.items || []);
+    setTenderedAmount(targetInv.tenderedAmount || '');
+    setHeldInvoicesModalOpen(false);
+    toast.success(`✓ عُلّقت الفاتورة السابقة (#${newHoldNum}) واستُرجعت الفاتورة #${targetInv.number}`);
+    setTimeout(() => barcodeInputRef.current?.focus(), 80);
+  };
+
+  // تفريغ الفاتورة الحالية واسترجاع الفاتورة المعلّقة المختارة
+  const handleDiscardCurrentAndRestore = (targetInv) => {
+    if (!targetInv) return;
+    const nextList = heldInvoices.filter((i) => i.id !== targetInv.id);
+    saveHeldInvoices(nextList);
+    setOrderItems(targetInv.items || []);
+    setTenderedAmount(targetInv.tenderedAmount || '');
+    setHeldInvoicesModalOpen(false);
+    toast.success(`✓ تم تفريغ الحالية واسترجاع الفاتورة #${targetInv.number}`);
+    setTimeout(() => barcodeInputRef.current?.focus(), 80);
+  };
+
+  // حذف فاتورة معلقة
+  const handleDeleteHeldInvoice = (invoiceId) => {
+    const nextList = heldInvoices.filter((i) => i.id !== invoiceId);
+    saveHeldInvoices(nextList);
+    toast.success('تم حذف الفاتورة المعلّقة');
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // 5.6 تنفيذ إرجاع صنف من فاتورة مكتملة بالشيفت
+  // ─────────────────────────────────────────────────────────────
+  const handleReturnItemFromSale = async (sale, item, returnQty, returnAmount, reason = '') => {
+    if (!sale?.id || !item || !store?.id) return;
+
+    try {
+      // 1. زيادة المخزون للصنف المرتجع
+      const prodId = item.product_id && isUuid(item.product_id) ? item.product_id : null;
+      const factor = Number(item.conversion_factor || item.conversionFactor || 1);
+      const restockQty = Math.max(0.001, returnQty * factor);
+
+      if (prodId) {
+        const { error: rpcErr } = await supabase.rpc('increment_stock', {
+          row_id: prodId,
+          amount: restockQty,
+        });
+
+        let prevStock = 0;
+        let newStock = 0;
+        try {
+          const { data: prodRow } = await supabase
+            .from(PRODUCTS_TABLE)
+            .select(PRODUCTS_STOCK_COLUMN)
+            .eq('id', prodId)
+            .maybeSingle();
+
+          prevStock = Number(prodRow?.[PRODUCTS_STOCK_COLUMN] ?? 0);
+          if (rpcErr) {
+            newStock = prevStock + restockQty;
+            await supabase
+              .from(PRODUCTS_TABLE)
+              .update({ [PRODUCTS_STOCK_COLUMN]: newStock })
+              .eq('id', prodId);
+          } else {
+            newStock = prevStock;
+          }
+        } catch {}
+
+        try {
+          await insertInventoryLog({
+            storeId: store.id,
+            productId: prodId,
+            barcode: item.barcode || null,
+            productName: `مرتجع من فاتورة #${String(sale.id).slice(0, 8).toUpperCase()}: ${item.name} (${returnQty} ${item.unit || 'قطعة'})`,
+            qtyBefore: prevStock,
+            qtyAfter: newStock,
+            reason: 'sale_return',
+          });
+        } catch {}
+
+        // تحديث المخزون في الذاكرة الحالية
+        setItems((prev) =>
+          prev.map((it) => (it.id === prodId ? { ...it, stock: (it.stock ?? 0) + restockQty } : it))
+        );
+      }
+
+      // 2. التسوية المالية: إذا كانت الفاتورة آجل، تنقص من دين الزبون
+      const mode = (sale.payment_mode || '').toLowerCase();
+      const method = (sale.payment_method || '').toLowerCase();
+      const isCredit = mode === 'credit' || method === 'deferred' || method === 'credit';
+
+      if (isCredit && sale.contact_id) {
+        try {
+          await applyCreditSaleReturn(supabase, {
+            storeId: store.id,
+            saleId: sale.id,
+            contactId: sale.contact_id,
+            totalAmount: returnAmount,
+            sourceLabel: `إرجاع صنف ${item.name}`,
+          });
+        } catch (creditErr) {
+          console.warn('Error applying credit return:', creditErr);
+        }
+      } else {
+        // نقدي / بطاقة: عكس المبلغ من صندوق الكاش إن أمكن
+        try {
+          await applyCashSaleReturnFromFund(supabase, {
+            storeId: store.id,
+            saleId: sale.id,
+            totalAmount: returnAmount,
+            sourceLabel: `إرجاع صنف ${item.name}`,
+          });
+        } catch (cashErr) {
+          console.warn('Error applying cash return fund deduction:', cashErr);
+        }
+      }
+
+      // 3. توثيق المرتجع في سجل الفاتورة نفسها (تحديث الملاحظات وبنود الفاتورة)
+      try {
+        const returnNote = `[مرتجع: تم إرجاع ${returnQty} من "${item.name}" بقيمة ${returnAmount} ₪${reason ? ` (السبب: ${reason})` : ''} في ${new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}]`;
+        const updatedNotes = sale.notes ? `${sale.notes}\n${returnNote}` : returnNote;
+
+        // تحديث line_items لتحديد الكمية المرتجعة
+        let lines = [];
+        if (Array.isArray(sale.line_items)) lines = [...sale.line_items];
+        else if (typeof sale.line_items === 'string') {
+          try { lines = JSON.parse(sale.line_items); } catch {}
+        }
+
+        const matchedLineIdx = lines.findIndex(
+          (l) =>
+            (l.product_id && l.product_id === item.product_id) ||
+            (l.barcode && l.barcode === item.barcode) ||
+            l.name === item.name
+        );
+        if (matchedLineIdx >= 0) {
+          lines[matchedLineIdx] = {
+            ...lines[matchedLineIdx],
+            returned_qty: Number(lines[matchedLineIdx].returned_qty || 0) + returnQty,
+          };
+        }
+
+        await supabase
+          .from('sales')
+          .update({
+            notes: updatedNotes,
+            line_items: lines,
+          })
+          .eq('id', sale.id);
+      } catch (saleUpErr) {
+        console.warn('Error updating sale record with return details:', saleUpErr);
+      }
+
+      // 4. تحديث العدادات اللحظية
+      if (isCredit) {
+        setShiftSalesTotals((prev) => ({
+          ...prev,
+          creditTotal: roundMoney(Math.max(0, prev.creditTotal - returnAmount)),
+        }));
+      } else {
+        setShiftSalesTotals((prev) => ({
+          ...prev,
+          paidTotal: roundMoney(Math.max(0, prev.paidTotal - returnAmount)),
+        }));
+      }
+
+      toast.success(
+        `✓ تم إرجاع ${returnQty} من (${item.name}) بقيمة ${returnAmount} ₪ بنجاح وتحديث المخزون والمالية`
+      );
+
+      // إعادة جلب فواتير الشيفت المحدثة
+      fetchShiftRecentInvoices();
+      setTimeout(() => barcodeInputRef.current?.focus(), 80);
+    } catch (err) {
+      console.error('Failed to process item return:', err);
+      toast.error('حدث خطأ أثناء تنفيذ الإرجاع: ' + (err.message || ''));
+      throw err;
+    }
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -2069,6 +2325,23 @@ export default function SupermarketPOS() {
       // تفريغ السلة/الجدول بالكامل بعد نجاح الحفظ
       clearInvoice();
 
+      // تحديث عداد مبيعات الوردية اللحظي وقائمة آخر الفواتير
+      if (paymentMode === 'credit') {
+        setShiftSalesTotals((prev) => ({
+          ...prev,
+          creditTotal: roundMoney(prev.creditTotal + payable),
+          count: prev.count + 1,
+        }));
+      } else {
+        setShiftSalesTotals((prev) => ({
+          ...prev,
+          paidTotal: roundMoney(prev.paidTotal + payable),
+          count: prev.count + 1,
+        }));
+      }
+      fetchShiftRecentInvoices();
+      fetchTopSellingProducts();
+
       // إعادة التركيز لحقل الباركود فوراً لمسح الزبون التالي
       setTimeout(() => {
         barcodeInputRef.current?.focus();
@@ -2101,7 +2374,10 @@ export default function SupermarketPOS() {
         closeShiftModalOpen ||
         quickSectionModal ||
         newProductModal ||
-        creditModalOpen
+        creditModalOpen ||
+        productSearchModalOpen ||
+        heldInvoicesModalOpen ||
+        recentInvoicesModalOpen
       )
         return;
       const target = e.target;
@@ -2114,10 +2390,62 @@ export default function SupermarketPOS() {
     };
     document.addEventListener('click', handleGlobalClick);
     return () => document.removeEventListener('click', handleGlobalClick);
-  }, [activeShift, closeShiftModalOpen, quickSectionModal, newProductModal, creditModalOpen]);
+  }, [
+    activeShift,
+    closeShiftModalOpen,
+    quickSectionModal,
+    newProductModal,
+    creditModalOpen,
+    productSearchModalOpen,
+    heldInvoicesModalOpen,
+    recentInvoicesModalOpen,
+  ]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
+      if (recentInvoicesModalOpen) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setRecentInvoicesModalOpen(false);
+          setTimeout(() => barcodeInputRef.current?.focus(), 60);
+        }
+        return;
+      }
+
+      if (heldInvoicesModalOpen) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setHeldInvoicesModalOpen(false);
+          setTimeout(() => barcodeInputRef.current?.focus(), 60);
+        }
+        return;
+      }
+
+      if (moreMenuOpen) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setMoreMenuOpen(false);
+          return;
+        }
+      }
+
+      if (paletteMenuOpen) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setPaletteMenuOpen(false);
+          return;
+        }
+      }
+
+      if (productSearchModalOpen) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setProductSearchModalOpen(false);
+          setTimeout(() => barcodeInputRef.current?.focus(), 60);
+        }
+        return;
+      }
+
       if (creditModalOpen) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -2136,7 +2464,7 @@ export default function SupermarketPOS() {
 
       if (!activeShift || closeShiftModalOpen || quickSectionModal) return;
 
-      // اختصارات F1 نقدي، F2 بطاقة، F3 آجل
+      // اختصارات F1 نقدي، F2 بطاقة، F3 آجل، F4 / Ctrl+K بحث صنف
       if (e.key === 'F1') {
         e.preventDefault();
         handleExecuteSale('cash');
@@ -2150,6 +2478,12 @@ export default function SupermarketPOS() {
       if (e.key === 'F3') {
         e.preventDefault();
         handleOpenCreditModal();
+        return;
+      }
+      if (e.key === 'F4' || ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        setProductSearchModalOpen((prev) => !prev);
         return;
       }
 
@@ -2175,6 +2509,11 @@ export default function SupermarketPOS() {
     quickSectionModal,
     newProductModal,
     creditModalOpen,
+    productSearchModalOpen,
+    heldInvoicesModalOpen,
+    recentInvoicesModalOpen,
+    moreMenuOpen,
+    paletteMenuOpen,
     invoiceTotals.payable,
     orderItems,
   ]);
@@ -2183,6 +2522,12 @@ export default function SupermarketPOS() {
     const handleClickOutside = (e) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
         setIsDropdownOpen(false);
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
+        setMoreMenuOpen(false);
+      }
+      if (paletteMenuRef.current && !paletteMenuRef.current.contains(e.target)) {
+        setPaletteMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -2194,9 +2539,9 @@ export default function SupermarketPOS() {
   // ─────────────────────────────────────────────────────────────
   if (checkingShift) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-white font-arabic" dir="rtl">
+      <div className={`flex h-screen w-full items-center justify-center ${isDark ? activeTheme.darkBg : activeTheme.lightBg} text-slate-900 dark:text-white font-arabic transition-colors duration-300`} dir="rtl">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center animate-pulse shadow-lg shadow-indigo-500/25">
+          <div className={`h-12 w-12 rounded-2xl bg-gradient-to-tr ${activeTheme.brandGradient} flex items-center justify-center animate-pulse shadow-lg`}>
             <Store size={26} className="text-white" />
           </div>
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">جاري التحقق من جلسة الصندوق...</p>
@@ -2207,106 +2552,380 @@ export default function SupermarketPOS() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950 font-arabic text-slate-900 dark:text-slate-100"
+      className={`flex h-screen overflow-hidden ${isDark ? activeTheme.darkBg : activeTheme.lightBg} font-arabic text-slate-900 dark:text-slate-100 transition-colors duration-300`}
       dir="rtl"
       style={{ fontFamily: 'Cairo, Tajawal, ui-sans-serif, system-ui' }}
     >
       {/* السايدبار الرئيسي */}
       <Sidebar collapsible collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
 
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
-        {/* ── شريط الرأس العلوي الثابت مع حقل الباركود الدائم التركيز ── */}
-        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 dark:border-white/10 bg-white/90 dark:bg-slate-900/80 px-4 backdrop-blur-xl transition-colors">
-          {/* يمين: شعار ونوع نقطة البيع */}
-          <div className="flex items-center gap-3 shrink-0">
-            {sidebarCollapsed && (
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-transparent">
+        {/* ── شريط الرأس العلوي المنظم بصفين: صف الحالة والمعلومات + صف البحث والمسح ── */}
+        <header className="shrink-0 border-b border-slate-200/80 dark:border-white/10 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl transition-colors">
+          {/* الصف الأول: معلومات وحالة — أزرار وبطاقات صغيرة */}
+          <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-1.5 border-b border-slate-200/60 dark:border-white/5 text-xs">
+            {/* يمين: الشعار، زر الصوت، إغلاق الصندوق، بدء الشيفت، مبيعات الوردية، الافتتاحي */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0 flex-wrap">
+              {sidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-indigo-300 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                  title="إظهار القائمة"
+                >
+                  <Menu size={15} />
+                </button>
+              )}
+
+              {/* شعار واسم نقطة البيع */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr ${activeTheme.brandGradient} text-white shadow-2xs`}>
+                  <Store size={15} />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-slate-900 dark:text-white">كاشير سوبرماركت</span>
+                  <span className="hidden sm:inline-block rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 px-1.5 py-0.2 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
+                    سريع
+                  </span>
+                  {store?.name && (
+                    <span className="hidden md:inline-block text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                      • {store.name}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <span className="h-3.5 w-px bg-slate-200 dark:bg-white/10 mx-0.5 shrink-0" />
+
+              {/* 1. زر الصوت 🔊 (مكتوم أو مفعل) */}
               <button
                 type="button"
-                onClick={toggleSidebar}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-indigo-300 hover:bg-slate-100 dark:hover:bg-white/10 transition"
-                title="إظهار القائمة"
+                onClick={toggleSound}
+                className={`inline-flex items-center gap-1 h-7 px-2 rounded-lg border text-[11px] font-bold transition shadow-2xs cursor-pointer shrink-0 ${
+                  soundEnabled
+                    ? 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                    : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                }`}
+                title={soundEnabled ? 'كتم صوت الإشعارات والمسح (🔊 مفعّل)' : 'تشغيل صوت الإشعارات والمسح (🔇 مكتوم)'}
               >
-                <Menu size={20} />
+                {soundEnabled ? (
+                  <>
+                    <Volume2 size={13} className="text-emerald-600 dark:text-emerald-400" />
+                    <span className="hidden sm:inline">صوت: شغال</span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX size={13} />
+                    <span className="hidden sm:inline">صوت: صامت</span>
+                  </>
+                )}
               </button>
-            )}
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20">
-              <Store size={22} />
+
+              {/* 2. إغلاق الصندوق */}
+              {activeShift ? (
+                <button
+                  type="button"
+                  onClick={openCloseShiftModal}
+                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg border border-rose-200/80 dark:border-rose-500/30 bg-rose-50/80 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-[11px] font-bold text-rose-700 dark:text-rose-300 shadow-2xs transition shrink-0 cursor-pointer"
+                  title="إغلاق الصندوق وإنهاء الشيفت"
+                >
+                  <Lock size={12} className="text-rose-600 dark:text-rose-400" />
+                  <span>إغلاق الصندوق</span>
+                </button>
+              ) : null}
+
+              {/* 3. بدء الشيفت (الوقت) */}
+              {activeShift?.opened_at ? (
+                <div className="hidden min-[1400px]:inline-flex items-center gap-1 h-7 px-2.5 rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs shrink-0">
+                  <Calendar size={12} className="text-emerald-500 dark:text-emerald-400 shrink-0" />
+                  <span className="text-slate-500 dark:text-slate-400">بدء الشيفت:</span>
+                  <strong className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {new Date(activeShift.opened_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                  </strong>
+                </div>
+              ) : null}
+
+              {/* 4. مبيعات الوردية */}
+              {activeShift ? (
+                <div className={`hidden md:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border-r-2 ${activeTheme.salesBadgeBorder} border border-slate-200/80 dark:border-white/10 text-[11px] shadow-2xs shrink-0`}>
+                  <TrendingUp size={12} className={`shrink-0 ${activeTheme.salesIcon}`} />
+                  <span className="text-slate-500 dark:text-slate-400">مبيعات الوردية:</span>
+                  <strong className={`font-mono font-bold ${activeTheme.salesText}`}>
+                    {shiftSalesTotals.paidTotal} ₪
+                  </strong>
+                  {shiftSalesTotals.creditTotal > 0 && (
+                    <span
+                      className="inline-flex items-center rounded bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700/80 px-1 py-0.2 text-[9px] font-bold font-mono text-amber-800 dark:text-amber-300"
+                      title="مبيعات بالآجل (ذمم)"
+                    >
+                      آجل: {shiftSalesTotals.creditTotal} ₪
+                    </span>
+                  )}
+                </div>
+              ) : null}
+
+              {/* 5. الافتتاحي */}
+              {activeShift ? (
+                <div className="hidden lg:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border-r-2 border-r-emerald-500 border border-slate-200/80 dark:border-white/10 bg-emerald-50/40 dark:bg-emerald-950/20 text-[11px] text-slate-700 dark:text-slate-200 shadow-2xs shrink-0">
+                  <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <span className="text-slate-500 dark:text-slate-400">الافتتاحي:</span>
+                  <strong className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                    {activeShift.opening_amount} ₪
+                  </strong>
+                </div>
+              ) : null}
+
+              {/* وصل آخر عملية إن وجد */}
+              {lastReceiptData && (
+                <button
+                  type="button"
+                  onClick={() => setSimpleReceiptPrint(lastReceiptData)}
+                  className="hidden xl:inline-flex items-center gap-1 h-7 px-2 rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-950/30 hover:bg-violet-100 dark:hover:bg-violet-900/50 text-[11px] font-bold text-violet-700 dark:text-violet-300 shadow-2xs transition shrink-0 cursor-pointer"
+                  title="عرض وطباعة آخر وصل بيع"
+                >
+                  <Printer size={12} className="text-violet-600 dark:text-violet-400" />
+                  <span>وصل {lastReceiptData.invoiceId}</span>
+                </button>
+              )}
             </div>
-            <div className="hidden sm:block">
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-black text-slate-900 dark:text-white">كاشير سوبرماركت</h1>
-                <span className="rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                  سريع
-                </span>
+
+            {/* يسار: منتقي الثيم 🎨، قائمة (...) للشاشات الصغيرة، تبديل الوضع الداكن/الفاتح، وتكبير الشاشة */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 relative">
+              {/* منتقي ثيم الألوان السريع 🎨 */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setPaletteMenuOpen((prev) => !prev)}
+                  className={`flex h-7 items-center gap-1.5 px-2 rounded-lg border transition shadow-2xs cursor-pointer text-[11px] font-bold ${
+                    paletteMenuOpen
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10'
+                  }`}
+                  title="تغيير ثيم وألوان شاشة البيع"
+                >
+                  <Palette size={13} className={activeTheme.accentText} />
+                  <span className="hidden lg:inline">{activeTheme.shortName}</span>
+                  <span className={`h-2 w-2 rounded-full ${activeTheme.dotColor}`} />
+                </button>
+
+                {paletteMenuOpen && (
+                  <div
+                    ref={paletteMenuRef}
+                    className="absolute left-0 top-full mt-1.5 z-50 w-60 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-2xl backdrop-blur-2xl text-xs space-y-1 animate-in fade-in zoom-in-95 duration-100"
+                  >
+                    <div className="px-2.5 py-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800">
+                      ثيم شاشة البيع:
+                    </div>
+                    {Object.values(POS_COLOR_THEMES).map((th) => (
+                      <button
+                        key={th.id}
+                        type="button"
+                        onClick={() => {
+                          changeColorTheme(th.id);
+                          setPaletteMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl transition font-bold text-xs cursor-pointer ${
+                          colorTheme === th.id
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white ring-1 ring-emerald-500/40'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`h-3 w-3 rounded-full ${th.dotColor}`} />
+                          <span>{th.name}</span>
+                        </div>
+                        {colorTheme === th.id && <CheckCircle2 size={14} className="text-emerald-500" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{store?.name || 'المتجر'}</p>
+
+              {/* قائمة (...) للشاشات الأصغر من 1400px */}
+              <div className="relative min-[1400px]:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMoreMenuOpen((prev) => !prev)}
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border transition shadow-2xs cursor-pointer ${
+                    moreMenuOpen
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300'
+                      : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10'
+                  }`}
+                  title="عرض تفاصيل الوردية والخيارات الإضافية"
+                >
+                  <MoreHorizontal size={15} />
+                </button>
+
+                {moreMenuOpen && (
+                  <div
+                    ref={moreMenuRef}
+                    className="absolute left-0 top-full mt-1.5 z-50 w-72 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 shadow-2xl backdrop-blur-2xl text-xs space-y-2.5 animate-in fade-in zoom-in-95 duration-100"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                      <span className="font-bold text-slate-800 dark:text-slate-100">تفاصيل الوردية الحالية</span>
+                      <button
+                        type="button"
+                        onClick={() => setMoreMenuOpen(false)}
+                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    {activeShift ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <Calendar size={13} className="text-emerald-500" />
+                            بدء الشيفت:
+                          </span>
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {activeShift.opened_at
+                              ? new Date(activeShift.opened_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/30">
+                          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            المبلغ الافتتاحي:
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                            {activeShift.opening_amount} ₪
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/30">
+                          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <TrendingUp size={13} className="text-emerald-600 dark:text-emerald-400" />
+                            مبيعات الوردية (مدفوع):
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                            {shiftSalesTotals.paidTotal} ₪
+                          </span>
+                        </div>
+
+                        {shiftSalesTotals.creditTotal > 0 && (
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-amber-50/50 dark:bg-amber-950/30">
+                            <span className="text-slate-500 dark:text-slate-400">مبيعات بالآجل (ذمم):</span>
+                            <span className="font-mono font-bold text-amber-700 dark:text-amber-300">
+                              {shiftSalesTotals.creditTotal} ₪
+                            </span>
+                          </div>
+                        )}
+
+                        {lastReceiptData && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimpleReceiptPrint(lastReceiptData);
+                              setMoreMenuOpen(false);
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 font-bold hover:bg-violet-100 dark:hover:bg-violet-900/60 transition cursor-pointer"
+                          >
+                            <Printer size={14} />
+                            <span>طباعة آخر وصل ({lastReceiptData.invoiceId})</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-slate-500 dark:text-slate-400 text-center py-2">لا توجد جلسة صندوق نشطة حالياً</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* زر التبديل بين الوضع الليلي والنهاري (شمس/قمر) */}
+              <button
+                type="button"
+                onClick={() => applyExplicitTheme(isDark ? 'light' : 'dark')}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-amber-300 hover:bg-slate-100 dark:hover:bg-white/10 shadow-2xs transition cursor-pointer"
+                title={isDark ? 'التبديل إلى الوضع الفاتح (Light Mode)' : 'التبديل إلى الوضع الداكن (Dark Mode)'}
+              >
+                {isDark ? <Sun size={14} className="text-amber-400" /> : <Moon size={14} className="text-indigo-600" />}
+              </button>
+
+              {/* زر ملء الشاشة */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+                  else document.exitFullscreen?.();
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
+                title="ملء الشاشة"
+              >
+                <Maximize2 size={13} />
+              </button>
             </div>
           </div>
 
-          {/* منتصف: حقل إدخال الباركود فائق السرعة والدائم التركيز */}
-          <div ref={searchContainerRef} className="relative flex-1 max-w-2xl mx-2 md:mx-6">
-            <form onSubmit={handleBarcodeSubmit} className="relative w-full">
-              <div className="relative flex items-center">
-                <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none text-indigo-500 dark:text-indigo-400">
-                  <ScanLine size={20} className="animate-pulse" />
-                  <span className="h-4 w-px bg-slate-300 dark:bg-slate-700 hidden sm:inline-block" />
-                  <Search size={16} className="text-slate-400 dark:text-slate-500 hidden sm:inline-block" />
-                </div>
+          {/* الصف الثاني: البحث والمسح — العنصر الأهم، ياخد أوسع مساحة */}
+          <div className="flex items-center gap-2.5 px-3 sm:px-4 py-2">
+            {/* حقل إدخال الباركود فائق السرعة والدائم التركيز - يأخذ العرض الأكبر flex-1 */}
+            <div ref={searchContainerRef} className="relative flex-1 min-w-0">
+              <form onSubmit={handleBarcodeSubmit} className="relative w-full">
+                <div className="relative flex items-center">
+                  <div className={`absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none ${activeTheme.inputIcon}`}>
+                    <ScanLine size={19} className="animate-pulse" />
+                    <span className="h-4 w-px bg-slate-300 dark:bg-slate-700 hidden sm:inline-block" />
+                    <Search size={15} className="text-slate-400 dark:text-slate-500 hidden sm:inline-block" />
+                  </div>
 
-                <input
-                  ref={barcodeInputRef}
-                  type="text"
-                  value={search}
-                  disabled={!activeShift}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSearch(val);
-                    if (val.trim()) {
-                      setIsDropdownOpen(true);
-                      setActiveDropdownIndex(-1);
-                    } else {
-                      setIsDropdownOpen(false);
-                      setActiveDropdownIndex(-1);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      if (!isDropdownOpen) setIsDropdownOpen(true);
-                      else if (partialMatches.length > 0) {
-                        setActiveDropdownIndex((prev) =>
-                          prev < partialMatches.length - 1 ? prev + 1 : 0
-                        );
+                  <input
+                    ref={barcodeInputRef}
+                    type="text"
+                    value={search}
+                    disabled={!activeShift}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSearch(val);
+                      if (val.trim()) {
+                        setIsDropdownOpen(true);
+                        setActiveDropdownIndex(-1);
+                      } else {
+                        setIsDropdownOpen(false);
+                        setActiveDropdownIndex(-1);
                       }
-                      return;
-                    }
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      if (isDropdownOpen && partialMatches.length > 0) {
-                        setActiveDropdownIndex((prev) =>
-                          prev > 0 ? prev - 1 : partialMatches.length - 1
-                        );
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (!isDropdownOpen) setIsDropdownOpen(true);
+                        else if (partialMatches.length > 0) {
+                          setActiveDropdownIndex((prev) =>
+                            prev < partialMatches.length - 1 ? prev + 1 : 0
+                          );
+                        }
+                        return;
                       }
-                      return;
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      setIsDropdownOpen(false);
-                      return;
-                    }
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleBarcodeSubmit(e);
-                      return;
-                    }
-                  }}
-                  placeholder="امسح الباركود بالسكانر أو اكتب للبحث السريع (دايماً بالفوكس)..."
-                  className="w-full h-11 rounded-2xl border border-indigo-500/30 bg-slate-50 dark:bg-slate-900/90 pr-12 pl-24 text-sm font-medium text-slate-900 dark:text-white shadow-inner backdrop-blur-md transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-500/20"
-                  autoComplete="off"
-                  spellCheck="false"
-                />
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        if (isDropdownOpen && partialMatches.length > 0) {
+                          setActiveDropdownIndex((prev) =>
+                            prev > 0 ? prev - 1 : partialMatches.length - 1
+                          );
+                        }
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setIsDropdownOpen(false);
+                        return;
+                      }
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleBarcodeSubmit(e);
+                        return;
+                      }
+                    }}
+                    placeholder="امسح الباركود بالسكانر أو اكتب للبحث السريع (دايماً بالفوكس)..."
+                    className={`w-full h-11 rounded-xl border ${activeTheme.inputBorder} bg-gradient-to-r ${activeTheme.inputBg} pr-12 pl-10 text-sm font-medium text-slate-900 dark:text-white shadow-inner backdrop-blur-md transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 ${activeTheme.inputFocus} focus:outline-none focus:ring-2`}
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
 
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                   {search ? (
                     <button
                       type="button"
@@ -2315,157 +2934,129 @@ export default function SupermarketPOS() {
                         setIsDropdownOpen(false);
                         barcodeInputRef.current?.focus();
                       }}
-                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-white transition"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-white transition cursor-pointer"
+                      title="مسح البحث"
                     >
                       <X size={15} />
                     </button>
                   ) : null}
-                  <span className="hidden sm:inline-flex items-center gap-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                    السكانر جاهز
-                  </span>
                 </div>
-              </div>
-            </form>
+              </form>
 
-            {/* قائمة نتائج البحث الجزئي بالاسم */}
-            {isDropdownOpen && search.trim() && (
-              <div className="absolute top-full right-0 left-0 mt-2 z-50 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-white/95 dark:bg-slate-900/95 shadow-2xl backdrop-blur-2xl transition-colors">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60">
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {partialMatches.length > 0
-                      ? `نتائج البحث (${partialMatches.length})`
-                      : 'لا توجد نتائج مطابقة'}
-                  </span>
-                  <span className="text-[11px] text-slate-400 dark:text-slate-500">اضغط Enter أو انقر للإضافة</span>
-                </div>
+              {/* قائمة نتائج البحث الجزئي بالاسم */}
+              {isDropdownOpen && search.trim() && (
+                <div className="absolute top-[calc(100%+6px)] right-0 left-0 z-50 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-white/95 dark:bg-slate-900/95 shadow-2xl backdrop-blur-2xl transition-colors">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {partialMatches.length > 0
+                        ? `نتائج البحث (${partialMatches.length})`
+                        : 'لا توجد نتائج مطابقة'}
+                    </span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">اضغط Enter أو انقر للإضافة</span>
+                  </div>
 
-                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {partialMatches.length > 0 ? (
-                    partialMatches.map((item, idx) => {
-                      const isSelected = idx === activeDropdownIndex;
-                      const price = item.priceAfterDiscount ?? item.price ?? 0;
-                      return (
-                        <div
-                          key={item.id || idx}
-                          onClick={() => addOrIncrementProduct(item, 1)}
-                          onMouseEnter={() => setActiveDropdownIndex(idx)}
-                          className={`group flex items-center justify-between gap-3 px-4 py-3 cursor-pointer transition ${
-                            isSelected
-                              ? 'bg-indigo-50 dark:bg-indigo-950/70 border-r-4 border-indigo-500'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-300">
-                              {item.name}
-                            </p>
-                            <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-400 mt-0.5">
-                              {item.barcode && (
-                                <span className="font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">
-                                  {item.barcode}
-                                </span>
-                              )}
-                              {item.reference && (
-                                <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">
-                                  {item.reference}
-                                </span>
-                              )}
+                  <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {partialMatches.length > 0 ? (
+                      partialMatches.map((item, idx) => {
+                        const isSelected = idx === activeDropdownIndex;
+                        const price = item.priceAfterDiscount ?? item.price ?? 0;
+                        return (
+                          <div
+                            key={item.id || idx}
+                            onClick={() => addOrIncrementProduct(item, 1)}
+                            onMouseEnter={() => setActiveDropdownIndex(idx)}
+                            className={`group flex items-center justify-between gap-3 px-4 py-3 cursor-pointer transition ${
+                              isSelected
+                                ? activeTheme.dropdownActive
+                                : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className={`truncate text-sm font-semibold text-slate-800 dark:text-slate-100 group-hover:${activeTheme.accentText}`}>
+                                {item.name}
+                              </p>
+                              <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-400 mt-0.5">
+                                {item.barcode && (
+                                  <span className="font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                                    {item.barcode}
+                                  </span>
+                                )}
+                                {Number(item.stock ?? item.stock_count ?? 0) <= 0 ? (
+                                  <span className="font-bold text-[10px] bg-rose-100/70 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 px-1.5 py-0.5 rounded">
+                                    رصيد: 0
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-[10px] bg-emerald-100/70 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 px-1.5 py-0.5 rounded">
+                                    رصيد: {item.stock ?? item.stock_count}
+                                  </span>
+                                )}
+                                {item.reference && (
+                                  <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">
+                                    {item.reference}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0 text-left">
+                              <span className={`text-sm font-bold ${activeTheme.accentText} font-mono`}>
+                                {roundMoney(price)} ₪
+                              </span>
+                              <button
+                                type="button"
+                                className={`flex h-8 w-8 items-center justify-center rounded-xl ${activeTheme.dropdownBtn} transition shadow-sm cursor-pointer`}
+                              >
+                                <Plus size={16} />
+                              </button>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3 shrink-0 text-left">
-                            <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300 font-mono">
-                              {roundMoney(price)} ₪
-                            </span>
-                            <button
-                              type="button"
-                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition shadow-sm"
-                            >
-                              <Plus size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="p-5 text-center text-slate-500 dark:text-slate-400 text-xs">
-                      لم يتم العثور على صنف مطابق بالاسم أو الباركود
-                    </div>
-                  )}
+                        );
+                      })
+                    ) : (
+                      <div className="p-5 text-center text-slate-500 dark:text-slate-400 text-xs">
+                        لم يتم العثور على صنف مطابق بالاسم أو الباركود
+                      </div>
+                    )}
+                  </div>
+
+                  {/* خيار سريع لتسجيل هذا الباركود/النص كمنتج جديد */}
+                  <div className="border-t border-slate-100 dark:border-slate-800 p-2 bg-slate-50/80 dark:bg-slate-950/60">
+                    <button
+                      type="button"
+                      onClick={() => openNewProductModal(search)}
+                      className={`w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border ${activeTheme.searchBtn} text-xs font-bold transition cursor-pointer`}
+                    >
+                      <PackagePlus size={14} />
+                      <span>تسجيل «{search.trim()}» كمنتج جديد في المخزون</span>
+                    </button>
+                  </div>
                 </div>
-
-                {/* خيار سريع لتسجيل هذا الباركود/النص كمنتج جديد */}
-                <div className="border-t border-slate-100 dark:border-slate-800 p-2 bg-slate-50/80 dark:bg-slate-950/60">
-                  <button
-                    type="button"
-                    onClick={() => openNewProductModal(search)}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition"
-                  >
-                    <PackagePlus size={14} />
-                    <span>تسجيل «{search.trim()}» كمنتج جديد في المخزون</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* يسار: تفاصيل الشيفت، زر المظهر (داكن/فاتح)، إغلاق الصندوق والتكبير */}
-          <div className="flex items-center gap-2 shrink-0">
-            {activeShift ? (
-              <div className="hidden xl:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/60 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300">
-                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>الافتتاحي: <strong className="font-mono font-bold text-slate-900 dark:text-white">{activeShift.opening_amount} ₪</strong></span>
-              </div>
-            ) : null}
-
-            {lastReceiptData && (
-              <button
-                type="button"
-                onClick={() => setSimpleReceiptPrint(lastReceiptData)}
-                className="flex items-center gap-1.5 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-3 py-2 text-xs font-bold text-indigo-700 dark:text-indigo-300 shadow-sm transition"
-                title="عرض وطباعة آخر وصل بيع"
-              >
-                <Printer size={15} className="text-indigo-600 dark:text-indigo-400" />
-                <span className="hidden md:inline">وصل {lastReceiptData.invoiceId}</span>
-              </button>
-            )}
-
-            {activeShift ? (
-              <button
-                type="button"
-                onClick={openCloseShiftModal}
-                className="flex items-center gap-1.5 rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 px-3 py-2 text-xs font-bold text-rose-700 dark:text-rose-300 shadow-sm transition"
-                title="إغلاق الصندوق وإنهاء الشيفت"
-              >
-                <Lock size={15} className="text-rose-600 dark:text-rose-400" />
-                <span className="hidden sm:inline">إغلاق الصندوق</span>
-              </button>
-            ) : null}
-
-            {/* ── زر التبديل بين الوضع الليلي والنهاري (شمس/قمر) ── */}
-            <button
-              type="button"
-              onClick={() => applyExplicitTheme(isDark ? 'light' : 'dark')}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-amber-300 hover:bg-slate-100 dark:hover:bg-white/10 shadow-sm transition"
-              title={isDark ? 'التبديل إلى الوضع الفاتح (Light Mode)' : 'التبديل إلى الوضع الداكن (Dark Mode)'}
-            >
-              {isDark ? (
-                <Sun size={18} className="text-amber-400" />
-              ) : (
-                <Moon size={18} className="text-indigo-600" />
               )}
-            </button>
+            </div>
 
+            {/* شارة "السكانر جاهز" بجانب حقل الباركود مباشرة */}
+            <div
+              className="hidden sm:inline-flex items-center gap-1.5 h-11 px-3 rounded-xl border border-emerald-300 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/60 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 shrink-0 select-none shadow-2xs"
+              title="قارئ الباركود متصل وجاهز للاستقبال مباشرة"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span>السكانر جاهز</span>
+            </div>
+
+            {/* زر "بحث صنف F4" بجانب شارة السكانر مباشرة */}
             <button
               type="button"
-              onClick={() => {
-                if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-                else document.exitFullscreen?.();
-              }}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition"
-              title="ملء الشاشة"
+              onClick={() => setProductSearchModalOpen(true)}
+              className={`inline-flex items-center gap-2 h-11 px-3.5 sm:px-4 rounded-xl border ${activeTheme.searchBtn} font-bold text-xs shadow-2xs hover:shadow-md transition-all shrink-0 cursor-pointer active:scale-95`}
+              title="بحث عن صنف في المخزون (F4 أو Ctrl+K)"
             >
-              <Maximize2 size={16} />
+              <Search size={16} className={activeTheme.accentText} />
+              <span className="font-bold">بحث صنف</span>
+              <kbd className={`hidden md:inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold border ${activeTheme.searchKbd}`}>
+                F4
+              </kbd>
             </button>
           </div>
         </header>
@@ -2501,41 +3092,208 @@ export default function SupermarketPOS() {
         {/* ── تخطيط الشاشة الرئيسي: جدول الفاتورة (معظم المساحة) + شريط الإجماليات ── */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* 1. جدول بنود الفاتورة المباشر (Full Screen Direct Items Table) */}
-          <section className="flex flex-1 flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 p-4 transition-colors">
+          <section className="flex flex-1 flex-col overflow-hidden bg-slate-100/40 dark:bg-slate-950/30 p-4 transition-colors">
             <div className="flex items-center justify-between pb-3">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-black text-slate-900 dark:text-white">فاتورة البيع الحالية</h2>
-                <span className="rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-mono text-xs px-2 py-0.5 font-bold border border-indigo-200 dark:border-indigo-500/30">
+                <span className="rounded-xl border-r-4 border-r-indigo-500 bg-white/90 dark:bg-slate-900/90 text-indigo-700 dark:text-indigo-300 font-mono text-xs px-2.5 py-1 font-bold border border-slate-200/90 dark:border-white/10 shadow-xs">
                   {orderItems.length} صنف ({invoiceTotals.totalUnits} قطعة/وحدة)
                 </span>
               </div>
-              {orderItems.length > 0 && (
+              <div className="flex items-center gap-2">
+                {/* زر آخر فواتير الشيفت (استرجاع ومراجعة وإرجاع صنف) */}
                 <button
                   type="button"
-                  onClick={clearInvoice}
-                  className="flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-rose-500 transition"
+                  onClick={() => setRecentInvoicesModalOpen(true)}
+                  className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs transition cursor-pointer active:scale-95"
+                  title="عرض ومراجعة آخر فواتير الشيفت وإرجاع أصناف"
                 >
-                  <Trash2 size={14} />
-                  <span>تفريغ الفاتورة</span>
+                  <History size={13} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>آخر الفواتير</span>
+                  {shiftRecentInvoices.length > 0 && (
+                    <span className="flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] font-black px-1 border border-indigo-200 dark:border-indigo-800">
+                      {shiftRecentInvoices.length}
+                    </span>
+                  )}
                 </button>
-              )}
+
+                {heldInvoices.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setHeldInvoicesModalOpen(true)}
+                    className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/60 shadow-xs transition cursor-pointer active:scale-95"
+                    title="عرض الفواتير المعلّقة واسترجاعها"
+                  >
+                    <Pause size={13} className="text-amber-600 dark:text-amber-400" />
+                    <span>فواتير معلّقة</span>
+                    <span className="flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-rose-500 text-white font-mono text-[10px] font-black px-1 shadow-xs animate-pulse">
+                      {heldInvoices.length}
+                    </span>
+                  </button>
+                )}
+                {orderItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleHoldCurrentInvoice}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 shadow-xs transition cursor-pointer active:scale-95"
+                    title="تعليق الفاتورة الحالية لبدء فاتورة جديدة (Hold Sale)"
+                  >
+                    <Pause size={13} className="text-indigo-600 dark:text-indigo-400" />
+                    <span>تعليق الفاتورة</span>
+                  </button>
+                )}
+                {orderItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearInvoice}
+                    className="flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-rose-500 transition px-2 py-1.5 cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                    <span>تفريغ الفاتورة</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* الحاوية الجدولية */}
-            <div className="flex-1 overflow-y-auto rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/50 shadow-sm transition-colors">
+            <div className="flex-1 overflow-y-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/80 dark:bg-slate-900/40 shadow-sm backdrop-blur-md transition-colors">
               {orderItems.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center p-12 text-center text-slate-400 dark:text-slate-500">
-                  <div className="h-20 w-20 rounded-3xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4 animate-pulse">
-                    <ScanLine size={40} />
+                <div className="flex h-full flex-col p-4 sm:p-6 overflow-y-auto">
+                  {/* شريط تبويبات الأصناف السريعة */}
+                  <div className="w-full max-w-3xl mx-auto space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 dark:border-white/10 pb-2.5">
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-white/5 shadow-inner">
+                        <button
+                          type="button"
+                          onClick={() => setQuickItemsTab('top_selling')}
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            quickItemsTab === 'top_selling'
+                              ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <TrendingUp size={14} className={quickItemsTab === 'top_selling' ? 'text-indigo-600 dark:text-white' : ''} />
+                          <span>الأكثر مبيعاً (آخر 7 أيام)</span>
+                          {topSellingProducts.length > 0 && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300">
+                              {topSellingProducts.length}
+                            </span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setQuickItemsTab('last_sale')}
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            quickItemsTab === 'last_sale'
+                              ? 'bg-white dark:bg-indigo-600 text-indigo-700 dark:text-white shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Receipt size={14} className={quickItemsTab === 'last_sale' ? 'text-indigo-600 dark:text-white' : ''} />
+                          <span>آخر أصناف الفاتورة السابقة</span>
+                          {lastInvoiceProducts.length > 0 && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300">
+                              {lastInvoiceProducts.length}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      <span className="text-[11px] text-slate-400 hidden sm:inline">
+                        اضغط على أي صنف لإضافته فوراً للفاتورة
+                      </span>
+                    </div>
+
+                    {/* شبكة أزرار الأصناف السريعة */}
+                    {quickItemsTab === 'top_selling' ? (
+                      <div>
+                        {loadingTopSelling ? (
+                          <div className="py-8 text-center text-xs text-slate-400">جاري جلب الأصناف الأكثر مبيعاً...</div>
+                        ) : topSellingProducts.length === 0 ? (
+                          <div className="py-8 text-center text-xs text-slate-400">
+                            لا توجد مبيعات مسجلة في آخر 7 أيام بعد. امسح الباركود للبدء.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                            {topSellingProducts.map((p, idx) => (
+                              <button
+                                key={p.id || p.barcode || idx}
+                                type="button"
+                                onClick={() => addOrIncrementProduct(p, 1)}
+                                className="group flex flex-col justify-between p-3 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-md hover:bg-indigo-50/40 dark:hover:bg-indigo-950/40 text-right transition cursor-pointer active:scale-95 shadow-xs"
+                              >
+                                <div className="flex items-start justify-between gap-1 w-full">
+                                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 line-clamp-2 leading-snug">
+                                    {p.name}
+                                  </span>
+                                  <span className="h-6 w-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
+                                    <Plus size={14} />
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between w-full mt-2 pt-1 border-t border-slate-100 dark:border-white/5">
+                                  <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                    {p.price} ₪
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {p.unit || 'قطعة'}
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        {lastInvoiceProducts.length === 0 ? (
+                          <div className="py-8 text-center text-xs text-slate-400">
+                            لا توجد أصناف من فاتورة سابقة بعد.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                            {lastInvoiceProducts.map((p, idx) => (
+                              <button
+                                key={p.id || idx}
+                                type="button"
+                                onClick={() => addOrIncrementProduct(p, 1)}
+                                className="group flex flex-col justify-between p-3 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 hover:border-violet-400 dark:hover:border-violet-600 hover:shadow-md hover:bg-violet-50/40 dark:hover:bg-violet-950/40 text-right transition cursor-pointer active:scale-95 shadow-xs"
+                              >
+                                <div className="flex items-start justify-between gap-1 w-full">
+                                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 group-hover:text-violet-600 dark:group-hover:text-violet-400 line-clamp-2 leading-snug">
+                                    {p.name}
+                                  </span>
+                                  <span className="h-6 w-6 rounded-lg bg-violet-50 dark:bg-violet-950/80 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0 group-hover:bg-violet-600 group-hover:text-white transition">
+                                    <Plus size={14} />
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between w-full mt-2 pt-1 border-t border-slate-100 dark:border-white/5">
+                                  <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                    {p.price} ₪
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {p.unit || 'قطعة'}
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* تنبيه المسح بالسكانر الأنيق بالأسفل */}
+                    <div className="flex items-center justify-center gap-3 pt-6 pb-2 text-slate-400 dark:text-slate-500 text-xs">
+                      <div className="h-8 w-8 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                        <ScanLine size={18} className="animate-pulse" />
+                      </div>
+                      <span>أو امسح باركود أي منتج مباشرة بالسكانر في أي وقت لبدء الفاتورة</span>
+                    </div>
                   </div>
-                  <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">الفاتورة فارغة وجاهزة للمسح</h3>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-500 max-w-sm">
-                    امسح باركود أي منتج مباشرة بالسكانر، أو اختر من الأقسام السريعة بالأعلى (خضار، مخبز، بيع بالوزن).
-                  </p>
                 </div>
               ) : (
                 <table className="w-full text-right text-xs border-collapse table-fixed">
-                  <thead className="sticky top-0 z-10 border-b border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 font-bold uppercase backdrop-blur-sm">
+                  <thead className="sticky top-0 z-10 border-b border-slate-200 dark:border-white/10 bg-slate-100/95 dark:bg-slate-900/95 text-slate-600 dark:text-slate-300 font-bold uppercase backdrop-blur-md">
                     <tr>
                       <th className="py-2.5 px-1.5 w-10 text-center">#</th>
                       <th className="py-2.5 px-2 w-28">الباركود</th>
@@ -2553,7 +3311,11 @@ export default function SupermarketPOS() {
                       <tr
                         key={line.id}
                         onContextMenu={(e) => handleRowContextMenu(e, line)}
-                        className="hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 transition group cursor-pointer"
+                        className={`border-b border-slate-100/80 dark:border-white/5 transition-colors group cursor-pointer ${
+                          idx % 2 === 0
+                            ? 'bg-white/90 dark:bg-slate-900/50'
+                            : 'bg-slate-50/75 dark:bg-slate-800/30'
+                        } hover:bg-indigo-50/80 dark:hover:bg-indigo-950/60`}
                         title="انقر بالزر الأيمن لعرض / تعديل تفاصيل وسعر الصنف"
                       >
                         {/* تسلسل */}
@@ -2695,7 +3457,7 @@ export default function SupermarketPOS() {
           </section>
 
           {/* 2. شريط الإجماليات والدفع السريع (Prominent Totals & Checkout Sidebar) */}
-          <section className="flex w-[380px] shrink-0 flex-col border-r border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/80 backdrop-blur-xl p-5 justify-between transition-colors">
+          <section className="flex w-[380px] shrink-0 flex-col border-r border-slate-200/90 dark:border-white/10 dark:border-r-indigo-500/20 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-5 justify-between transition-colors shadow-[-4px_0_24px_-4px_rgba(0,0,0,0.06)] dark:shadow-[-4px_0_30px_-4px_rgba(0,0,0,0.5)]">
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-3">
                 <h3 className="text-sm font-black text-slate-900 dark:text-white">إجماليات الفاتورة والدفع</h3>
@@ -2705,7 +3467,7 @@ export default function SupermarketPOS() {
               </div>
 
               {/* تفاصيل المجموع والخصم */}
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-4 space-y-2 text-xs">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/90 dark:bg-slate-950/60 p-4 space-y-2 text-xs">
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>المجموع الفرعي:</span>
                   <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{invoiceTotals.subtotal} ₪</span>
@@ -2723,8 +3485,8 @@ export default function SupermarketPOS() {
               </div>
 
               {/* ── المبلغ المطلوب سداده (خط عريض وبارز جداً) ── */}
-              <div className="rounded-3xl border-2 border-indigo-500/40 bg-gradient-to-br from-indigo-50 via-white to-slate-50 dark:from-indigo-950/60 dark:via-slate-900 dark:to-slate-950 p-5 shadow-lg dark:shadow-2xl text-center">
-                <span className="block text-xs font-bold text-indigo-600 dark:text-indigo-300 mb-1 uppercase tracking-wider">
+              <div className={`rounded-3xl border-2 ${activeTheme.totalBox} p-5 text-center transition-all`}>
+                <span className={`block text-xs font-bold ${activeTheme.totalLabel} mb-1 uppercase tracking-wider`}>
                   المبلغ المطلوب سداده
                 </span>
                 <div className="text-4xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight">
@@ -2746,7 +3508,7 @@ export default function SupermarketPOS() {
                     value={tenderedAmount}
                     onChange={(e) => setTenderedAmount(e.target.value)}
                     placeholder={String(invoiceTotals.payable)}
-                    className="w-full h-12 rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pr-11 pl-4 text-xl font-mono font-black text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
+                    className={`w-full h-12 rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950/80 pr-11 pl-4 text-xl font-mono font-black text-slate-900 dark:text-white ${activeTheme.inputFocus} focus:outline-none focus:ring-2`}
                     dir="ltr"
                   />
                 </div>
@@ -2756,28 +3518,28 @@ export default function SupermarketPOS() {
                   <button
                     type="button"
                     onClick={() => setQuickCash(invoiceTotals.payable)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
                   >
                     بالضبط
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickCash(50)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
                   >
                     50 ₪
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickCash(100)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
                   >
                     100 ₪
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickCash(200)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
                   >
                     200 ₪
                   </button>
@@ -2785,7 +3547,7 @@ export default function SupermarketPOS() {
               </div>
 
               {/* ── الباقي للزبون (يُحسب تلقائياً) ── */}
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/90 dark:bg-slate-950/60 p-4">
                 <div className="flex items-baseline justify-between">
                   <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الباقي للزبون:</span>
                   <span
@@ -2801,19 +3563,19 @@ export default function SupermarketPOS() {
 
             {/* ── أزرار الدفع الكبيرة (F1 نقدي / F2 بطاقة / F3 آجل) ── */}
             <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-white/10">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2.5">
                 {/* زر نقدي كاش */}
                 <button
                   type="button"
                   disabled={!orderItems.length || isSubmittingSale}
                   onClick={() => handleExecuteSale('cash')}
-                  className="h-14 flex flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black shadow-lg shadow-emerald-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed px-1 text-center"
+                  className="h-14 flex flex-col items-center justify-center rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black shadow-lg shadow-emerald-600/30 hover:shadow-emerald-600/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none px-1 text-center border-t border-emerald-400/30"
                 >
                   <div className="flex items-center gap-1 text-sm sm:text-base">
                     <DollarSign size={18} />
                     <span>نقدي 💵</span>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-100">F1 / Enter</span>
+                  <span className="text-[10px] font-bold text-emerald-100/90">F1 / Enter</span>
                 </button>
 
                 {/* زر بطاقة / فيزا */}
@@ -2821,13 +3583,13 @@ export default function SupermarketPOS() {
                   type="button"
                   disabled={!orderItems.length || isSubmittingSale}
                   onClick={() => handleExecuteSale('visa')}
-                  className="h-14 flex flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black shadow-lg shadow-indigo-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed px-1 text-center"
+                  className={`h-14 flex flex-col items-center justify-center rounded-2xl ${activeTheme.cardBtn} text-white font-black shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none px-1 text-center`}
                 >
                   <div className="flex items-center gap-1 text-sm sm:text-base">
                     <CreditCard size={18} />
                     <span>بطاقة 💳</span>
                   </div>
-                  <span className="text-[10px] font-bold text-indigo-100">F2</span>
+                  <span className="text-[10px] font-bold text-white/90">F2</span>
                 </button>
 
                 {/* زر آجل / دين */}
@@ -2835,13 +3597,13 @@ export default function SupermarketPOS() {
                   type="button"
                   disabled={!orderItems.length || isSubmittingSale}
                   onClick={handleOpenCreditModal}
-                  className="h-14 flex flex-col items-center justify-center rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black shadow-lg shadow-amber-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed px-1 text-center"
+                  className="h-14 flex flex-col items-center justify-center rounded-2xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-black shadow-lg shadow-amber-600/30 hover:shadow-amber-600/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none px-1 text-center border-t border-amber-400/30"
                 >
                   <div className="flex items-center gap-1 text-sm sm:text-base">
                     <User size={18} />
                     <span>آجل 👤</span>
                   </div>
-                  <span className="text-[10px] font-bold text-amber-100">F3</span>
+                  <span className="text-[10px] font-bold text-amber-100/90">F3</span>
                 </button>
               </div>
             </div>
@@ -3249,389 +4011,15 @@ export default function SupermarketPOS() {
           مودال 5: تسجيل منتج جديد (سكانر أو إضافة مباشرة للمخزون)
       ───────────────────────────────────────────────────────────── */}
       {newProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-slate-950/85 backdrop-blur-md p-4">
-          <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-6 text-right text-slate-900 dark:text-white transition-colors flex flex-col max-h-[92vh]">
-            {/* رأس المودال */}
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-3 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400">
-                  <PackagePlus size={22} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    {newProductModal.isInventoryOnly ? 'إضافة صنف جديد للمخزون' : 'تسجيل منتج جديد'}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {newProductModal.isInventoryOnly
-                      ? 'أدخل بيانات الصنف لإضافته إلى المخزون (لن يُضاف إلى الفاتورة الحالية)'
-                      : 'الباركود غير موجود، سجله الآن لإضافته للفاتورة فوراً'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleCancelNewProduct}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-white transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveNewProduct} className="flex-1 overflow-y-auto pr-1 pl-1 space-y-3">
-              {/* حقل الباركود */}
-              <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                  {newProductModal.isInventoryOnly
-                    ? 'الباركود (اختياري - امسحه بالسكانر أو اتركه فارغاً)'
-                    : 'الباركود (للقراءة فقط)'}
-                </label>
-                <div className="relative">
-                  <ScanLine className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500" size={16} />
-                  {newProductModal.isInventoryOnly ? (
-                    <input
-                      ref={newProductBarcodeInputRef}
-                      type="text"
-                      value={newProductForm.barcode}
-                      onChange={(e) => setNewProductForm((p) => ({ ...p, barcode: e.target.value }))}
-                      placeholder="امسح بالسكانر أو اكتب الباركود..."
-                      className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pr-9 pl-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
-                      dir="ltr"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      readOnly
-                      value={newProductModal.barcode}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-950 pr-9 pl-3 py-2 text-xs font-mono font-bold text-slate-700 dark:text-indigo-300 select-all cursor-not-allowed"
-                      dir="ltr"
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* اسم المنتج (إجباري) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  اسم المنتج *
-                </label>
-                <input
-                  ref={newProductNameInputRef}
-                  type="text"
-                  required
-                  autoFocus={!newProductModal.isInventoryOnly}
-                  value={newProductForm.name}
-                  onChange={(e) => setNewProductForm((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="مثال: شيبس دوريتوس حار 100 غم..."
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
-                />
-              </div>
-
-              {/* الوحدة + سعر البيع في صف واحد */}
-              <div className="grid grid-cols-2 gap-3">
-                {/* الوحدة */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    الوحدة الأساسية
-                  </label>
-                  <select
-                    value={newProductForm.unit}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, unit: e.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="قطعة">قطعة</option>
-                    <option value="علبة">علبة</option>
-                    <option value="كرتونة">كرتونة</option>
-                    <option value="كغم">كغم</option>
-                    <option value="غرام">غرام</option>
-                    <option value="لتر">لتر</option>
-                    <option value="باكيت">باكيت</option>
-                  </select>
-                </div>
-
-                {/* سعر البيع (إجباري) */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    سعر البيع (شيكل) *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    required
-                    value={newProductForm.price}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, price: e.target.value }))}
-                    placeholder="0.00"
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                    dir="ltr"
-                  />
-                </div>
-              </div>
-
-              {/* وحدات بيع إضافية (اختياري) */}
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 p-3 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Boxes size={15} className="text-indigo-500" />
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      وحدات بيع إضافية (اختياري)
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addAdditionalUnitRow}
-                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition"
-                  >
-                    <Plus size={13} />
-                    إضافة وحدة
-                  </button>
-                </div>
-
-                {(newProductForm.additionalUnits || []).length === 0 ? (
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 py-0.5">
-                    لا توجد وحدات إضافية. اضغط «+ إضافة وحدة» لإضافة كرتونة، علبة، بكت... بنسبة تحويل وسعر خاص.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {(newProductForm.additionalUnits || []).map((u, idx) => (
-                      <div
-                        key={u.id || idx}
-                        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 space-y-2 shadow-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                            وحدة إضافية #{idx + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeAdditionalUnitRow(u.id)}
-                            className="rounded p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                            title="حذف هذه الوحدة"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                              اسم الوحدة *
-                            </label>
-                            <input
-                              type="text"
-                              list="unit-presets-modal"
-                              required
-                              value={u.unit_name}
-                              onChange={(e) => updateAdditionalUnitRow(u.id, 'unit_name', e.target.value)}
-                              placeholder="مثال: كرتونة"
-                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                            />
-                            <datalist id="unit-presets-modal">
-                              {COMMON_UNIT_PRESETS.map((preset) => (
-                                <option key={preset} value={preset} />
-                              ))}
-                            </datalist>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5" title="كم قطعة من الوحدة الأساسية تعادل هذه الوحدة">
-                              نسبة التحويل *
-                            </label>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0.001"
-                              required
-                              value={u.conversion_factor}
-                              onChange={(e) => updateAdditionalUnitRow(u.id, 'conversion_factor', e.target.value)}
-                              placeholder="مثال: 24"
-                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                              dir="ltr"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                              سعر البيع (₪) *
-                            </label>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              required
-                              value={u.sale_price}
-                              onChange={(e) => updateAdditionalUnitRow(u.id, 'sale_price', e.target.value)}
-                              placeholder="0.00"
-                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                              dir="ltr"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                              الباركود (اختياري)
-                            </label>
-                            <input
-                              type="text"
-                              value={u.barcode}
-                              onChange={(e) => updateAdditionalUnitRow(u.id, 'barcode', e.target.value)}
-                              placeholder="باركود الوحدة..."
-                              className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-xs font-mono text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                              dir="ltr"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 1. سعر التكلفة (شيكل) * + 2. الكمية الافتتاحية بالمخزون * */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    سعر التكلفة (شيكل) *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    required
-                    value={newProductForm.costPrice}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, costPrice: e.target.value }))}
-                    placeholder="0.00"
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                    dir="ltr"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    الكمية الافتتاحية بالمخزون *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    required
-                    value={newProductForm.initialStock}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, initialStock: e.target.value }))}
-                    placeholder="0"
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                    dir="ltr"
-                  />
-                </div>
-              </div>
-
-              {/* 3. حد أدنى تنبيه المخزون (اختياري) + 5. تاريخ انتهاء الصلاحية (اختياري) */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    حد أدنى تنبيه المخزون (اختياري)
-                  </label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={newProductForm.minStockAlert}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, minStockAlert: e.target.value }))}
-                    placeholder="5"
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                    dir="ltr"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    تاريخ انتهاء الصلاحية (اختياري)
-                  </label>
-                  <input
-                    type="date"
-                    value={newProductForm.expiryDate}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, expiryDate: e.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* 4. المورد (اختياري) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  المورد (اختياري)
-                </label>
-                <div className="relative">
-                  <Truck className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                  <select
-                    value={newProductForm.supplierId}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, supplierId: e.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pr-9 pl-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="">— بدون مورد محدد (اختياري) —</option>
-                    {suppliersList.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} {s.phone ? `(${s.phone})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* القسم / التصنيف (اختياري) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  القسم / التصنيف (اختياري)
-                </label>
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={newProductForm.category}
-                    onChange={(e) => setNewProductForm((p) => ({ ...p, category: e.target.value }))}
-                    placeholder="اكتب القسم أو اختر من الأدنى..."
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-200 focus:border-indigo-500 focus:outline-none"
-                  />
-                  {/* أزرار خيارات سريعة للتصنيف */}
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {['مواد غذائية', 'مشروبات', 'ألبان وأجبان', 'منظفات', 'حلويات', 'خضار'].map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setNewProductForm((p) => ({ ...p, category: cat }))}
-                        className={`text-[10px] px-2 py-0.5 rounded-lg border transition ${
-                          newProductForm.category === cat
-                            ? 'bg-indigo-600 border-indigo-600 text-white font-bold'
-                            : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* أزرار الإجراءات */}
-              <div className="flex items-center gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleCancelNewProduct}
-                  className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingNewProduct}
-                  className="flex-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 py-2.5 px-4 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-                >
-                  <Plus size={15} />
-                  <span>
-                    {savingNewProduct
-                      ? 'جاري الحفظ...'
-                      : newProductModal.isInventoryOnly
-                      ? 'حفظ في المخزون ✓'
-                      : 'حفظ وإضافة للفاتورة ✓'}
-                  </span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ProductFormModal
+          isOpen={Boolean(newProductModal)}
+          mode="add"
+          initialBarcode={newProductModal.barcode || ''}
+          isInventoryOnly={Boolean(newProductModal.isInventoryOnly)}
+          suppliers={suppliersList}
+          onClose={handleCancelNewProduct}
+          onSuccess={handleNewProductSuccess}
+        />
       )}
 
       {/* ─────────────────────────────────────────────────────────────
@@ -3917,21 +4305,67 @@ export default function SupermarketPOS() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          مودال تعديل الصنف (AddProductModal)
+          مودال تعديل الصنف (ProductFormModal)
          ───────────────────────────────────────────────────────────── */}
-      <AddProductModal
+      <ProductFormModal
         isOpen={editProductModalOpen}
+        mode="edit"
+        product={editingProductItem}
+        suppliers={suppliersList}
         onClose={() => {
-          setEditProductPendingImage(null);
           setEditProductModalOpen(false);
+          setEditingProductItem(null);
         }}
-        editingItem={editingProductItem}
-        formData={editProductFormData}
-        setFormData={setEditProductFormData}
-        onSubmit={handleSaveProductEdit}
-        onImageFileSelect={setEditProductPendingImage}
-        saving={savingProductEdit}
-        brandGroupOptions={brandGroupOptions}
+        onSuccess={handleProductEditSuccess}
+        onDelete={handleProductDeleteSuccess}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          مودال البحث الشامل عن صنف في المخزون (ProductSearchModal)
+         ───────────────────────────────────────────────────────────── */}
+      <ProductSearchModal
+        isOpen={productSearchModalOpen}
+        onClose={() => {
+          setProductSearchModalOpen(false);
+          setTimeout(() => barcodeInputRef.current?.focus(), 60);
+        }}
+        onSelectProduct={handleSelectProductFromSearch}
+        storeId={store?.id}
+        onAddNewProduct={(searchQuery) => {
+          setProductSearchModalOpen(false);
+          openNewProductModal(searchQuery);
+        }}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          مودال الفواتير المعلّقة (HeldInvoicesModal)
+         ───────────────────────────────────────────────────────────── */}
+      <HeldInvoicesModal
+        isOpen={heldInvoicesModalOpen}
+        onClose={() => {
+          setHeldInvoicesModalOpen(false);
+          setTimeout(() => barcodeInputRef.current?.focus(), 60);
+        }}
+        heldInvoices={heldInvoices}
+        hasCurrentActiveItems={orderItems.length > 0}
+        onDirectRestore={handleDirectRestoreHeldInvoice}
+        onHoldCurrentAndRestore={handleHoldCurrentAndRestore}
+        onDiscardCurrentAndRestore={handleDiscardCurrentAndRestore}
+        onDeleteHeld={handleDeleteHeldInvoice}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          مودال آخر فواتير الشيفت وإرجاع الأصناف (RecentInvoicesModal)
+         ───────────────────────────────────────────────────────────── */}
+      <RecentInvoicesModal
+        isOpen={recentInvoicesModalOpen}
+        onClose={() => {
+          setRecentInvoicesModalOpen(false);
+          setTimeout(() => barcodeInputRef.current?.focus(), 60);
+        }}
+        invoices={shiftRecentInvoices}
+        loading={loadingRecentInvoices}
+        onReturnItem={handleReturnItemFromSale}
       />
     </div>
   );

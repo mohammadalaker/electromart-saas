@@ -321,8 +321,11 @@ export default function ImportProductsModal({ storeId, onClose, onImported }) {
               <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                 استيراد مخزون من إكسل
               </h3>
-              <p className="text-xs font-bold text-slate-400">
-                إدخال الأصناف والمخزون دفعة واحدة مع احتساب أسعار البيع تلقائياً
+              <p className="text-xs font-bold text-slate-400 flex items-center gap-1.5 flex-wrap">
+                <span>إدخال الأصناف والمخزون دفعة واحدة للمتجر</span>
+                <code className="text-[11px] font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold" dir="ltr">
+                  ID: {storeId}
+                </code>
               </p>
             </div>
           </div>

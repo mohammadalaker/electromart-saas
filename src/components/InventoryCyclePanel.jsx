@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, memo } from 'react';
 import { Camera, Loader2, CalendarClock, ChevronDown } from 'lucide-react';
 import {
   fetchCycleSettings,
@@ -16,7 +16,7 @@ const INTERVAL_OPTIONS = [
 /**
  * لوحة جرد دوري: إعدادات لقطات تلقائية + زر لقطة يدوية.
  */
-export default function InventoryCyclePanel({ storeId }) {
+function InventoryCyclePanel({ storeId }) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -213,3 +213,5 @@ export default function InventoryCyclePanel({ storeId }) {
     </div>
   );
 }
+
+export default memo(InventoryCyclePanel);

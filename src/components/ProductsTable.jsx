@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pencil, Trash2, ShoppingCart, Package } from 'lucide-react';
 import StorageObjectImage from './StorageObjectImage';
 import { roundMoney } from '../utils/productModel';
@@ -6,7 +7,7 @@ import { getProductTypeLabel } from '../utils/productTypes';
 /**
  * جدول منتجات أنيق — RTL، ظلال ناعمة، زوايا مستديرة 2xl
  */
-export default function ProductsTable({
+function ProductsTable({
   items,
   getStockStatus,
   isElectricalGroup,
@@ -19,7 +20,7 @@ export default function ProductsTable({
 }) {
   return (
     <div
-      className="rounded-2xl border border-white/20 dark:border-gray-700/30 bg-white/80 dark:bg-gray-900/50 backdrop-blur-md shadow-[0_4px_32px_-8px_rgba(15,23,42,0.12),0_0_0_1px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_32px_-8px_rgba(0,0,0,0.4)] overflow-hidden"
+      className="rounded-2xl border border-white/20 dark:border-gray-700/30 bg-white/80 dark:bg-gray-900/50 backdrop-blur-md shadow-[0_4px_32px_-8px_rgba(15,23,42,0.12),0_0_0_1px_rgba(15,23,42,0.03)] dark:shadow-[0_4px_32px_-8px_rgba(0,0,0,0.4)] overflow-hidden min-h-[500px] flex flex-col"
       dir="rtl"
     >
       <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-700/40 bg-gradient-to-l from-slate-50/80 to-white dark:from-slate-800/80 dark:to-gray-900/20">
@@ -62,9 +63,9 @@ export default function ProductsTable({
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={showSalesColumn ? 12 : 11} className="py-16 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={showSalesColumn ? 12 : 11} className="py-28 text-center text-slate-500 dark:text-slate-400">
                   <Package className="mx-auto mb-3 text-slate-300 dark:text-slate-600" size={40} />
-                  <p className="font-medium">لا توجد أصناف مطابقة للبحث أو الفلتر</p>
+                  <p className="font-medium text-sm">لا توجد أصناف مطابقة للبحث أو الفلتر</p>
                 </td>
               </tr>
             ) : (
@@ -221,3 +222,5 @@ export default function ProductsTable({
     </div>
   );
 }
+
+export default memo(ProductsTable);

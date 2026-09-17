@@ -107,8 +107,9 @@ export default function SignUp() {
     const { error: storeError } = await supabase.from('stores').insert({
       name: storeName.trim(),
       owner_id: user.id,   // FK → auth.users.id  (the SaaS ownership link)
-      plan: 'trial',
-      trial_ends_at: trialEndsAt,
+      plan: 'business',
+      is_active: true,
+      trial_ends_at: null,
     });
 
     if (storeError) {

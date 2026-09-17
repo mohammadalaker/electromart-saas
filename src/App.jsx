@@ -48,7 +48,8 @@ import DashboardLayout from './components/DashboardLayout';
 import StatsBar from './components/StatsBar';
 import ProductsTable from './components/ProductsTable';
 import ProductCard from './components/ProductCard';
-import AddProductModal from './components/AddProductModal';
+import InventorySearchBar from './components/InventorySearchBar';
+import ProductFormModal from './components/ProductFormModal';
 import StorageObjectImage from './components/StorageObjectImage';
 import PrintInvoice from './components/PrintInvoice';
 import { createPortal } from 'react-dom';
@@ -159,6 +160,9 @@ function App() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const handleSearchChange = useCallback((term) => {
+    setSearch(term);
+  }, []);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -420,21 +424,69 @@ function App() {
     return () => observer.disconnect();
   }, [hasMore, loadingMore, items.length]);
 
-  const searchedItems = search.trim()
-    ? (() => {
-        const q = search.trim().toLowerCase();
-        return items.filter((i) => {
-          const typeLabel = getProductTypeLabel(i.productType || '').toLowerCase();
-          return (
-            (i.name || '').toLowerCase().includes(q) ||
-            (i.barcode || '').toString().toLowerCase().includes(q) ||
-            (i.reference || '').toString().toLowerCase().includes(q) ||
-            (i.group || '').toLowerCase().includes(q) ||
-            (typeLabel && typeLabel.includes(q))
-          );
-        });
-      })()
-    : items;
+  const [serverSearchResults, setServerSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // استعلام مباشر من قاعدة البيانات لكافة الـ 10,715 صنفاً حتى تظهر الأصناف ذات الرصيد 0 وغير المحمّلة محلياً فور البحث
+  useEffect(() => {
+    const raw = normalizeDigitsToLatin(String(search || '').trim());
+    if (!raw || raw.length < 2 || !store?.id) {
+      setServerSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const { data, error } = await runProductsSelectWithFallback((sel) =>
+          supabase
+            .from(PRODUCTS_TABLE)
+            .select(sel)
+            .eq('store_id', store.id)
+            .or(`eng_name.ilike.%${raw}%,barcode.ilike.%${raw}%,reference.ilike.%${raw}%,brand_group.ilike.%${raw}%`)
+            .limit(100)
+        );
+        if (!cancelled && !error && data) {
+          setServerSearchResults(data.map(normalizeItemFromSupabase).filter(Boolean));
+        }
+      } catch (err) {
+        console.error('App server search error:', err);
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search, store?.id]);
+
+  const searchedItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+
+    // 1. الأصناف المطابقة محلياً في الذاكرة
+    const localMatches = items.filter((i) => {
+      const typeLabel = getProductTypeLabel(i.productType || '').toLowerCase();
+      return (
+        (i.name || '').toLowerCase().includes(q) ||
+        (i.barcode || '').toString().toLowerCase().includes(q) ||
+        (i.reference || '').toString().toLowerCase().includes(q) ||
+        (i.group || '').toLowerCase().includes(q) ||
+        (typeLabel && typeLabel.includes(q))
+      );
+    });
+
+    // 2. دمج نتائج السيرفر بدون تكرار
+    const map = new Map();
+    localMatches.forEach((i) => map.set(i.id || i.barcode, i));
+    serverSearchResults.forEach((i) => map.set(i.id || i.barcode, i));
+
+    return Array.from(map.values());
+  }, [search, items, serverSearchResults]);
 
   const groupFilteredSearchedItems = useMemo(() => {
     if (!inventoryGroupFilter) return searchedItems;
@@ -1177,51 +1229,12 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
   const openAddModal = () => {
     setEditingItem(null);
     setPendingImageFile(null);
-    setFormData({
-      barcode: '',
-      reference: '',
-      brand_group: '',
-      name: '',
-      product_type: '',
-      appliance_size: '',
-      purchase_price: '',
-      price: '',
-      price_after_disc: '',
-      stock_count: '',
-      warranty_months: '',
-      image_url: '',
-    });
     setModalOpen(true);
   };
 
   const openEditModal = (item) => {
     setEditingItem(item);
     setPendingImageFile(null);
-    setFormData({
-      barcode: item.barcode || '',
-      reference: item.reference ?? '',
-      brand_group: item.group || '',
-      name: item.name || '',
-      product_type: productTypeToFormDisplay(item.productType || ''),
-      appliance_size: item.applianceSize || '',
-      purchase_price:
-        item.purchasePrice != null && item.purchasePrice !== ''
-          ? String(item.purchasePrice)
-          : '',
-      price:
-        item.price != null && item.price !== '' ? String(item.price) : '',
-      price_after_disc:
-        item.priceAfterDiscount != null && item.priceAfterDiscount !== ''
-          ? String(item.priceAfterDiscount)
-          : '',
-      stock_count:
-        item.stock != null && item.stock !== '' ? String(item.stock) : '',
-      warranty_months:
-        item.warrantyMonths != null && item.warrantyMonths !== ''
-          ? String(item.warrantyMonths)
-          : '',
-      image_url: item.image || '',
-    });
     setModalOpen(true);
   };
 
@@ -1233,29 +1246,6 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
     barcodeDeepLinkHandled.current = true;
     setEditingItem(item);
     setPendingImageFile(null);
-    setFormData({
-      barcode: item.barcode || '',
-      reference: item.reference ?? '',
-      brand_group: item.group || '',
-      name: item.name || '',
-      product_type: productTypeToFormDisplay(item.productType || ''),
-      appliance_size: item.applianceSize || '',
-      purchase_price:
-        item.purchasePrice != null && item.purchasePrice !== ''
-          ? String(item.purchasePrice)
-          : '',
-      price: item.price != null && item.price !== '' ? String(item.price) : '',
-      price_after_disc:
-        item.priceAfterDiscount != null && item.priceAfterDiscount !== ''
-          ? String(item.priceAfterDiscount)
-          : '',
-      stock_count: item.stock != null && item.stock !== '' ? String(item.stock) : '',
-      warranty_months:
-        item.warrantyMonths != null && item.warrantyMonths !== ''
-          ? String(item.warrantyMonths)
-          : '',
-      image_url: item.image || '',
-    });
     setModalOpen(true);
     const next = new URLSearchParams(searchParams);
     next.delete('barcode');
@@ -1444,17 +1434,13 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
               {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             </span>
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:min-w-[120px]">
-              <div className="relative min-w-[120px] max-w-xs flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-indigo-400" size={14} aria-hidden />
-                <input
-                  type="text"
-                  placeholder="بحث بالاسم، الباركود، المجموعة…"
-                  value={search}
-                  dir="ltr"
-                  onChange={(e) => setSearch(normalizeDigitsToLatin(e.target.value))}
-                  className="w-full min-w-0 rounded-xl border border-slate-200 bg-white/95 py-2 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 dark:border-white/10 dark:bg-slate-900/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-400/50 dark:focus:ring-indigo-500/20"
-                />
-              </div>
+              <InventorySearchBar
+                value={search}
+                onSearch={handleSearchChange}
+                loading={searchLoading}
+                placeholder="بحث بالاسم، الباركود، المجموعة…"
+                debounceMs={250}
+              />
               {/* تبديل طريقة العرض */}
               <div className="flex shrink-0 bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl gap-1">
                 <button
@@ -1648,19 +1634,22 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
               <InventoryCyclePanel storeId={store?.id} />
               <StatsBar
                 items={items}
-                itemsForOutOfStockCount={searchedItems}
+                itemsForOutOfStockCount={items}
                 loading={loading}
                 salesTodayNis={salesTodayNis}
               />
 
               {loading ? (
-                <div className="flex justify-center py-20">
+                <div className="flex justify-center py-20 min-h-[500px] items-center">
                   <Loader2 className="animate-spin text-indigo-500" size={40} />
                 </div>
               ) : viewMode === 'grid' ? (
-                <div className="pb-8 px-4">
+                <div className="pb-8 px-4 min-h-[550px]">
                   {orderedDisplayItems.length === 0 ? (
-                    <p className="text-center text-slate-400 dark:text-slate-500 py-20 font-bold">لا توجد منتجات</p>
+                    <div className="text-center py-28 text-slate-400 dark:text-slate-500 font-bold">
+                      <Package className="mx-auto mb-3 text-slate-300 dark:text-slate-600" size={40} />
+                      <p>لا توجد منتجات مطابقة للبحث أو الفلتر</p>
+                    </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                       {orderedDisplayItems.map((item) => (
@@ -1677,7 +1666,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
                   )}
                 </div>
               ) : (
-                <div className="pb-8">
+                <div className="pb-8 min-h-[550px]">
                   <ProductsTable
                     items={orderedDisplayItems}
                     getStockStatus={getStockStatus}
@@ -2119,19 +2108,20 @@ body{font-family:'DM Sans',system-ui,sans-serif;padding:28px;max-width:720px;mar
         </div>
       )}
 
-      <AddProductModal
+      <ProductFormModal
         isOpen={modalOpen}
+        mode={editingItem ? 'edit' : 'add'}
+        product={editingItem}
         onClose={() => {
-          setPendingImageFile(null);
           setModalOpen(false);
+          setEditingItem(null);
         }}
-        editingItem={editingItem}
-        formData={formData}
-        setFormData={setFormData}
-        onSubmit={handleSubmit}
-        onImageFileSelect={handleImageFileSelect}
-        saving={saving}
-        brandGroupOptions={allGroups}
+        onSuccess={() => {
+          if (store?.id) fetchProducts(store.id);
+        }}
+        onDelete={() => {
+          if (store?.id) fetchProducts(store.id);
+        }}
       />
     </div>
     </DashboardLayout>
