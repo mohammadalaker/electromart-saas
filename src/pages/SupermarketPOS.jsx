@@ -21,6 +21,7 @@ import {
   Scale,
   Receipt,
   DollarSign,
+  Banknote,
   CreditCard,
   Tag,
   Store,
@@ -156,6 +157,36 @@ function playCashChime() {
   } catch {
     /* ignore */
   }
+}
+
+function getFieldStatusClass(val, type = 'number') {
+  const str = val == null ? '' : String(val).trim();
+  if (str === '') {
+    return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
+  }
+  const num = parseFloat(str.replace(',', '.'));
+  if (type === 'qty') {
+    if (isNaN(num) || num <= 0) {
+      return 'border-red-400 bg-red-50/50 text-red-700 dark:border-red-500/80 dark:bg-red-950/40 dark:text-red-300 font-bold';
+    }
+    return 'border-emerald-400 bg-emerald-50/20 text-emerald-950 dark:border-emerald-500/70 dark:bg-emerald-950/20 dark:text-emerald-200 font-black';
+  }
+  if (type === 'price') {
+    if (isNaN(num) || num <= 0) {
+      return 'border-red-400 bg-red-50/50 text-red-700 dark:border-red-500/80 dark:bg-red-950/40 dark:text-red-300 font-bold';
+    }
+    return 'border-emerald-400 bg-emerald-50/20 text-emerald-950 dark:border-emerald-500/70 dark:bg-emerald-950/20 dark:text-emerald-200 font-black';
+  }
+  if (type === 'discount') {
+    if (isNaN(num) || num < 0) {
+      return 'border-red-400 bg-red-50/50 text-red-700 dark:border-red-500/80 dark:bg-red-950/40 dark:text-red-300 font-bold';
+    }
+    if (num > 0) {
+      return 'border-emerald-400 bg-emerald-50/20 text-emerald-950 dark:border-emerald-500/70 dark:bg-emerald-950/20 dark:text-emerald-200 font-black';
+    }
+    return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold';
+  }
+  return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
 }
 
 // أقسام السوبرماركت السريعة الافتراضية
@@ -1726,11 +1757,6 @@ export default function SupermarketPOS() {
     return roundMoney(paid - invoiceTotals.payable);
   }, [tenderedAmount, invoiceTotals.payable]);
 
-  // تعبئة سريعة لفئات النقدية
-  const setQuickCash = (amt) => {
-    setTenderedAmount(String(amt));
-    setTimeout(() => barcodeInputRef.current?.focus(), 30);
-  };
 
   // ─────────────────────────────────────────────────────────────
   // 5.5 إدارة الفواتير المعلّقة (Hold / Park Sales)
@@ -3293,17 +3319,17 @@ export default function SupermarketPOS() {
                 </div>
               ) : (
                 <table className="w-full text-right text-xs border-collapse table-fixed">
-                  <thead className="sticky top-0 z-10 border-b border-slate-200 dark:border-white/10 bg-slate-100/95 dark:bg-slate-900/95 text-slate-600 dark:text-slate-300 font-bold uppercase backdrop-blur-md">
-                    <tr>
-                      <th className="py-2.5 px-1.5 w-10 text-center">#</th>
-                      <th className="py-2.5 px-2 w-28">الباركود</th>
-                      <th className="py-2.5 px-3">اسم المنتج</th>
-                      <th className="py-2.5 px-1 w-20 text-center">الوحدة</th>
-                      <th className="py-2.5 px-1 w-28 text-center">الكمية</th>
-                      <th className="py-2.5 px-1 w-20 text-center">السعر</th>
-                      <th className="py-2.5 px-1 w-16 text-center">الخصم</th>
-                      <th className="py-2.5 px-2 w-24 text-left font-black text-slate-800 dark:text-slate-200">الإجمالي</th>
-                      <th className="py-2.5 px-1 w-10 text-center">حذف</th>
+                  <thead className="sticky top-0 z-10 bg-indigo-600 text-white border-b border-indigo-700 select-none shadow-xs">
+                    <tr className="bg-indigo-600 text-white border-b border-indigo-700 text-xs font-black select-none shadow-xs">
+                      <th className="bg-indigo-600 text-white py-2.5 px-1.5 w-10 text-center font-black">#</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-2 w-28 font-black">الباركود</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-3 font-black">اسم المنتج</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-1 w-20 text-center font-black">الوحدة</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-1 w-28 text-center font-black">الكمية</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-1 w-20 text-center font-black">السعر</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-1 w-16 text-center font-black">الخصم</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-2 w-24 text-left font-black">الإجمالي</th>
+                      <th className="bg-indigo-600 text-white py-2.5 px-1 w-10 text-center font-black">حذف</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -3340,7 +3366,7 @@ export default function SupermarketPOS() {
                             value={line.name}
                             title={line.name}
                             onChange={(e) => updateLineDirect(line.id, 'name', e.target.value)}
-                            className="w-full bg-transparent font-bold text-slate-800 dark:text-slate-100 text-sm truncate focus:bg-slate-100 dark:focus:bg-slate-800/80 focus:px-2 focus:py-1 rounded-lg outline-none transition"
+                            className="w-full bg-transparent font-bold text-slate-800 dark:text-slate-100 text-sm truncate focus:bg-white dark:focus:bg-slate-800 focus:px-2 focus:py-1 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 rounded-lg outline-none transition"
                           />
                         </td>
 
@@ -3361,7 +3387,7 @@ export default function SupermarketPOS() {
                               <select
                                 value={line.unit}
                                 onChange={(e) => handleUnitChange(line.id, e.target.value)}
-                                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/90 px-1 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 text-center cursor-pointer hover:border-indigo-400 transition"
+                                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/90 px-1 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 text-center cursor-pointer hover:border-indigo-400 transition"
                               >
                                 {list.map((uName) => {
                                   const uObj = extraUnits.find((eu) => eu.unit_name === uName);
@@ -3377,7 +3403,7 @@ export default function SupermarketPOS() {
                           })()}
                         </td>
 
-                        {/* الكمية (تعديل مباشر + أزرار زيادة ونقصان) */}
+                        {/* الكمية (تعديل مباشر + أزرار زيادة ونقصان مع ترميز لوني) */}
                         <td className="py-2.5 px-1 w-28 text-center">
                           <div className="flex items-center justify-center gap-1">
                             <button
@@ -3393,7 +3419,7 @@ export default function SupermarketPOS() {
                               min="0.001"
                               value={line.qty}
                               onChange={(e) => updateLineDirect(line.id, 'qty', e.target.value)}
-                              className="w-12 h-6 text-center font-mono font-bold text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:border-indigo-500 focus:outline-none"
+                              className={`w-14 h-7 text-center font-mono font-black text-xs rounded-lg border outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all ${getFieldStatusClass(line.qty, 'qty')}`}
                               dir="ltr"
                             />
                             <button
@@ -3406,7 +3432,7 @@ export default function SupermarketPOS() {
                           </div>
                         </td>
 
-                        {/* السعر الفردي (تعديل مباشر) */}
+                        {/* السعر الفردي (تعديل مباشر مع ترميز لوني) */}
                         <td className="py-2.5 px-1 w-20 text-center">
                           <input
                             type="number"
@@ -3414,12 +3440,12 @@ export default function SupermarketPOS() {
                             min="0"
                             value={line.unitPrice}
                             onChange={(e) => updateLineDirect(line.id, 'unitPrice', e.target.value)}
-                            className="w-16 h-6 text-center font-mono font-bold text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-indigo-600 dark:text-indigo-300 focus:border-indigo-500 focus:outline-none mx-auto block"
+                            className={`w-16 h-7 text-center font-mono font-black text-xs rounded-lg border outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all mx-auto block ${getFieldStatusClass(line.unitPrice, 'price')}`}
                             dir="ltr"
                           />
                         </td>
 
-                        {/* الخصم (تعديل مباشر) */}
+                        {/* الخصم (تعديل مباشر مع ترميز لوني) */}
                         <td className="py-2.5 px-1 w-16 text-center">
                           <input
                             type="number"
@@ -3427,7 +3453,7 @@ export default function SupermarketPOS() {
                             min="0"
                             value={line.discount}
                             onChange={(e) => updateLineDirect(line.id, 'discount', e.target.value)}
-                            className="w-14 h-6 text-center font-mono font-bold text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-rose-600 dark:text-rose-400 focus:border-rose-500 focus:outline-none mx-auto block"
+                            className={`w-14 h-7 text-center font-mono font-bold text-xs rounded-lg border outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all mx-auto block ${getFieldStatusClass(line.discount, 'discount')}`}
                             dir="ltr"
                           />
                         </td>
@@ -3451,56 +3477,118 @@ export default function SupermarketPOS() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot className="sticky bottom-0 z-10 select-none shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                    <tr className="bg-indigo-50/95 dark:bg-indigo-950/90 border-t-2 border-indigo-300 dark:border-indigo-800 text-xs font-bold text-indigo-950 dark:text-indigo-100 backdrop-blur-md">
+                      <td colSpan={4} className="py-2.5 px-3 text-right">
+                        <span className="font-black text-indigo-900 dark:text-indigo-200">
+                          مجموع بنود الفاتورة ({orderItems.length} بنود)
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-1 text-center font-black font-mono text-indigo-950 dark:text-white text-xs" dir="ltr">
+                        {invoiceTotals.totalUnits}
+                      </td>
+                      <td className="py-2.5 px-1 text-center font-mono text-slate-400">
+                        —
+                      </td>
+                      <td className="py-2.5 px-1 text-center font-bold font-mono text-rose-600 dark:text-rose-400" dir="ltr">
+                        {invoiceTotals.totalDiscount > 0 ? `-₪${invoiceTotals.totalDiscount}` : '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-left font-black font-mono text-indigo-950 dark:text-indigo-100 whitespace-nowrap text-sm" dir="ltr">
+                        {invoiceTotals.payable} ₪
+                      </td>
+                      <td className="py-2.5 px-1 text-center" />
+                    </tr>
+                  </tfoot>
                 </table>
               )}
             </div>
           </section>
 
           {/* 2. شريط الإجماليات والدفع السريع (Prominent Totals & Checkout Sidebar) */}
-          <section className="flex w-[380px] shrink-0 flex-col border-r border-slate-200/90 dark:border-white/10 dark:border-r-indigo-500/20 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-5 justify-between transition-colors shadow-[-4px_0_24px_-4px_rgba(0,0,0,0.06)] dark:shadow-[-4px_0_30px_-4px_rgba(0,0,0,0.5)]">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-3">
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">إجماليات الفاتورة والدفع</h3>
-                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+          <section className="flex w-[390px] shrink-0 flex-col border-r border-slate-200/90 dark:border-white/10 dark:border-r-indigo-500/20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-6 justify-between transition-colors shadow-[-4px_0_24px_-4px_rgba(0,0,0,0.06)] dark:shadow-[-4px_0_30px_-4px_rgba(0,0,0,0.5)]">
+            <div className="space-y-5 overflow-y-auto custom-scrollbar pr-0.5">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-3.5">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">إجماليات الفاتورة والدفع</h3>
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200/60 dark:border-slate-700/60">
                   {orderItems.length} بنود
                 </span>
               </div>
 
-              {/* تفاصيل المجموع والخصم */}
-              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/90 dark:bg-slate-950/60 p-4 space-y-2 text-xs">
-                <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                  <span>المجموع الفرعي:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{invoiceTotals.subtotal} ₪</span>
+              {/* تفاصيل المجموع والخصم والكمية */}
+              <div className="rounded-2xl border border-indigo-200/80 dark:border-indigo-800/80 bg-indigo-50/90 dark:bg-indigo-950/40 p-4 space-y-2.5 text-xs shadow-xs backdrop-blur-sm transition-all text-indigo-950 dark:text-indigo-100">
+                <div className="flex items-center justify-between text-indigo-950 dark:text-indigo-200">
+                  <span className="flex items-center gap-2 font-bold">
+                    <Receipt size={15} className="text-indigo-600 dark:text-indigo-400" />
+                    <span>المجموع الفرعي:</span>
+                  </span>
+                  <span className="font-mono font-black text-indigo-950 dark:text-indigo-100 text-sm">
+                    {invoiceTotals.subtotal} <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">₪</span>
+                  </span>
                 </div>
                 {invoiceTotals.totalDiscount > 0 && (
-                  <div className="flex justify-between text-rose-600 dark:text-rose-400">
-                    <span>إجمالي الخصم:</span>
-                    <span className="font-mono font-bold">-{invoiceTotals.totalDiscount} ₪</span>
+                  <div className="flex items-center justify-between rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50/80 dark:bg-amber-950/40 px-3 py-2 text-amber-900 dark:text-amber-200 shadow-xs">
+                    <span className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                      <Tag size={13} />
+                      <span>إجمالي الخصم:</span>
+                    </span>
+                    <span className="font-mono font-black text-sm text-rose-600 dark:text-rose-400">
+                      -{invoiceTotals.totalDiscount} ₪
+                    </span>
                   </div>
                 )}
-                <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                  <span>الكمية الإجمالية:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{invoiceTotals.totalUnits}</span>
+                <div className="flex items-center justify-between text-indigo-900 dark:text-indigo-200 border-t border-indigo-200/60 dark:border-indigo-900/60 pt-2">
+                  <span className="font-bold">الكمية الإجمالية:</span>
+                  <span className="font-mono font-black text-indigo-950 dark:text-white bg-indigo-200/70 dark:bg-indigo-900/60 px-2.5 py-0.5 rounded-lg text-xs">
+                    {invoiceTotals.totalUnits}
+                  </span>
                 </div>
               </div>
 
-              {/* ── المبلغ المطلوب سداده (خط عريض وبارز جداً) ── */}
-              <div className={`rounded-3xl border-2 ${activeTheme.totalBox} p-5 text-center transition-all`}>
-                <span className={`block text-xs font-bold ${activeTheme.totalLabel} mb-1 uppercase tracking-wider`}>
-                  المبلغ المطلوب سداده
-                </span>
-                <div className="text-4xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight">
-                  {invoiceTotals.payable} <span className="text-2xl font-bold text-emerald-500">₪</span>
+              {/* ── بطاقة "المبلغ المطلوب سداده" (الصافي النهائي) ── */}
+              <div className="relative overflow-hidden rounded-3xl border-2 border-emerald-400 dark:border-emerald-500/80 bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-700 p-6 text-center text-white shadow-2xl shadow-indigo-500/30 ring-2 ring-emerald-400/20 transition-all select-none">
+                {/* أيقونات زخرفية مائية شفافة في الزوايا */}
+                <Receipt className="absolute -left-4 -bottom-4 w-32 h-32 text-white/[0.08] pointer-events-none -rotate-12" />
+                <Sparkles className="absolute -right-3 -top-3 w-24 h-24 text-white/[0.08] pointer-events-none rotate-12" />
+
+                {/* شارة العنوان */}
+                <div className="relative z-10 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-100 uppercase tracking-wider mb-2.5 bg-white/15 px-4 py-1.5 rounded-full backdrop-blur-md border border-white/20 shadow-xs">
+                  <Sparkles size={13} className="text-amber-300" />
+                  <span>المبلغ المطلوب سداده</span>
+                </div>
+
+                {/* الرقم بحجم كبير جداً 6xl وعريض باللون الأبيض */}
+                <div className="relative z-10 flex items-baseline justify-center gap-2 font-mono tracking-tight text-white py-1">
+                  <span className="text-6xl font-black drop-shadow-md">
+                    {invoiceTotals.payable}
+                  </span>
+                  <span className="text-2xl font-black text-indigo-200">
+                    ₪
+                  </span>
                 </div>
               </div>
 
-              {/* ── المبلغ المدفوع من الزبون (Input يدخله الكاشير) ── */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  المبلغ المدفوع كاش (استلام من الزبون):
-                </label>
+              {/* ── حقل "المبلغ المدفوع كاش" (مساحة أكبر كنقطة إدخال وحيدة) ── */}
+              <div className="rounded-3xl border-2 border-slate-200/90 dark:border-white/10 bg-slate-50/80 dark:bg-slate-950/60 p-6 space-y-3 shadow-xs backdrop-blur-sm transition-all">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <span className="flex items-center gap-2">
+                    <Coins size={17} className="text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-sm font-black">المبلغ المدفوع كاش:</span>
+                  </span>
+                  {tenderedAmount && (
+                    <button
+                      type="button"
+                      onClick={() => setTenderedAmount('')}
+                      className="text-xs font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 px-2.5 py-1 rounded-xl border border-rose-200/60 dark:border-rose-900/50 transition shadow-xs"
+                    >
+                      مسح المبلغ
+                    </button>
+                  )}
+                </div>
+
                 <div className="relative">
-                  <Coins className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 font-bold text-xl font-mono pointer-events-none select-none">
+                    ₪
+                  </span>
                   <input
                     type="number"
                     step="any"
@@ -3508,55 +3596,85 @@ export default function SupermarketPOS() {
                     value={tenderedAmount}
                     onChange={(e) => setTenderedAmount(e.target.value)}
                     placeholder={String(invoiceTotals.payable)}
-                    className={`w-full h-12 rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950/80 pr-11 pl-4 text-xl font-mono font-black text-slate-900 dark:text-white ${activeTheme.inputFocus} focus:outline-none focus:ring-2`}
+                    className="w-full h-16 rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pr-11 pl-4 text-2xl font-mono font-black text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition shadow-inner"
                     dir="ltr"
                   />
                 </div>
-
-                {/* أزرار الفئات النقدية السريعة */}
-                <div className="grid grid-cols-4 gap-1.5 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setQuickCash(invoiceTotals.payable)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
-                  >
-                    بالضبط
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickCash(50)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
-                  >
-                    50 ₪
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickCash(100)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
-                  >
-                    100 ₪
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuickCash(200)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100/90 dark:bg-slate-800/80 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-emerald-300 dark:hover:border-emerald-500/40 transition shadow-xs"
-                  >
-                    200 ₪
-                  </button>
-                </div>
               </div>
 
-              {/* ── الباقي للزبون (يُحسب تلقائياً) ── */}
-              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/90 dark:bg-slate-950/60 p-4">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الباقي للزبون:</span>
-                  <span
-                    className={`text-2xl font-black font-mono ${
-                      changeDue >= 0 ? 'text-teal-600 dark:text-cyan-400' : 'text-amber-600 dark:text-amber-400'
+              {/* ── بطاقة "الباقي للزبون" ── */}
+              <div
+                className={`rounded-3xl border-2 p-6 transition-all duration-200 shadow-xs ${
+                  changeDue > 0
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 shadow-emerald-500/10'
+                    : changeDue < 0
+                    ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3.5">
+                    <span
+                      className={`flex h-12 w-12 items-center justify-center rounded-2xl text-2xl shrink-0 shadow-xs ${
+                        changeDue > 0
+                          ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200'
+                          : changeDue < 0
+                          ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      💵
+                    </span>
+                    <div>
+                      <span
+                        className={`flex items-center gap-1.5 text-xs font-black uppercase tracking-wider ${
+                          changeDue > 0
+                            ? 'text-emerald-800 dark:text-emerald-200'
+                            : changeDue < 0
+                            ? 'text-amber-800 dark:text-amber-200'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        <Banknote size={15} />
+                        <span>الباقي للزبون:</span>
+                      </span>
+                      <span
+                        className={`text-xs ${
+                          changeDue > 0
+                            ? 'font-black text-emerald-700 dark:text-emerald-300'
+                            : changeDue < 0
+                            ? 'font-bold text-amber-700 dark:text-amber-300'
+                            : 'font-medium text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {changeDue > 0
+                          ? 'يجب إرجاعه للزبون'
+                          : changeDue < 0
+                          ? 'المبلغ المدفوع غير كافٍ'
+                          : 'مدفوع بالكامل بدون باقي'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`font-mono font-black ${
+                      changeDue > 0
+                        ? 'text-4xl text-emerald-700 dark:text-emerald-400'
+                        : changeDue < 0
+                        ? 'text-2xl text-amber-600 dark:text-amber-400'
+                        : 'text-2xl text-slate-400 dark:text-slate-500'
                     }`}
                   >
-                    {changeDue >= 0 ? `${changeDue} ₪` : `متبقي: ${Math.abs(changeDue)} ₪`}
-                  </span>
+                    {changeDue >= 0 ? (
+                      <span>
+                        {changeDue} <span className="text-xl font-bold">₪</span>
+                      </span>
+                    ) : (
+                      <span>
+                        متبقي: {Math.abs(changeDue)} <span className="text-lg font-bold">₪</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

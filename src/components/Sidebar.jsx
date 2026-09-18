@@ -89,6 +89,7 @@ const CATEGORIES = [
         icon: DollarSign,
         items: [
           { to: '/sales', icon: ShoppingCart, label: 'المبيعات', module: 'sales_movements' },
+          { to: '/reports/pos-invoices', icon: Receipt, label: 'كشف فواتير المبيعات', module: 'sales_movements' },
           { to: '/online-orders', icon: Package, label: 'الطلبات الأونلاين' },
           { to: '/store-stats', icon: TrendingUp, label: 'إحصائيات المتجر' },
           { to: '/coupons', label: 'كوبونات الخصم', icon: Tag },

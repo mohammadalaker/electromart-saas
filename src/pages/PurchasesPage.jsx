@@ -24,8 +24,18 @@ import {
   Calendar,
   Phone,
   UserCheck,
+  Printer,
+  ChevronLeft,
+  ChevronRight,
+  Paperclip,
+  Barcode as BarcodeIcon,
+  Percent,
+  Building2,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import PrintPurchaseInvoice from '../components/PrintPurchaseInvoice';
+import PrintPurchaseBarcodesModal from '../components/PrintPurchaseBarcodesModal';
+import PurchaseAttachmentsModal from '../components/PurchaseAttachmentsModal';
 import StorageObjectImage from '../components/StorageObjectImage';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { uploadPurchaseInvoiceScan } from '../utils/uploadProductImage';
@@ -81,6 +91,8 @@ function newLine(init = {}) {
     unit_price: init.unit_price != null ? String(init.unit_price) : '',
     discount_percent: init.discount_percent != null ? String(init.discount_percent) : '0',
     qty: init.qty != null ? String(init.qty) : '1',
+    warehouse: init.warehouse || 'الرئيسي',
+    batchNumber: init.batchNumber || '',
     productId: init.productId || null,
     productName: init.productName || '',
     sellPrice: init.sellPrice != null ? init.sellPrice : null,
@@ -102,6 +114,36 @@ function generateAutoInvoiceNumber() {
   const dateStr = now.toISOString().slice(2, 10).replace(/-/g, '');
   const rand = Math.floor(1000 + Math.random() * 9000);
   return `PUR-${dateStr}-${rand}`;
+}
+
+function getFieldStatusClass(val, type = 'number') {
+  const str = val == null ? '' : String(val).trim();
+  if (str === '') {
+    return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
+  }
+  const num = parseFloat(str.replace(',', '.'));
+  if (type === 'qty') {
+    if (isNaN(num) || num <= 0) {
+      return 'border-red-400 bg-red-50/50 text-red-700 dark:border-red-500/80 dark:bg-red-950/40 dark:text-red-300 font-bold';
+    }
+    return 'border-emerald-400 bg-emerald-50/20 text-emerald-950 dark:border-emerald-500/70 dark:bg-emerald-950/20 dark:text-emerald-200 font-black';
+  }
+  if (type === 'price') {
+    if (isNaN(num) || num <= 0) {
+      return 'border-red-400 bg-red-50/50 text-red-700 dark:border-red-500/80 dark:bg-red-950/40 dark:text-red-300 font-bold';
+    }
+    return 'border-emerald-400 bg-emerald-50/20 text-emerald-950 dark:border-emerald-500/70 dark:bg-emerald-950/20 dark:text-emerald-200 font-black';
+  }
+  if (type === 'discount') {
+    if (isNaN(num) || num < 0 || num > 100) {
+      return 'border-red-400 bg-red-50/50 text-red-700 dark:border-red-500/80 dark:bg-red-950/40 dark:text-red-300 font-bold';
+    }
+    if (num > 0) {
+      return 'border-emerald-400 bg-emerald-50/20 text-emerald-950 dark:border-emerald-500/70 dark:bg-emerald-950/20 dark:text-emerald-200 font-black';
+    }
+    return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold';
+  }
+  return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
 }
 
 export default function PurchasesPage() {
@@ -128,6 +170,68 @@ export default function PurchasesPage() {
   const [suppliersList, setSuppliersList] = useState([]);
   const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
   const supplierDropdownRef = useRef(null);
+
+  // -------------------------------------------------------------
+  // Accounting Account, Taxes & Warehouse State
+  // -------------------------------------------------------------
+  const [purchaseAccountId, setPurchaseAccountId] = useState('1100');
+  const [accountsList, setAccountsList] = useState([]);
+  const [warehouseOptions, setWarehouseOptions] = useState([{ id: 'default', name: 'الرئيسي' }]);
+  const [taxRate, setTaxRate] = useState('0'); // %
+  const [isTaxInclusive, setIsTaxInclusive] = useState(false);
+
+  // Modals (Barcodes & Attachments)
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
+  const [attachmentsModalOpen, setAttachmentsModalOpen] = useState(false);
+  const [loadedScanPath, setLoadedScanPath] = useState(null);
+
+  // -------------------------------------------------------------
+  // Invoice Navigation & Active Loaded Record State
+  // -------------------------------------------------------------
+  const [invoicesNavList, setInvoicesNavList] = useState([]);
+  const [navLoading, setNavLoading] = useState(false);
+  const [currentPurchaseId, setCurrentPurchaseId] = useState(null);
+  const [loadedPurchaseOriginalStatus, setLoadedPurchaseOriginalStatus] = useState(null);
+  const [printPurchaseData, setPrintPurchaseData] = useState(null);
+
+  const currentPurchaseIndex = useMemo(() => {
+    if (!currentPurchaseId || invoicesNavList.length === 0) return -1;
+    return invoicesNavList.findIndex((x) => x.id === currentPurchaseId);
+  }, [currentPurchaseId, invoicesNavList]);
+
+  // Sequential Internal Invoice Number (PINV-00001, etc.)
+  const internalInvoiceNumber = useMemo(() => {
+    const seq = currentPurchaseIndex >= 0 ? currentPurchaseIndex + 1 : (invoicesNavList.length || 0) + 1;
+    return `PINV-${String(seq).padStart(5, '0')}`;
+  }, [currentPurchaseIndex, invoicesNavList.length]);
+
+  const canGoPrev = useMemo(() => {
+    if (invoicesNavList.length === 0) return false;
+    if (currentPurchaseId === null) return true;
+    return currentPurchaseIndex > 0;
+  }, [invoicesNavList.length, currentPurchaseId, currentPurchaseIndex]);
+
+  const canGoNext = useMemo(() => {
+    if (invoicesNavList.length === 0) return false;
+    if (currentPurchaseId === null) return false;
+    return currentPurchaseIndex >= 0 && currentPurchaseIndex < invoicesNavList.length - 1;
+  }, [invoicesNavList.length, currentPurchaseId, currentPurchaseIndex]);
+
+  useEffect(() => {
+    if (!printPurchaseData) return;
+    document.body.classList.add('print-invoice-active');
+    const t = requestAnimationFrame(() => window.print());
+    const onAfterPrint = () => {
+      document.body.classList.remove('print-invoice-active');
+      setPrintPurchaseData(null);
+    };
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      cancelAnimationFrame(t);
+      window.removeEventListener('afterprint', onAfterPrint);
+      document.body.classList.remove('print-invoice-active');
+    };
+  }, [printPurchaseData]);
 
   // -------------------------------------------------------------
   // Lines & Table State
@@ -234,6 +338,311 @@ export default function PurchasesPage() {
   useEffect(() => {
     loadSuppliers();
   }, [loadSuppliers]);
+
+  // -------------------------------------------------------------
+  // Load Invoices Sequence for Navigation
+  // -------------------------------------------------------------
+  const fetchInvoicesNavList = useCallback(async () => {
+    if (!store?.id) {
+      setInvoicesNavList([]);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from(PURCHASES_TABLE)
+        .select('id, invoice_number, invoice_date, created_at')
+        .eq('store_id', store.id)
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        setInvoicesNavList(data);
+      }
+    } catch (err) {
+      console.warn('Failed to load invoices nav list', err);
+    }
+  }, [store?.id]);
+
+  useEffect(() => {
+    fetchInvoicesNavList();
+  }, [fetchInvoicesNavList]);
+
+  // -------------------------------------------------------------
+  // Load Chart of Accounts & Warehouses (store_locations)
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (!store?.id) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('accounting_accounts')
+          .select('id, code, name, type')
+          .eq('store_id', store.id)
+          .order('code', { ascending: true });
+        if (!error && data && data.length > 0) {
+          setAccountsList(data);
+        } else {
+          setAccountsList([
+            { id: '1100', code: '1100', name: 'المخزون (أصول)' },
+            { id: '5001', code: '5001', name: 'تكلفة البضاعة المباعة / مشتريات (مصروفات)' },
+            { id: '1001', code: '1001', name: 'الصندوق النقدي (أصول)' },
+            { id: '2100', code: '2100', name: 'ذمم دائنون - موردون (التزامات)' },
+          ]);
+        }
+      } catch (e) {
+        console.warn('Failed to load accounts', e);
+      }
+    })();
+  }, [store?.id]);
+
+  useEffect(() => {
+    if (!store?.id) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('store_locations')
+          .select('id, name, code')
+          .eq('store_id', store.id)
+          .order('name', { ascending: true });
+        if (!error && data && data.length > 0) {
+          const list = [{ id: 'default', name: 'الرئيسي' }];
+          data.forEach((loc) => {
+            if (loc.name && loc.name !== 'الرئيسي') {
+              list.push({ id: loc.id, name: loc.name });
+            }
+          });
+          setWarehouseOptions(list);
+        } else {
+          setWarehouseOptions([{ id: 'default', name: 'الرئيسي' }]);
+        }
+      } catch (e) {
+        console.warn('Failed to load warehouses', e);
+      }
+    })();
+  }, [store?.id]);
+
+  // -------------------------------------------------------------
+  // Load a Saved Purchase Invoice by ID (View / Edit Mode)
+  // -------------------------------------------------------------
+  const loadPurchaseById = useCallback(
+    async (purchaseId) => {
+      if (!store?.id || !purchaseId) return;
+      setNavLoading(true);
+      try {
+        const { data: p, error } = await supabase
+          .from(PURCHASES_TABLE)
+          .select('*')
+          .eq('id', purchaseId)
+          .eq('store_id', store.id)
+          .single();
+
+        if (error) throw error;
+        if (!p) {
+          toast.error('لم يتم العثور على الفاتورة المطلوبة');
+          return;
+        }
+
+        setCurrentPurchaseId(p.id);
+        setLoadedPurchaseOriginalStatus(p.purchase_status || 'received');
+        setSupplierCompanyName(p.supplier_company_name || '');
+        setSupplierPhone(p.supplier_phone || '');
+        setSelectedSupplierId(p.supplier_contact_id || null);
+        setInvoiceNumber(p.invoice_number || '');
+        setInvoiceDate(p.invoice_date || '');
+        setPaymentMode(p.payment_mode || 'cash');
+        setPaymentDueDate(p.payment_due_date || '');
+        setPurchaseStatus(p.purchase_status || 'received');
+        setLandedCostExtra(
+          p.landed_cost_extra != null && Number(p.landed_cost_extra) > 0
+            ? String(p.landed_cost_extra)
+            : ''
+        );
+
+        // استخراج المرفق، نسبة الضريبة، حساب المشتريات، والملاحظات الحرة
+        const scanMatch = p.notes?.match(/\[مرفق\]:\s*([^\n\r]+)/);
+        setLoadedScanPath(scanMatch ? scanMatch[1].trim() : (p.invoice_scan_path || null));
+
+        const taxMatch = p.notes?.match(/الضريبة:\s*([0-9.]+)/);
+        if (taxMatch) {
+          setTaxRate(taxMatch[1]);
+          setIsTaxInclusive(p.notes?.includes('شامل') || false);
+        } else if (Number(p.tax_amount) > 0 && Number(p.subtotal) > 0) {
+          const calculatedRate = Math.round((Number(p.tax_amount) / Number(p.subtotal)) * 100);
+          setTaxRate(String(calculatedRate));
+          setIsTaxInclusive(false);
+        } else {
+          setTaxRate('0');
+          setIsTaxInclusive(false);
+        }
+
+        const accMatch = p.notes?.match(/حساب المشتريات:\s*([^\n\r]+)/);
+        if (accMatch) {
+          const accCode = accMatch[1].trim().split(' ')[0];
+          setPurchaseAccountId(accCode || '1100');
+        } else {
+          setPurchaseAccountId('1100');
+        }
+
+        const userNotesMatch = p.notes?.split('\nملاحظات: ')[1] || (p.notes?.startsWith('ملاحظات: ') ? p.notes.slice(9) : '');
+        setExtraNotes(userNotesMatch ? userNotesMatch.trim() : (p.notes?.includes('ملاحظات: ') ? '' : p.notes || ''));
+
+        if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl);
+        setInvoicePreviewUrl(null);
+        setInvoiceScanFile(null);
+        setSavedBanner(null);
+
+        // تحويل أسطر الفاتورة إلى صفوف واجهة
+        const rawLines = dbLineItemsToReceiveRows(p.line_items);
+
+        // جلب أسماء وتفاصيل المنتجات في حال عدم توفرها في الأسطر
+        const pIds = rawLines.map((r) => r.productId).filter(Boolean);
+        const bcs = rawLines.map((r) => r.barcode).filter(Boolean);
+
+        if (pIds.length > 0 || bcs.length > 0) {
+          let q = supabase
+            .from(PRODUCTS_TABLE)
+            .select('id, barcode, reference, eng_name, full_price, price_after_disc, brand_group')
+            .eq('store_id', store.id);
+
+          if (pIds.length > 0) {
+            q = q.in('id', pIds);
+          }
+          const { data: prods } = await q;
+          if (prods && prods.length > 0) {
+            const prodMap = new Map(prods.map((item) => [item.id, item]));
+            const bcMap = new Map(prods.map((item) => [item.barcode, item]));
+            rawLines.forEach((r) => {
+              const found =
+                (r.productId && prodMap.get(r.productId)) || (r.barcode && bcMap.get(r.barcode));
+              if (found) {
+                if (!r.productName) r.productName = found.eng_name || '';
+                if (r.sellPrice == null) {
+                  r.sellPrice =
+                    Number(found.price_after_disc) > 0
+                      ? Number(found.price_after_disc)
+                      : Number(found.full_price) || 0;
+                }
+                if (r.stockFullPrice == null) r.stockFullPrice = Number(found.full_price) || 0;
+                if (!r.brandGroup) r.brandGroup = found.brand_group || '';
+              }
+            });
+          }
+        }
+
+        setLines(rawLines.length > 0 ? rawLines : [newLine()]);
+      } catch (err) {
+        console.error('Failed to load purchase invoice', err);
+        toast.error('فشل تحميل الفاتورة');
+      } finally {
+        setNavLoading(false);
+      }
+    },
+    [store?.id, invoicePreviewUrl, toast]
+  );
+
+  // Check URL query param ?id=... on mount
+  useEffect(() => {
+    const qId = searchParams.get('id');
+    if (qId && store?.id) {
+      loadPurchaseById(qId);
+    }
+  }, [searchParams, store?.id, loadPurchaseById]);
+
+  // Navigation handlers
+  const handlePrevInvoice = async () => {
+    if (invoicesNavList.length === 0) return;
+    let targetId = null;
+    if (currentPurchaseId === null || currentPurchaseIndex === -1) {
+      targetId = invoicesNavList[invoicesNavList.length - 1].id;
+    } else if (currentPurchaseIndex > 0) {
+      targetId = invoicesNavList[currentPurchaseIndex - 1].id;
+    }
+    if (targetId) {
+      await loadPurchaseById(targetId);
+    }
+  };
+
+  const handleNextInvoice = async () => {
+    if (invoicesNavList.length === 0) return;
+    if (currentPurchaseIndex >= 0 && currentPurchaseIndex < invoicesNavList.length - 1) {
+      const targetId = invoicesNavList[currentPurchaseIndex + 1].id;
+      await loadPurchaseById(targetId);
+    }
+  };
+
+  const handleNewInvoice = () => {
+    setCurrentPurchaseId(null);
+    setLoadedPurchaseOriginalStatus(null);
+    setSupplierCompanyName('');
+    setSupplierPhone('');
+    setSelectedSupplierId(null);
+    setInvoiceNumber('');
+    setInvoiceDate(new Date().toISOString().slice(0, 10));
+    setPaymentMode('cash');
+    setPaymentDueDate(addDaysISO(new Date().toISOString().slice(0, 10), 30));
+    setLines([newLine()]);
+    setPurchaseStatus('received');
+    setLandedCostExtra('');
+    setExtraNotes('');
+    setTaxRate('0');
+    setIsTaxInclusive(false);
+    setPurchaseAccountId('1100');
+    setInvoiceScanFile(null);
+    setLoadedScanPath(null);
+    if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl);
+    setInvoicePreviewUrl(null);
+    setSavedBanner(null);
+    toast.info('تم بدء فاتورة جديدة فارغة');
+  };
+
+  const handlePrintCurrentInvoice = () => {
+    if (!currentPurchaseId) {
+      toast.warning('يرجى حفظ الفاتورة أولاً لتتمكن من طباعتها');
+      return;
+    }
+    const linePayloadsForPrint = computePurchaseLinePayloads(lines, landedCostExtra);
+    const validLines = linePayloadsForPrint.filter((x) => x.qty > 0);
+
+    setPrintPurchaseData({
+      brandName: store?.name || 'شركة سنين',
+      brandNameEn: store?.code || 'Senin Company',
+      storeName: store?.name,
+      supplierCompanyName: supplierCompanyName,
+      supplierPhone: supplierPhone,
+      invoiceNumber: invoiceNumber,
+      internalInvoiceNumber: internalInvoiceNumber,
+      invoiceDate: invoiceDate,
+      paymentMode: paymentMode,
+      paymentDueDate: paymentDueDate,
+      lines: validLines,
+      subtotalBeforeTax: subtotalBeforeTax,
+      taxRate: taxRateNum,
+      taxAmount: taxAmount,
+      isTaxInclusive: isTaxInclusive,
+      totalAmount: grandTotal,
+      landedCostExtra: landedCostExtra,
+      notes: extraNotes,
+      printedAtLabel: new Date().toLocaleString('ar-EG'),
+    });
+  };
+
+  const handleAttachmentFileChosen = (file) => {
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      toast.warning('حجم الملف كبير جداً (الحد الأقصى 20 ميجابايت).');
+      return;
+    }
+    setInvoiceScanFile(file);
+    if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl);
+    setInvoicePreviewUrl(URL.createObjectURL(file));
+    toast.success('تم اختيار الملف، سيتم حفظه ومزامنته مع الفاتورة');
+  };
+
+  const handleAttachmentRemove = () => {
+    if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl);
+    setInvoicePreviewUrl(null);
+    setInvoiceScanFile(null);
+    setLoadedScanPath(null);
+    toast.info('تمت إزالة المرفق');
+  };
 
   // Check saved banner from navigation if any
   useEffect(() => {
@@ -418,11 +827,6 @@ export default function PurchasesPage() {
     [lines, landedCostExtra]
   );
 
-  const grandTotal = useMemo(
-    () => linePayloads.reduce((a, x) => a + x.line_total, 0),
-    [linePayloads]
-  );
-
   const subtotalBeforeDiscount = useMemo(() => {
     return lines.reduce((acc, r) => {
       const q = Math.max(0, parseFloat(String(r.qty).replace(',', '.')) || 0);
@@ -431,9 +835,57 @@ export default function PurchasesPage() {
     }, 0);
   }, [lines]);
 
+  const subtotalAfterDiscount = useMemo(() => {
+    return linePayloads.reduce((a, x) => a + x.line_total, 0);
+  }, [linePayloads]);
+
   const totalDiscountAmount = useMemo(() => {
-    return Math.max(0, subtotalBeforeDiscount - grandTotal);
-  }, [subtotalBeforeDiscount, grandTotal]);
+    return Math.max(0, subtotalBeforeDiscount - subtotalAfterDiscount);
+  }, [subtotalBeforeDiscount, subtotalAfterDiscount]);
+
+  const landingTotal = useMemo(
+    () => Math.max(0, parseFloat(String(landedCostExtra).replace(',', '.')) || 0),
+    [landedCostExtra]
+  );
+
+  // Tax calculations
+  const taxRateNum = useMemo(() => {
+    return Math.max(0, Math.min(100, parseFloat(String(taxRate).replace(',', '.')) || 0));
+  }, [taxRate]);
+
+  const { subtotalBeforeTax, taxAmount, totalAfterTax } = useMemo(() => {
+    if (taxRateNum <= 0) {
+      return {
+        subtotalBeforeTax: subtotalAfterDiscount,
+        taxAmount: 0,
+        totalAfterTax: subtotalAfterDiscount,
+      };
+    }
+    if (isTaxInclusive) {
+      const tot = subtotalAfterDiscount;
+      const before = Math.round((tot / (1 + taxRateNum / 100)) * 100) / 100;
+      const tax = Math.round((tot - before) * 100) / 100;
+      return {
+        subtotalBeforeTax: before,
+        taxAmount: tax,
+        totalAfterTax: tot,
+      };
+    } else {
+      const before = subtotalAfterDiscount;
+      const tax = Math.round((before * (taxRateNum / 100)) * 100) / 100;
+      const tot = Math.round((before + tax) * 100) / 100;
+      return {
+        subtotalBeforeTax: before,
+        taxAmount: tax,
+        totalAfterTax: tot,
+      };
+    }
+  }, [subtotalAfterDiscount, taxRateNum, isTaxInclusive]);
+
+  const grandTotal = useMemo(
+    () => Math.round((totalAfterTax + landingTotal) * 100) / 100,
+    [totalAfterTax, landingTotal]
+  );
 
   const totalUnitsCount = useMemo(() => {
     return lines.reduce((acc, r) => {
@@ -445,11 +897,6 @@ export default function PurchasesPage() {
   const validItemsCount = useMemo(() => {
     return lines.filter((r) => stockQtyFromLine(r) > 0 && r.unit_price !== '').length;
   }, [lines]);
-
-  const landingTotal = useMemo(
-    () => Math.max(0, parseFloat(String(landedCostExtra).replace(',', '.')) || 0),
-    [landedCostExtra]
-  );
 
   // Pre-orders reservations
   const productIdsForPreOrders = useMemo(
@@ -680,6 +1127,8 @@ export default function PurchasesPage() {
         unit_price: src.unit_price,
         discount_percent: src.discount_percent,
         qty: src.qty,
+        warehouse: src.warehouse || 'الرئيسي',
+        batchNumber: src.batchNumber || '',
         productId: src.productId,
         productName: src.productName,
         sellPrice: src.sellPrice,
@@ -1057,9 +1506,9 @@ export default function PurchasesPage() {
     }
 
     const linePayloadsForSave = computePurchaseLinePayloads(linesForSave, landedCostExtra);
-    const grandTotalSave = linePayloadsForSave.reduce((a, x) => a + x.line_total, 0);
+    const subtotalAfterDiscountSave = linePayloadsForSave.reduce((a, x) => a + x.line_total, 0);
 
-    if (grandTotalSave <= 0) {
+    if (subtotalAfterDiscountSave <= 0) {
       toast.warning('أضف أصنافاً بمبالغ صحيحة — إجمالي الفاتورة يجب أن يكون أكبر من صفر');
       return;
     }
@@ -1070,12 +1519,32 @@ export default function PurchasesPage() {
       return;
     }
 
+    // حساب الضريبة والإجمالي النهائي للحفظ
+    let subtotalBeforeTaxSave = subtotalAfterDiscountSave;
+    let taxAmountSave = 0;
+    let totalAfterTaxSave = subtotalAfterDiscountSave;
+
+    if (taxRateNum > 0) {
+      if (isTaxInclusive) {
+        totalAfterTaxSave = subtotalAfterDiscountSave;
+        subtotalBeforeTaxSave = Math.round((totalAfterTaxSave / (1 + taxRateNum / 100)) * 100) / 100;
+        taxAmountSave = Math.round((totalAfterTaxSave - subtotalBeforeTaxSave) * 100) / 100;
+      } else {
+        subtotalBeforeTaxSave = subtotalAfterDiscountSave;
+        taxAmountSave = Math.round((subtotalBeforeTaxSave * (taxRateNum / 100)) * 100) / 100;
+        totalAfterTaxSave = Math.round((subtotalBeforeTaxSave + taxAmountSave) * 100) / 100;
+      }
+    }
+
+    const grandTotalSave = Math.round((totalAfterTaxSave + landingTotal) * 100) / 100;
+
     setSaving(true);
 
     try {
-      let invoiceScanPath = null;
+      let invoiceScanPath = loadedScanPath;
       if (invoiceScanFile) {
         invoiceScanPath = await uploadPurchaseInvoiceScan(store.id, invoiceScanFile);
+        setLoadedScanPath(invoiceScanPath);
       }
 
       let supplierContactId = selectedSupplierId;
@@ -1084,12 +1553,18 @@ export default function PurchasesPage() {
         supplierContactId = contactId;
       }
 
+      const selectedAcc = accountsList.find((a) => a.code === purchaseAccountId || a.id === purchaseAccountId);
+      const selectedAccountName = selectedAcc ? `${selectedAcc.code} - ${selectedAcc.name}` : `${purchaseAccountId} - المخزون`;
+
       const notesText = [
         `شركة: ${company}`,
         `رقم فاتورة المورد: ${finalInv}`,
         `تاريخ الفاتورة: ${invoiceDateVal}`,
         paymentDueDateVal && `استحقاق السداد: ${paymentDueDateVal}`,
         phone && `هاتف: ${phone}`,
+        `حساب المشتريات: ${selectedAccountName}`,
+        taxRateNum > 0 && `الضريبة: ${taxRateNum}% (${isTaxInclusive ? 'شامل' : 'غير شامل'})`,
+        invoiceScanPath && `[مرفق]: ${invoiceScanPath}`,
         extraNotes.trim() && `ملاحظات: ${extraNotes.trim()}`,
       ]
         .filter(Boolean)
@@ -1097,7 +1572,6 @@ export default function PurchasesPage() {
 
       const landingPart = landingTotal > 0 ? { landed_cost_extra: landingTotal } : {};
       const duePart = paymentDueDateVal ? { payment_due_date: paymentDueDateVal } : {};
-      const scanPart = invoiceScanPath ? { invoice_scan_path: invoiceScanPath } : {};
 
       const rowFull = {
         store_id: store.id,
@@ -1107,26 +1581,26 @@ export default function PurchasesPage() {
         invoice_date: invoiceDateVal,
         supplier_phone: phone,
         total_amount: grandTotalSave,
+        subtotal: subtotalBeforeTaxSave,
+        tax_amount: taxAmountSave,
         payment_mode: paymentMode,
         purchase_status: purchaseStatus === 'draft' ? 'draft' : 'received',
         ...duePart,
-        ...scanPart,
         ...landingPart,
         line_items: validLines,
         notes: notesText,
       };
 
-      let purchaseId = null;
-      const { data: insData, error: insErr } = await supabase
-        .from(PURCHASES_TABLE)
-        .insert([rowFull])
-        .select('id')
-        .single();
-      if (insErr) throw insErr;
-      purchaseId = insData?.id ?? null;
+      let purchaseId = currentPurchaseId;
+      if (currentPurchaseId) {
+        const { error: updErr } = await supabase
+          .from(PURCHASES_TABLE)
+          .update(rowFull)
+          .eq('id', currentPurchaseId)
+          .eq('store_id', store.id);
+        if (updErr) throw updErr;
 
-      if (purchaseStatus === 'received') {
-        try {
+        if (purchaseStatus === 'received' && loadedPurchaseOriginalStatus === 'draft') {
           await executePurchaseReceiveEffects({
             storeId: store.id,
             purchaseId,
@@ -1139,32 +1613,54 @@ export default function PurchasesPage() {
             supplierContactId,
             grandTotal: grandTotalSave,
           });
-        } catch (stockErr) {
-          console.error(stockErr);
-          if (purchaseId) {
-            await supabase.from(PURCHASES_TABLE).delete().eq('id', purchaseId).eq('store_id', store.id);
+          setLoadedPurchaseOriginalStatus('received');
+        }
+      } else {
+        const { data: insData, error: insErr } = await supabase
+          .from(PURCHASES_TABLE)
+          .insert([rowFull])
+          .select('id')
+          .single();
+        if (insErr) throw insErr;
+        purchaseId = insData?.id ?? null;
+
+        if (purchaseStatus === 'received') {
+          try {
+            await executePurchaseReceiveEffects({
+              storeId: store.id,
+              purchaseId,
+              lines: linesForSave,
+              linePayloads: linePayloadsForSave,
+              updateCatalogCosts,
+              companyName: company,
+              invoiceDateVal,
+              paymentMode,
+              supplierContactId,
+              grandTotal: grandTotalSave,
+            });
+          } catch (stockErr) {
+            console.error(stockErr);
+            if (purchaseId) {
+              await supabase.from(PURCHASES_TABLE).delete().eq('id', purchaseId).eq('store_id', store.id);
+            }
+            throw stockErr instanceof Error ? stockErr : new Error(String(stockErr?.message || stockErr));
           }
-          throw stockErr instanceof Error ? stockErr : new Error(String(stockErr?.message || stockErr));
         }
       }
 
       toast.success(
-        purchaseStatus === 'received'
+        currentPurchaseId
+          ? `تم تحديث الفاتورة (#${finalInv}) بنجاح (المجموع: ₪${grandTotalSave.toFixed(2)})`
+          : purchaseStatus === 'received'
           ? `تم حفظ الفاتورة (#${finalInv}) واستلام البضاعة للمخزن بنجاح (المجموع: ₪${grandTotalSave.toFixed(2)})`
           : `تم حفظ الفاتورة (#${finalInv}) كمسودة بنجاح (المجموع: ₪${grandTotalSave.toFixed(2)})`
       );
 
-      // Reset form state for a fresh invoice
+      setCurrentPurchaseId(purchaseId);
+      setInvoiceNumber(finalInv);
       setSavedBanner({ total: grandTotalSave, invoiceNumber: finalInv });
-      setInvoiceNumber('');
-      setLines([newLine()]);
-      setExtraNotes('');
-      setLandedCostExtra('');
-      setSelectedSupplierId(null);
-      setSupplierCompanyName('');
-      setSupplierPhone('');
-      clearInvoiceScan();
       loadSuppliers();
+      fetchInvoicesNavList();
     } catch (e) {
       console.error(e);
       const msg = e?.message || e?.details || e?.hint || '';
@@ -1242,6 +1738,147 @@ export default function PurchasesPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
+        {/* 0. شريط أزرار التنقل والطباعة وفاتورة جديدة (Navigation & Print Bar) */}
+        {/* ------------------------------------------------------------- */}
+        <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl px-4 py-2.5 shadow-xs flex flex-wrap items-center justify-between gap-3 transition-colors">
+          
+          {/* الجانب الأيمن: زر "جديد" + شارة الحالة */}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleNewInvoice}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white font-bold text-xs shadow-xs transition-all duration-150 hover:scale-105 active:scale-95"
+              title="إنشاء فاتورة مشتريات جديدة فارغة"
+            >
+              <Plus size={15} />
+              <span>فاتورة جديدة</span>
+            </button>
+
+            {currentPurchaseId ? (
+              purchaseStatus === 'received' ? (
+                <span className="inline-flex items-center gap-1.5 text-xs font-black text-white bg-emerald-600 px-3 py-1 rounded-xl shadow-xs">
+                  <Check size={14} className="stroke-[3]" />
+                  <span>مرحّل للمخزن</span>
+                  {invoiceNumber ? <span className="font-mono text-[11px] opacity-90">#{invoiceNumber}</span> : null}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 px-3 py-1 rounded-xl">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span>عرض / مسودة</span>
+                  {invoiceNumber ? <span className="font-mono text-[11px] font-black">#{invoiceNumber}</span> : null}
+                </span>
+              )
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 px-3 py-1 rounded-xl">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span>جديد (مسودة)</span>
+              </span>
+            )}
+          </div>
+
+          {/* المنتصف: أزرار التنقل (◀ السابقة / التالية ▶) مع العداد */}
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/60 shadow-inner">
+            {/* زر السابقة ◀ */}
+            <button
+              type="button"
+              onClick={handlePrevInvoice}
+              disabled={!canGoPrev || navLoading}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed transition shadow-xs"
+              title="الانتقال للفاتورة السابقة"
+            >
+              <span>◀</span>
+              <span>السابقة</span>
+            </button>
+
+            {/* عداد الفاتورة (X من Y) */}
+            <div className="px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 min-w-[130px] text-center select-none">
+              {navLoading ? (
+                <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400">
+                  <Loader2 size={13} className="animate-spin inline" />
+                  <span>جاري التحميل…</span>
+                </span>
+              ) : invoicesNavList.length === 0 ? (
+                <span className="text-slate-400">لا توجد فواتير</span>
+              ) : currentPurchaseIndex >= 0 ? (
+                <span>
+                  فاتورة <span className="text-violet-600 dark:text-violet-400 font-mono font-black">{currentPurchaseIndex + 1}</span> من <span className="font-mono font-black">{invoicesNavList.length}</span>
+                </span>
+              ) : (
+                <span>
+                  جديدة <span className="text-slate-400 font-mono">(من {invoicesNavList.length})</span>
+                </span>
+              )}
+            </div>
+
+            {/* زر التالية ▶ */}
+            <button
+              type="button"
+              onClick={handleNextInvoice}
+              disabled={!canGoNext || navLoading}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed transition shadow-xs"
+              title="الانتقال للفاتورة التالية"
+            >
+              <span>التالية</span>
+              <span>▶</span>
+            </button>
+          </div>
+
+          {/* الجانب الأيسر: أزرار المرفقات، طباعة الباركود، والطباعة الرسمية */}
+          <div className="flex items-center gap-2">
+            {/* زر المرفقات */}
+            <button
+              type="button"
+              onClick={() => setAttachmentsModalOpen(true)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs border ${
+                invoiceScanFile || loadedScanPath
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+              }`}
+              title="إرفاق أو معاينة مستند أو صورة فاتورة المورد"
+            >
+              <Paperclip size={14} />
+              <span>مرفقات</span>
+              {(invoiceScanFile || loadedScanPath) && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </button>
+
+            {/* زر طباعة باركود للأصناف */}
+            <button
+              type="button"
+              onClick={() => setBarcodeModalOpen(true)}
+              disabled={validItemsCount === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              title="طباعة ملصقات الباركود للأصناف المستلمة بعدد حباتها"
+            >
+              <BarcodeIcon size={15} />
+              <span>طباعة باركود</span>
+            </button>
+
+            {/* زر طباعة الفاتورة */}
+            <button
+              type="button"
+              onClick={handlePrintCurrentInvoice}
+              disabled={!currentPurchaseId}
+              className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-black transition-all shadow-xs ${
+                currentPurchaseId
+                  ? 'bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 hover:scale-105 active:scale-95 cursor-pointer'
+                  : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60'
+              }`}
+              title={
+                currentPurchaseId
+                  ? 'طباعة الفاتورة المعروضة حالياً كوثيقة رسمية'
+                  : 'زر الطباعة معطل لأن الفاتورة الحالية مسودة غير محفوظة بعد'
+              }
+            >
+              <Printer size={15} />
+              <span>طباعة</span>
+            </button>
+          </div>
+
+        </div>
+
+        {/* ------------------------------------------------------------- */}
         {/* 1. HEADER: Single Narrow Horizontal Strip */}
         {/* ------------------------------------------------------------- */}
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-3.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -1254,6 +1891,43 @@ export default function PurchasesPage() {
               <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white whitespace-nowrap">
                 فاتورة مشتريات
               </span>
+            </div>
+
+            {/* الرقم الداخلي (تسلسلي تلقائي) */}
+            <div className="w-32 sm:w-36">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center justify-between">
+                <span>الرقم الداخلي</span>
+                <span className="text-[10px] text-violet-600 dark:text-violet-400 font-normal">(تلقائي)</span>
+              </label>
+              <div
+                className="h-10 w-full rounded-xl border border-violet-200/80 bg-violet-50/50 dark:border-violet-900/50 dark:bg-violet-950/30 px-3 flex items-center justify-center font-mono font-black text-xs text-violet-700 dark:text-violet-300 select-all"
+                dir="ltr"
+                title="الرقم التسلسلي الداخلي لفاتورة المشتريات"
+              >
+                {internalInvoiceNumber}
+              </div>
+            </div>
+
+            {/* مؤشر الحالة ملون (جديد / مرحّل) */}
+            <div className="w-32 sm:w-36">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                الحالة
+              </label>
+              <div
+                className={`h-10 w-full rounded-xl px-2.5 flex items-center justify-center gap-1.5 text-xs font-black select-none shadow-xs transition-all ${
+                  purchaseStatus === 'received'
+                    ? 'bg-emerald-600 text-white border border-emerald-700'
+                    : 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-700'
+                }`}
+                title={purchaseStatus === 'received' ? 'فاتورة مرحّلة وتم تحديث أرصدة المخزن بها' : 'مسودة غير مرحّلة للأرصدة بعد'}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    purchaseStatus === 'received' ? 'bg-white animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <span>{purchaseStatus === 'received' ? 'مرحّل للمخزن' : 'جديد (مسودة)'}</span>
+              </div>
             </div>
 
             {/* Supplier Search / Input with Autocomplete */}
@@ -1285,7 +1959,7 @@ export default function PurchasesPage() {
                     setSupplierDropdownOpen(true);
                   }}
                   onFocus={() => setSupplierDropdownOpen(true)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
                   placeholder="ابحث أو اكتب اسم المورد…"
                 />
                 {selectedSupplierId && (
@@ -1300,7 +1974,7 @@ export default function PurchasesPage() {
                     <li key={s.id}>
                       <button
                         type="button"
-                        className="w-full text-right px-3.5 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex items-center justify-between"
+                        className="w-full text-right px-3.5 py-2.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex items-center justify-between"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           selectSupplier(s);
@@ -1339,7 +2013,7 @@ export default function PurchasesPage() {
                 className={`h-10 w-full rounded-xl border px-3 text-sm font-currency font-bold outline-none transition-all ${
                   selectedSupplierId
                     ? 'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-400 select-none'
-                    : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
                 }`}
                 dir="ltr"
                 lang="en"
@@ -1351,12 +2025,12 @@ export default function PurchasesPage() {
             {/* Invoice Number (Optional) */}
             <div className="w-36 sm:w-44">
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
-                رقم الفاتورة <span className="text-slate-400 font-normal">(اختياري)</span>
+                رقم فاتورة المورد <span className="text-slate-400 font-normal">(اختياري)</span>
               </label>
               <input
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(normalizeDigitsToLatin(e.target.value))}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
                 dir="ltr"
                 lang="en"
                 placeholder="تلقائي إن تُرِك فارغاً"
@@ -1377,7 +2051,7 @@ export default function PurchasesPage() {
                     setPaymentDueDate(addDaysISO(e.target.value, 30));
                   }
                 }}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900 transition-all"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900 transition-all"
                 dir="ltr"
                 lang="en"
               />
@@ -1424,6 +2098,26 @@ export default function PurchasesPage() {
                 />
               </div>
             )}
+
+            {/* حساب المشتريات (شجرة الحسابات) */}
+            <div className="w-48 sm:w-56">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1 flex items-center gap-1">
+                <Building2 size={13} className="text-violet-500" />
+                <span>حساب المشتريات</span>
+              </label>
+              <select
+                value={purchaseAccountId}
+                onChange={(e) => setPurchaseAccountId(e.target.value)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer transition-all"
+                title="تحديد حساب الأستاذ / المشتريات المرتبط"
+              >
+                {accountsList.map((acc) => (
+                  <option key={acc.id || acc.code} value={acc.code || acc.id}>
+                    {acc.code} - {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1488,30 +2182,36 @@ export default function PurchasesPage() {
           <div className="overflow-x-auto" ref={tableDropdownRef}>
             <table className="w-full text-xs min-w-[1000px] border-collapse text-right">
               <thead>
-                <tr className="bg-slate-100/90 text-slate-700 dark:bg-slate-800/90 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 text-[11px] select-none">
-                  <th className="py-2 px-2 font-bold w-10 text-center">#</th>
-                  <th className="py-2 px-2 font-bold min-w-[150px]" dir="ltr">
+                <tr className="bg-indigo-600 text-white border-b border-indigo-700 text-xs font-black select-none shadow-xs">
+                  <th className="py-2.5 px-2 font-black w-10 text-center text-white">#</th>
+                  <th className="py-2.5 px-2 font-black min-w-[130px] text-white" dir="ltr">
                     الباركود
                   </th>
-                  <th className="py-2 px-2 font-bold min-w-[220px]">
+                  <th className="py-2.5 px-2 font-black min-w-[180px] text-white">
                     اسم الصنف
                   </th>
-                  <th className="py-2 px-2 font-bold w-24 text-center">
+                  <th className="py-2.5 px-2 font-black w-24 text-center text-white">
+                    المخزن
+                  </th>
+                  <th className="py-2.5 px-2 font-black w-24 text-center text-white">
+                    التشغيلة
+                  </th>
+                  <th className="py-2.5 px-2 font-black w-24 text-center text-white">
                     الوحدة
                   </th>
-                  <th className="py-2 px-2 font-bold w-20 text-center" dir="ltr">
+                  <th className="py-2.5 px-2 font-black w-20 text-center text-white" dir="ltr">
                     الكمية
                   </th>
-                  <th className="py-2 px-2 font-bold w-28 text-center" dir="ltr">
+                  <th className="py-2.5 px-2 font-black w-24 text-center text-white" dir="ltr">
                     سعر الشراء
                   </th>
-                  <th className="py-2 px-2 font-bold w-20 text-center" dir="ltr">
+                  <th className="py-2.5 px-2 font-black w-16 text-center text-white" dir="ltr">
                     خصم %
                   </th>
-                  <th className="py-2 px-2 font-bold w-28 text-center" dir="ltr">
+                  <th className="py-2.5 px-2 font-black w-24 text-center text-white" dir="ltr">
                     الإجمالي
                   </th>
-                  <th className="py-2 px-2 font-bold w-24 text-center">
+                  <th className="py-2.5 px-2 font-black w-20 text-center text-white">
                     إجراءات
                   </th>
                 </tr>
@@ -1571,14 +2271,14 @@ export default function PurchasesPage() {
                                 fetchProductSuggestions(row.key, row.barcode);
                               }
                             }}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-currency font-bold text-slate-800 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-currency font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 transition-all"
                             dir="ltr"
                             lang="en"
                             placeholder="امسح أو اكتب…"
                           />
 
                           {searchLoadingKey === row.key && dropdownField === 'barcode' && (
-                            <Loader2 className="absolute left-3 top-3 w-3.5 h-3.5 animate-spin text-violet-500" />
+                            <Loader2 className="absolute left-3 top-3 w-3.5 h-3.5 animate-spin text-indigo-600" />
                           )}
 
                           {/* Suggestions popup (under barcode) */}
@@ -1588,7 +2288,7 @@ export default function PurchasesPage() {
                                 <li key={p.unitData ? `u-${p.unitData.id}` : p.id}>
                                   <button
                                     type="button"
-                                    className="w-full text-right px-2.5 py-2 hover:bg-violet-50 dark:hover:bg-violet-950/40 border-b border-slate-50 dark:border-slate-700/50 last:border-0"
+                                    className="w-full text-right px-2.5 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-b border-slate-50 dark:border-slate-700/50 last:border-0"
                                     onMouseDown={(e) => {
                                       e.preventDefault();
                                       pickProduct(row.key, p);
@@ -1614,12 +2314,41 @@ export default function PurchasesPage() {
                             onChange={(e) => {
                               updateLine(row.key, 'productName', e.target.value);
                             }}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-bold text-slate-800 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 transition-all"
                             placeholder="اسم الصنف أو الوصف…"
                           />
                         </td>
 
-                        {/* 4. Unit */}
+                        {/* 4. Warehouse */}
+                        <td className="py-1.5 px-1 text-center">
+                          <select
+                            value={row.warehouse || 'الرئيسي'}
+                            onChange={(e) => updateLine(row.key, 'warehouse', e.target.value)}
+                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer transition-all"
+                            title="تحديد مخزن استلام الصنف"
+                          >
+                            {warehouseOptions.map((wh) => (
+                              <option key={wh.id || wh.name} value={wh.name}>
+                                {wh.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* 5. Batch / Lot Number */}
+                        <td className="py-1.5 px-1 text-center">
+                          <input
+                            value={row.batchNumber || ''}
+                            onChange={(e) => updateLine(row.key, 'batchNumber', e.target.value)}
+                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-currency font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal transition-all"
+                            dir="ltr"
+                            lang="en"
+                            placeholder="اختياري"
+                            title="رقم التشغيلة / الدفعة (Batch Number)"
+                          />
+                        </td>
+
+                        {/* 6. Unit */}
                         <td className="py-1.5 px-1 text-center">
                           {(() => {
                             const regUnits = (row.productId && productUnitsMap[row.productId]) || [];
@@ -1636,7 +2365,7 @@ export default function PurchasesPage() {
                                 <select
                                   value={row.unit}
                                   onChange={(e) => handleUnitChange(row.key, e.target.value)}
-                                  className="h-8 w-full rounded-md border border-violet-300 bg-violet-50/70 px-1 text-center text-xs font-bold text-violet-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200 cursor-pointer"
+                                  className="h-8 w-full rounded-md border border-indigo-200 bg-indigo-50/70 px-1 text-center text-xs font-bold text-indigo-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200 cursor-pointer transition-all"
                                   title="اختر وحدة الشراء"
                                 >
                                   {unitOptions.map((u) => (
@@ -1653,7 +2382,7 @@ export default function PurchasesPage() {
                                   list={`units-${row.key}`}
                                   value={row.unit}
                                   onChange={(e) => updateLine(row.key, 'unit', e.target.value)}
-                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition-all"
                                 />
                                 <datalist id={`units-${row.key}`}>
                                   {UNIT_OPTIONS.map((u) => (
@@ -1665,26 +2394,26 @@ export default function PurchasesPage() {
                           })()}
                         </td>
 
-                        {/* 5. Qty */}
+                        {/* 7. Qty */}
                         <td className="py-1.5 px-1.5 text-center">
                           <input
                             value={row.qty}
                             onChange={(e) => updateLine(row.key, 'qty', normalizeDigitsToLatin(e.target.value))}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-center text-xs font-currency font-black text-slate-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className={`h-8 w-full rounded-md border px-2 text-center text-xs font-currency font-black focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${getFieldStatusClass(row.qty, 'qty')}`}
                             dir="ltr"
                             lang="en"
                             inputMode="decimal"
                           />
                         </td>
 
-                        {/* 6. Unit Purchase Price */}
+                        {/* 8. Unit Purchase Price */}
                         <td className="py-1.5 px-1.5 text-center">
                           <input
                             value={row.unit_price}
                             onChange={(e) =>
                               updateLine(row.key, 'unit_price', normalizeDigitsToLatin(e.target.value))
                             }
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-center text-xs font-currency font-black text-slate-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            className={`h-8 w-full rounded-md border px-2 text-center text-xs font-currency font-black focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${getFieldStatusClass(row.unit_price, 'price')}`}
                             dir="ltr"
                             lang="en"
                             inputMode="decimal"
@@ -1692,14 +2421,14 @@ export default function PurchasesPage() {
                           />
                         </td>
 
-                        {/* 7. Discount % */}
+                        {/* 9. Discount % */}
                         <td className="py-1.5 px-1.5 text-center">
                           <input
                             value={row.discount_percent}
                             onChange={(e) =>
                               updateLine(row.key, 'discount_percent', normalizeDigitsToLatin(e.target.value))
                             }
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-currency font-bold text-slate-700 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            className={`h-8 w-full rounded-md border px-1 text-center text-xs font-currency font-bold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${getFieldStatusClass(row.discount_percent, 'discount')}`}
                             dir="ltr"
                             lang="en"
                             inputMode="decimal"
@@ -1755,7 +2484,7 @@ export default function PurchasesPage() {
                       {row.showDetails && (
                         <tr className="bg-slate-50/70 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700/60">
                           <td className="py-2 px-2" />
-                          <td colSpan={8} className="py-2.5 px-3">
+                          <td colSpan={10} className="py-2.5 px-3">
                             <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
                               {/* Margin & Sell Price Info */}
                               {row.productId && sell != null && cost >= 0 ? (
@@ -1874,24 +2603,192 @@ export default function PurchasesPage() {
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="bg-indigo-50/90 dark:bg-indigo-950/50 border-t-2 border-indigo-300 dark:border-indigo-800 text-xs font-bold text-indigo-950 dark:text-indigo-100 select-none">
+                  <td colSpan={6} className="py-2.5 px-3 text-right">
+                    <span className="font-black text-indigo-900 dark:text-indigo-200">
+                      مجموع بنود الجدول ({validItemsCount} صنف مدخل)
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center font-black font-currency text-indigo-950 dark:text-white" dir="ltr" lang="en">
+                    {totalUnitsCount}
+                  </td>
+                  <td className="py-2.5 px-2 text-center font-currency text-slate-400">
+                    —
+                  </td>
+                  <td className="py-2.5 px-2 text-center font-bold font-currency text-rose-600 dark:text-rose-400" dir="ltr" lang="en">
+                    {totalDiscountAmount > 0 ? `-₪${totalDiscountAmount.toFixed(2)}` : '—'}
+                  </td>
+                  <td className="py-2.5 px-2 text-center font-black font-currency text-indigo-950 dark:text-indigo-100 whitespace-nowrap text-sm" dir="ltr" lang="en">
+                    ₪ {subtotalAfterDiscount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-2.5 px-2" />
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
 
         {/* ------------------------------------------------------------- */}
-        {/* 3. DENSE BOTTOM TOTALS BAR */}
+        {/* 3. TAX, EXPENSES & EXPANDED NOTES SECTION */}
         {/* ------------------------------------------------------------- */}
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-wrap items-center justify-between gap-4">
-          {/* Left summary values */}
-          <div className="flex flex-wrap items-center gap-5 text-xs">
-            <div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+          {/* Card: الضريبة والمصاريف الواصلة */}
+          <div className="lg:col-span-6 rounded-xl border border-violet-200/90 dark:border-violet-800/60 bg-white p-4 shadow-xs dark:bg-slate-900 space-y-3.5">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                  <Percent size={15} />
+                </div>
+                <span className="text-xs font-black text-slate-900 dark:text-white">
+                  الضريبة والمصاريف الواصلة
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400 font-bold">حسابات منفصلة عن خصم الأصناف</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* حقل نسبة الضريبة % */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  نسبة الضريبة %
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(normalizeDigitsToLatin(e.target.value))}
+                    className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-xs font-currency font-black text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white transition-all"
+                    dir="ltr"
+                    lang="en"
+                    placeholder="0"
+                  />
+                  <div className="absolute left-1.5 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setTaxRate('0')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        taxRate === '0'
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      0%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTaxRate('16')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        taxRate === '16'
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      16%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTaxRate('17')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                        taxRate === '17'
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      17%
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* مصاريف إضافية واصلة */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  مصاريف واصلة (شحن/جمارك) ₪
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={landedCostExtra}
+                  onChange={(e) => setLandedCostExtra(normalizeDigitsToLatin(e.target.value))}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-xs font-currency font-black text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white transition-all"
+                  dir="ltr"
+                  lang="en"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            {/* خيار شامل الضريبة */}
+            <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200 select-none">
+                <input
+                  type="checkbox"
+                  checked={isTaxInclusive}
+                  onChange={(e) => setIsTaxInclusive(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                />
+                <span>الأسعار المدخلة بالجدول <strong>شاملة الضريبة</strong></span>
+              </label>
+              <span className="text-[11px] text-slate-400">
+                {isTaxInclusive ? '(الضريبة مستخرجة من المجموع)' : '(الضريبة تُضاف فوق المجموع)'}
+              </span>
+            </div>
+          </div>
+
+          {/* Card: ملاحظات الفاتورة موسعة + WAC + المرفقات السريعة */}
+          <div className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between space-y-2">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+              <span className="text-xs font-black text-slate-900 dark:text-white">
+                ملاحظات الفاتورة (موسعة)
+              </span>
+              <button
+                type="button"
+                onClick={() => setAttachmentsModalOpen(true)}
+                className="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1"
+              >
+                <Paperclip size={12} />
+                <span>{invoiceScanFile || loadedScanPath ? 'معاينة المرفق 📎' : 'إرفاق مستند/صورة'}</span>
+              </button>
+            </div>
+
+            <textarea
+              value={extraNotes}
+              onChange={(e) => setExtraNotes(e.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 resize-none transition-all flex-1"
+              placeholder="أدخل أي ملاحظات تفصيلية تخص الشحنة، الاتفاق مع المورد، رقم بوليصة الشحن، أو شروط الاسترجاع والدفع…"
+            />
+
+            <div className="pt-1 flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-slate-600 dark:text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={updateCatalogCosts}
+                  onChange={(e) => setUpdateCatalogCosts(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                />
+                <span>تطبيق <strong>متوسط التكلفة المرجح (WAC)</strong> على تكلفة الكتالوج عند الاستلام</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* ------------------------------------------------------------- */}
+        {/* 4. DENSE BOTTOM TOTALS & POSTING BAR */}
+        {/* ------------------------------------------------------------- */}
+        <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4 transition-colors">
+          {/* Left: Financial Summary Breakdown */}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-3.5 text-xs">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-1.5 shadow-xs">
               <span className="text-[11px] text-slate-400 block font-bold">الأصناف والكمية</span>
               <span className="font-black text-slate-800 dark:text-slate-100">
                 {validItemsCount} صنف ({totalUnitsCount} وحدة)
               </span>
             </div>
 
-            <div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-1.5 shadow-xs">
               <span className="text-[11px] text-slate-400 block font-bold">مجموع البضاعة</span>
               <span className="font-currency font-black text-slate-800 dark:text-slate-100" dir="ltr" lang="en">
                 ₪ {subtotalBeforeDiscount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1899,200 +2796,83 @@ export default function PurchasesPage() {
             </div>
 
             {totalDiscountAmount > 0 && (
-              <div>
-                <span className="text-[11px] text-slate-400 block font-bold">الخصم</span>
+              <div className="rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50/80 dark:bg-amber-950/40 px-3 py-1.5 shadow-xs">
+                <span className="text-[11px] text-amber-800 dark:text-amber-300 block font-bold">الخصم الإجمالي</span>
                 <span className="font-currency font-black text-rose-600 dark:text-rose-400" dir="ltr" lang="en">
                   - ₪ {totalDiscountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             )}
 
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-1.5 shadow-xs">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-bold">
+                قبل الضريبة
+              </span>
+              <span className="font-currency font-black text-slate-800 dark:text-slate-200" dir="ltr" lang="en">
+                ₪ {subtotalBeforeTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            {taxRateNum > 0 && (
+              <div className="rounded-xl border border-violet-300 dark:border-violet-700/80 bg-violet-50/80 dark:bg-violet-950/40 px-3 py-1.5 shadow-xs">
+                <span className="text-[11px] text-violet-800 dark:text-violet-300 block font-bold">
+                  الضريبة ({taxRateNum}%)
+                </span>
+                <span className="font-currency font-black text-violet-900 dark:text-violet-200" dir="ltr" lang="en">
+                  {isTaxInclusive ? '(مشمولة)' : '+'} ₪ {taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-1.5 shadow-xs">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-bold">
+                بعد الضريبة
+              </span>
+              <span className="font-currency font-black text-slate-900 dark:text-white" dir="ltr" lang="en">
+                ₪ {totalAfterTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
             {landingTotal > 0 && (
-              <div>
-                <span className="text-[11px] text-slate-400 block font-bold">مصاريف واصلة</span>
-                <span className="font-currency font-black text-indigo-600 dark:text-indigo-400" dir="ltr" lang="en">
+              <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/70 dark:bg-indigo-950/40 px-3 py-1.5 shadow-xs">
+                <span className="text-[11px] text-indigo-800 dark:text-indigo-300 block font-bold">مصاريف واصلة</span>
+                <span className="font-currency font-black text-indigo-700 dark:text-indigo-300" dir="ltr" lang="en">
                   + ₪ {landingTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             )}
 
-            <div className="pe-4 border-s border-slate-200 dark:border-slate-800 ps-4">
-              <span className="text-[11px] text-violet-600 dark:text-violet-400 block font-bold">
+            <div className="rounded-2xl border-2 border-emerald-400 dark:border-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/50 px-4 py-2 shadow-md shadow-emerald-500/10">
+              <span className="text-[11px] text-emerald-800 dark:text-emerald-300 block font-black">
                 الصافي النهائي
               </span>
-              <span className="text-xl font-black text-violet-700 dark:text-violet-300 font-currency" dir="ltr" lang="en">
+              <span className="text-2xl font-black text-emerald-950 dark:text-emerald-100 font-currency" dir="ltr" lang="en">
                 ₪ {grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>
 
-          {/* Right action buttons: Status toggle & Big Save button */}
+          {/* Right: Status Selector & Save Button */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Status Selector */}
             <select
               value={purchaseStatus}
               onChange={(e) => setPurchaseStatus(e.target.value)}
-              className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+              className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 outline-none cursor-pointer shadow-xs"
             >
               <option value="received">تم الاستلام (تحديث المخزون فوراً)</option>
               <option value="draft">مسودة (حفظ دون تحديث المخزون)</option>
             </select>
 
-            {/* Save Button */}
             <button
               type="button"
               onClick={handleSavePurchase}
               disabled={saving || grandTotal <= 0}
-              className="h-10 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black px-6 text-xs shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="h-11 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black px-7 text-xs shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
             >
               {saving ? <Loader2 className="animate-spin" size={17} /> : <Save size={17} />}
               <span>{purchaseStatus === 'draft' ? 'حفظ كمسودة' : 'حفظ واستلام للمخزن'}</span>
             </button>
           </div>
-        </div>
-
-        {/* ------------------------------------------------------------- */}
-        {/* 4. COLLAPSIBLE ACCORDION FOR EXTRA OPTIONS */}
-        {/* ------------------------------------------------------------- */}
-        <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 overflow-hidden shadow-xs">
-          <button
-            type="button"
-            onClick={() => setExtraOptionsOpen(!extraOptionsOpen)}
-            className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <span>خيارات إضافية (مصاريف واصلة، صورة الفاتورة، ملاحظات، إعدادات التكلفة)</span>
-              {/* Badges for active extra values */}
-              {landingTotal > 0 && (
-                <span className="rounded-md bg-indigo-100 text-indigo-800 px-2 py-0.5 text-[10px] font-currency dark:bg-indigo-950/60 dark:text-indigo-300">
-                  مصاريف: ₪{landingTotal}
-                </span>
-              )}
-              {invoiceScanFile && (
-                <span className="rounded-md bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] dark:bg-emerald-950/60 dark:text-emerald-300">
-                  صورة مرفقة
-                </span>
-              )}
-              {extraNotes.trim() && (
-                <span className="rounded-md bg-slate-200 text-slate-800 px-2 py-0.5 text-[10px] dark:bg-slate-700 dark:text-slate-300">
-                  ملاحظات
-                </span>
-              )}
-            </div>
-
-            <div className="text-slate-400">
-              {extraOptionsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </div>
-          </button>
-
-          {extraOptionsOpen && (
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50 space-y-4 text-xs animate-fadeIn">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Landed Cost Extra */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    مصاريف إضافية واصلة (نقل، شحن، جمارك…) ₪
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={landedCostExtra}
-                    onChange={(e) => setLandedCostExtra(normalizeDigitsToLatin(e.target.value))}
-                    className="h-8.5 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-currency dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                    dir="ltr"
-                    lang="en"
-                    placeholder="0.00"
-                  />
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                    تُوزَّع نسبياً على بنود الفاتورة لتقدير تكلفة الوحدة الواصلة الحقيقية.
-                  </p>
-                </div>
-
-                {/* Notes */}
-                <div className="md:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    ملاحظات الفاتورة (اختياري)
-                  </label>
-                  <textarea
-                    value={extraNotes}
-                    onChange={(e) => setExtraNotes(e.target.value)}
-                    rows={2}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-500 resize-none"
-                    placeholder="أي ملاحظات تخص الشحنة أو الاتفاق مع المورد…"
-                  />
-                </div>
-              </div>
-
-              {/* Invoice Scan & WAC cost settings */}
-              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4">
-                {/* Image Scan Upload */}
-                <div className="flex items-center gap-3">
-                  <input
-                    ref={invoiceFileRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleInvoiceFileChosen}
-                  />
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        invoiceFileRef.current?.removeAttribute('capture');
-                        invoiceFileRef.current?.click();
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      <Upload size={14} />
-                      إرفاق صورة الفاتورة
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        invoiceFileRef.current?.setAttribute('capture', 'environment');
-                        invoiceFileRef.current?.click();
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-800 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300"
-                    >
-                      <Camera size={14} />
-                      كاميرا
-                    </button>
-
-                    {invoiceScanFile && (
-                      <button
-                        type="button"
-                        onClick={clearInvoiceScan}
-                        className="text-xs font-bold text-rose-600 hover:underline px-1.5"
-                      >
-                        إزالة الصورة
-                      </button>
-                    )}
-                  </div>
-
-                  {invoicePreviewUrl && (
-                    <div className="h-10 w-10 rounded-md border border-slate-200 overflow-hidden bg-slate-100 shrink-0">
-                      <img src={invoicePreviewUrl} alt="معاينة" className="h-full w-full object-cover" />
-                    </div>
-                  )}
-                </div>
-
-                {/* WAC Checkbox */}
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 select-none">
-                  <input
-                    type="checkbox"
-                    checked={updateCatalogCosts}
-                    onChange={(e) => setUpdateCatalogCosts(e.target.checked)}
-                    className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                  />
-                  <span>
-                    تطبيق <strong>متوسط التكلفة المرجح (WAC)</strong> على أسعار الكتالوج عند الاستلام
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ------------------------------------------------------------- */}
@@ -2471,7 +3251,37 @@ export default function PurchasesPage() {
             </div>
           </div>
         )}
+
+        {/* Modal: Purchase Attachments */}
+        <PurchaseAttachmentsModal
+          isOpen={attachmentsModalOpen}
+          onClose={() => setAttachmentsModalOpen(false)}
+          scanFile={invoiceScanFile}
+          scanPath={loadedScanPath}
+          previewUrl={invoicePreviewUrl}
+          onFileChosen={handleAttachmentFileChosen}
+          onRemove={handleAttachmentRemove}
+        />
+
+        {/* Modal: Barcode Labels Printing */}
+        {barcodeModalOpen && (
+          <PrintPurchaseBarcodesModal
+            lines={lines.filter((x) => Number(x.qty) > 0 && (x.barcode || x.productName))}
+            storeName={store?.name || 'شركة سنين'}
+            onClose={() => setBarcodeModalOpen(false)}
+          />
+        )}
       </div>
+
+      {printPurchaseData ? (
+        <div
+          id="print-invoice-mount"
+          className="fixed inset-0 z-[9999] overflow-y-auto bg-white print:static print:inset-auto print:z-auto"
+          aria-hidden
+        >
+          <PrintPurchaseInvoice data={printPurchaseData} />
+        </div>
+      ) : null}
     </DashboardLayout>
   );
 }

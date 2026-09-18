@@ -11,10 +11,15 @@ export default function PrintPurchaseInvoice({ data }) {
     supplierCompanyName,
     supplierPhone,
     invoiceNumber,
+    internalInvoiceNumber,
     invoiceDate,
     paymentMode,
     paymentDueDate,
     lines = [],
+    subtotalBeforeTax,
+    taxRate,
+    taxAmount,
+    isTaxInclusive,
     totalAmount,
     landedCostExtra,
     notes,
@@ -74,6 +79,14 @@ export default function PrintPurchaseInvoice({ data }) {
         <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
           <h2 className="font-title text-xs font-black text-slate-700 mb-3">بيانات الفاتورة</h2>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            {internalInvoiceNumber ? (
+              <div>
+                <dt className="text-[10px] font-bold text-slate-500">الرقم الداخلي</dt>
+                <dd className="font-black font-currency text-violet-700" dir="ltr" lang="en">
+                  {internalInvoiceNumber}
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt className="text-[10px] font-bold text-slate-500">رقم فاتورة المورد</dt>
               <dd className="font-black font-currency text-slate-900" dir="ltr" lang="en">
@@ -110,7 +123,7 @@ export default function PrintPurchaseInvoice({ data }) {
               <tr className="bg-slate-900 text-white text-right">
                 <th className="p-2.5 font-black w-8">#</th>
                 <th className="p-2.5 font-black min-w-[100px]">الباركود</th>
-                <th className="p-2.5 font-black min-w-[90px]">المرجع</th>
+                <th className="p-2.5 font-black min-w-[140px]">الصنف / التفاصيل</th>
                 <th className="p-2.5 font-black w-14 text-center" dir="ltr">
                   الكمية
                 </th>
@@ -131,14 +144,30 @@ export default function PrintPurchaseInvoice({ data }) {
                 const up = Number(line.unit_price ?? 0);
                 const dp = Number(line.discount_percent ?? 0);
                 const q = Number(line.qty ?? 0);
+                const pName = line.product_name || line.productName || '';
+                const batch = line.batch_number || line.batchNumber || '';
+                const wh = line.warehouse || '';
                 return (
                   <tr key={idx} className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60">
                     <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
                     <td className="p-2 font-currency text-slate-800" dir="ltr" lang="en">
                       {line.barcode || '—'}
                     </td>
-                    <td className="p-2 font-currency text-slate-700" dir="ltr" lang="en">
-                      {line.reference || '—'}
+                    <td className="p-2 text-slate-800">
+                      <div className="font-bold text-xs">{pName || line.reference || '—'}</div>
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px] text-slate-500">
+                        {line.reference && pName ? (
+                          <span className="font-mono">مرجع: {line.reference}</span>
+                        ) : null}
+                        {wh && wh !== 'الرئيسي' ? (
+                          <span className="bg-slate-100 px-1.5 py-0.5 rounded">المخزن: {wh}</span>
+                        ) : null}
+                        {batch ? (
+                          <span className="bg-amber-50 text-amber-800 border border-amber-200/60 px-1.5 py-0.5 rounded font-mono">
+                            تشغيلة: {batch}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="p-2 text-center font-black font-currency" dir="ltr" lang="en">
                       {q}
@@ -161,6 +190,22 @@ export default function PrintPurchaseInvoice({ data }) {
       </section>
 
       <footer className="mt-6 space-y-3 border-t-2 border-slate-200 pt-6">
+        {taxAmount != null && Number(taxAmount) > 0 ? (
+          <>
+            <div className="flex justify-between text-sm font-bold text-slate-600">
+              <span>المجموع قبل الضريبة</span>
+              <span className="font-currency" dir="ltr" lang="en">
+                ₪{Number(subtotalBeforeTax ?? (totalAmount - taxAmount)).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm font-bold text-slate-600">
+              <span>قيمة الضريبة ({taxRate || 0}% {isTaxInclusive ? 'شاملة' : 'مضافة'})</span>
+              <span className="font-currency" dir="ltr" lang="en">
+                ₪{Number(taxAmount).toFixed(2)}
+              </span>
+            </div>
+          </>
+        ) : null}
         {landedCostExtra != null && Number(landedCostExtra) > 0 ? (
           <div className="flex justify-between text-sm font-bold text-slate-600">
             <span>مصاريف واصلة / إضافية</span>
