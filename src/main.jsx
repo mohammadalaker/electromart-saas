@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
 import { StoreProvider } from './context/StoreContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import App from './App.jsx'
@@ -68,6 +68,7 @@ import AnalyticsReportsPage from './pages/AnalyticsReportsPage.jsx'
 import EndOfDayReportPage from './pages/EndOfDayReportPage.jsx'
 import LowStockPage from './pages/LowStockPage.jsx'
 import IncomeStatementPage from './pages/IncomeStatementPage.jsx'
+import ReportsHubPage from './pages/ReportsHubPage.jsx'
 import EntitlementGuard from './components/EntitlementGuard.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
 import './index.css'
@@ -76,6 +77,14 @@ import { migrateLegacyStorageKeys } from './lib/storageMigration.js'
 
 migrateLegacyStorageKeys();
 initThemeOnBoot();
+
+function RedirectToReport({ category, report }) {
+  const [searchParams] = useSearchParams();
+  const nextParams = new URLSearchParams(searchParams);
+  if (category) nextParams.set('category', category);
+  if (report) nextParams.set('report', report);
+  return <Navigate to={`/reports?${nextParams.toString()}`} replace />;
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -98,12 +107,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/inventory/transfers" element={<EntitlementGuard module="stock_transfers"><StockTransferPage /></EntitlementGuard>} />
           <Route path="/inventory/locations" element={<EntitlementGuard module="warehouse_locations"><WarehouseLocationsPage /></EntitlementGuard>} />
           <Route path="/warehouse/quick" element={<EntitlementGuard module="quick_inventory"><QuickInventoryPage /></EntitlementGuard>} />
-          <Route path="/reports/profit" element={<EntitlementGuard module="profit_reports"><ProfitReportsPage /></EntitlementGuard>} />
-          <Route path="/reports/comparison" element={<EntitlementGuard module="profit_reports"><ComparisonReportPage /></EntitlementGuard>} />
-          <Route path="/reports/slow-moving" element={<EntitlementGuard module="profit_reports"><SlowMovingInventoryPage /></EntitlementGuard>} />
-          <Route path="/reports/analytics" element={<EntitlementGuard module="profit_reports"><AnalyticsReportsPage /></EntitlementGuard>} />
-          <Route path="/reports/eod" element={<EntitlementGuard module="sales_movements"><EndOfDayReportPage /></EntitlementGuard>} />
-          <Route path="/reports/pos-invoices" element={<EntitlementGuard module="sales_movements"><POSInvoicesReportPage /></EntitlementGuard>} />
+          <Route path="/reports" element={<ReportsHubPage />} />
+          <Route path="/reports/profit" element={<RedirectToReport category="inventory" report="inventory_sales_profit" />} />
+          <Route path="/reports/comparison" element={<RedirectToReport category="inventory" report="inventory_balances" />} />
+          <Route path="/reports/slow-moving" element={<RedirectToReport category="inventory" report="inventory_slow_moving" />} />
+          <Route path="/reports/analytics" element={<RedirectToReport category="pos" report="pos_today_sales" />} />
+          <Route path="/reports/eod" element={<RedirectToReport category="pos" report="pos_today_sales" />} />
+          <Route path="/reports/pos-invoices" element={<RedirectToReport category="pos" report="pos_invoices" />} />
           <Route path="/finance/center" element={<EntitlementGuard module="financial_center"><FinancialCenterPage /></EntitlementGuard>} />
           <Route path="/finance/funds" element={<EntitlementGuard module="funds"><FundAccountsPage /></EntitlementGuard>} />
           <Route path="/finance/journal" element={<EntitlementGuard module="journal_entries"><JournalEntriesPage /></EntitlementGuard>} />
@@ -131,9 +141,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/sales/preorders" element={<EntitlementGuard module="preorders"><PreOrdersPage /></EntitlementGuard>} />
           <Route path="/purchases/lines" element={<EntitlementGuard module="purchase_lines"><PurchaseInvoiceLinesPage /></EntitlementGuard>} />
           <Route path="/purchases/history" element={<EntitlementGuard module="purchase_history"><PurchaseHistoryPage /></EntitlementGuard>} />
-          <Route path="/purchases/supplier-statement" element={<EntitlementGuard module="supplier_statement"><SupplierAccountStatementPage /></EntitlementGuard>} />
-          <Route path="/customers/statement" element={<EntitlementGuard module="customer_statement"><CustomerAccountStatementPage /></EntitlementGuard>} />
-          <Route path="/sales/customer-statement" element={<EntitlementGuard module="customer_statement"><CustomerAccountStatementPage /></EntitlementGuard>} />
+          <Route path="/purchases/supplier-statement" element={<RedirectToReport category="suppliers" report="supplier_statement" />} />
+          <Route path="/customers/statement" element={<RedirectToReport category="customers" report="customer_statement" />} />
+          <Route path="/sales/customer-statement" element={<RedirectToReport category="customers" report="customer_statement" />} />
           <Route path="/vouchers" element={<Navigate to="/vouchers/receipt" replace />} />
           <Route path="/vouchers/receipt" element={<EntitlementGuard module="vouchers"><VoucherPage type="receipt" /></EntitlementGuard>} />
           <Route path="/vouchers/payment" element={<EntitlementGuard module="vouchers"><VoucherPage type="payment" /></EntitlementGuard>} />

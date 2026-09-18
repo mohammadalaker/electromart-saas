@@ -89,7 +89,6 @@ const CATEGORIES = [
         icon: DollarSign,
         items: [
           { to: '/sales', icon: ShoppingCart, label: 'المبيعات', module: 'sales_movements' },
-          { to: '/reports/pos-invoices', icon: Receipt, label: 'كشف فواتير المبيعات', module: 'sales_movements' },
           { to: '/online-orders', icon: Package, label: 'الطلبات الأونلاين' },
           { to: '/store-stats', icon: TrendingUp, label: 'إحصائيات المتجر' },
           { to: '/coupons', label: 'كوبونات الخصم', icon: Tag },
@@ -100,8 +99,6 @@ const CATEGORIES = [
           { to: '/purchases/rfq', icon: FileQuestion, label: 'طلبات عرض سعر', module: 'purchase_rfq' },
           { to: '/purchases/price-history', icon: Tag, label: 'آخر أسعار شراء', module: 'purchase_price_history' },
           { to: '/purchases/history', icon: ClipboardList, label: 'سجل المشتريات', module: 'purchase_history' },
-          { to: '/purchases/supplier-statement', icon: FileText, label: 'كشف حساب مورد', module: 'supplier_statement' },
-          { to: '/customers/statement', icon: UserCircle, label: 'كشف حساب زبون', module: 'customer_statement' },
         ],
       },
       {
@@ -126,7 +123,6 @@ const CATEGORIES = [
           { to: '/customers', icon: Users, label: 'الزبائن والموردين', module: 'customers' },
           { to: '/customers/crm', icon: HeartHandshake, label: 'إدارة العملاء (CRM)', module: 'customers' },
           { to: '/customers/debt', icon: Wallet, label: 'الذمم والديون', module: 'debt_ledger' },
-          { to: '/customers/statement', icon: FileText, label: 'كشف حساب زبون', module: 'customer_statement' },
         ],
       },
       {
@@ -155,14 +151,8 @@ const CATEGORIES = [
         id: 'reports',
         title: 'التقارير',
         icon: BarChart2,
-        badge: 'جديد',
-        items: [
-          { to: '/reports/eod', icon: CalendarDays, label: 'تقرير نهاية اليوم (Z)', module: 'sales_movements' },
-          { to: '/reports/analytics', icon: LineChart, label: 'تحليل الأداء التفاعلي', module: 'profit_reports' },
-          { to: '/reports/comparison', icon: BarChart2, label: 'مقارنة الفترات', module: 'profit_reports' },
-          { to: '/reports/slow-moving', icon: PackageMinus, label: 'المنتجات الراكدة', module: 'profit_reports' },
-          { to: '/reports/profit', icon: TrendingUp, label: 'تقارير الأرباح', module: 'profit_reports' },
-        ],
+        badge: 'موحد',
+        to: '/reports',
       },
     ],
   },
@@ -217,7 +207,7 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
     const initialState = {};
     CATEGORIES.forEach(cat => {
       cat.sections.forEach(sec => {
-        initialState[sec.id] = sec.items.some(item => isLinkActive(pathname, item.to));
+        initialState[sec.id] = sec.items ? sec.items.some(item => isLinkActive(pathname, item.to)) : false;
       });
     });
     return initialState;
@@ -225,11 +215,22 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
 
   const allNavItems = useMemo(() =>
     CATEGORIES.flatMap((category) =>
-      category.sections.flatMap((section) =>
-        section.items
+      category.sections.flatMap((section) => {
+        if (section.to) {
+          return [{
+            to: section.to,
+            icon: section.icon,
+            label: section.title,
+            badge: section.badge,
+            categoryTitle: category.title,
+            sectionId: section.id,
+            sectionTitle: section.title,
+          }];
+        }
+        return (section.items || [])
           .filter((item) => !item.module || isModuleEnabled(store, item.module))
-          .map((item) => ({ ...item, categoryTitle: category.title, sectionId: section.id, sectionTitle: section.title }))
-      )
+          .map((item) => ({ ...item, categoryTitle: category.title, sectionId: section.id, sectionTitle: section.title }));
+      })
     ), [store]);
 
   const searchTerm = searchQuery.trim();
@@ -487,9 +488,10 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
 
                 {CATEGORIES.map((category, idx) => {
                   const visibleSections = category.sections.map(sec => {
-                    const visItems = sec.items.filter(item => !item.module || isModuleEnabled(store, item.module));
+                    if (sec.to) return sec;
+                    const visItems = (sec.items || []).filter(item => !item.module || isModuleEnabled(store, item.module));
                     return { ...sec, items: visItems };
-                  }).filter(sec => sec.items.length > 0);
+                  }).filter(sec => sec.to || (sec.items && sec.items.length > 0));
                   if (!visibleSections.length) return null;
 
                   return (
@@ -499,8 +501,37 @@ export default function Sidebar({ collapsible = false, collapsed = false, onTogg
                       </div>
                       <div className="space-y-1">
                         {visibleSections.map((section) => {
+                          if (section.to) {
+                            const active = isLinkActive(pathname, section.to);
+                            const MainIcon = section.icon;
+                            return (
+                              <div key={section.id} className="flex flex-col">
+                                <Link
+                                  to={section.to}
+                                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 transition-all duration-200 ${
+                                    active
+                                      ? 'bg-[#E8F5E9] text-[#2E7D32] font-bold shadow-xs'
+                                      : 'text-[#1C1C1E] hover:bg-[#F5F5F7]'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <MainIcon size={18} strokeWidth={active ? 2.5 : 1.5} className={active ? 'text-[#2E7D32]' : ''} />
+                                    <span className={`truncate text-[13px] ${active ? 'font-bold' : 'font-medium'}`}>
+                                      {section.title}
+                                    </span>
+                                  </div>
+                                  {section.badge && (
+                                    <span className="flex items-center justify-center rounded-full bg-[#E8F5E9] text-[#2E7D32] text-[10px] font-bold px-2 py-0.5">
+                                      {section.badge}
+                                    </span>
+                                  )}
+                                </Link>
+                              </div>
+                            );
+                          }
+
                           const isOpen = openSections[section.id];
-                          const hasActiveChild = section.items.some((item) => isLinkActive(pathname, item.to));
+                          const hasActiveChild = (section.items || []).some((item) => isLinkActive(pathname, item.to));
                           const MainIcon = section.icon;
 
                           return (
