@@ -2058,12 +2058,14 @@ export default function SupermarketPOS() {
     }
 
     setIsSubmittingSale(true);
+    console.time('⏱️ [POS إجمالي الفاتورة]');
     try {
-      // معرف الكاشير الحالي
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const cashierId = user?.id || currentUser?.id || null;
+      // معرف الكاشير الحالي (من الذاكرة أولاً لتفادي طلب شبكة إضافي)
+      let cashierId = currentUser?.id || activeShift?.cashier_id || activeShift?.user_id || null;
+      if (!cashierId) {
+        const { data: userData } = await supabase.auth.getUser();
+        cashierId = userData?.user?.id || null;
+      }
 
       // أسطر الفاتورة
       const saleLineItems = orderItems.map((o) => ({
@@ -2113,43 +2115,23 @@ export default function SupermarketPOS() {
         line_items: saleLineItems,
       };
 
-      // تجربة الحفظ مع status: 'confirmed' (القيمة المعتمدة للمبيعات المكتملة)
-      // مع الرجوع التدريجي لنفس صيغة صفحة /pos الأصلية
+      // تجربة الحفظ المباشر النظيف (بدون حقول مسببة للأخطاء كـ cashier_id أو session_id المحفوظة في notes)
       const variants = [
         {
           ...basePayload,
-          session_id: activeShift.id,
-          cashier_id: cashierId,
-          paid_amount: paidAmt,
-          change_amount: changeAmt,
           status: 'confirmed',
           order_status: 'confirmed',
         },
         {
           ...basePayload,
-          session_id: activeShift.id,
-          cashier_id: cashierId,
           status: 'confirmed',
         },
         {
           ...basePayload,
-          status: 'confirmed',
-        },
-        // صيغة POS الأصلية (بدون إرسال عمود status نهائياً)
-        {
-          ...basePayload,
-        },
-        {
-          store_id: store.id,
-          total_amount: payable,
-          payment_mode: paymentMode === 'credit' ? 'credit' : paymentMode === 'visa' ? 'visa' : 'cash',
-          payment_method: paymentMode === 'credit' ? 'deferred' : paymentMode === 'visa' ? 'card' : 'cash',
-          contact_id: selectedCustomer?.id || null,
-          notes: saleNotes,
-          line_items: saleLineItems,
         },
       ];
 
+      console.time('⏱️ [2. إدراج رأس الفاتورة sales]');
       let saleRow = null;
       let lastErr = null;
       for (const variant of variants) {
@@ -2166,156 +2148,142 @@ export default function SupermarketPOS() {
         }
         lastErr = error;
       }
+      console.timeEnd('⏱️ [2. إدراج رأس الفاتورة sales]');
 
       if (!saleRow?.id) {
         throw lastErr || new Error('فشل حفظ الفاتورة في قاعدة البيانات');
       }
 
-      // إدراج بنود الفاتورة في sales_items إن وُجد
-      try {
-        const itemRows = saleLineItems.map((l) => ({
-          sale_id: saleRow.id,
-          store_id: store.id,
-          product_id: l.product_id,
-          barcode: l.barcode,
-          qty: l.qty,
-          unit_price: l.unit_price,
-          line_total: l.line_total,
-        }));
-        await supabase.from('sales_items').insert(itemRows);
-      } catch (err) {
-        /* sales_items جدول اختياري */
-      }
+      console.time('⏱️ [3. تنفيذ مهام الفاتورة بالتوازي]');
 
-      // خصم المخزون للأصناف المرتبطة بمنتج في قاعدة البيانات (ضرب الكمية × نسبة التحويل)
+      // أ. إدراج بنود الفاتورة في sales_items (اختياري / بالتوازي)
+      const itemRows = saleLineItems.map((l) => ({
+        sale_id: saleRow.id,
+        store_id: store.id,
+        product_id: l.product_id,
+        barcode: l.barcode,
+        qty: l.qty,
+        unit_price: l.unit_price,
+        line_total: l.line_total,
+      }));
+      const salesItemsPromise = supabase
+        .from('sales_items')
+        .insert(itemRows)
+        .then(() => {})
+        .catch(() => {});
+
+      // ب. تجميع خصم المخزون حسب معرف المنتج لتفادي التكرار
+      const stockDeductionsMap = new Map();
       for (const line of orderItems) {
         if (line.productId && isUuid(line.productId)) {
           const factor = Number(line.conversionFactor) || 1;
           const baseQty = Math.max(0.001, (Number(line.qty) || 1) * factor);
-          let prevStock = 0;
-          let newStock = 0;
-          try {
-            // جلب المخزون الحالي للمقارنة والتوثيق
-            const { data: prodRow } = await supabase
-              .from(PRODUCTS_TABLE)
-              .select(PRODUCTS_STOCK_COLUMN)
-              .eq('id', line.productId)
-              .maybeSingle();
-
-            prevStock = Number(prodRow?.[PRODUCTS_STOCK_COLUMN] ?? 0);
-
-            // استدعاء دالة decrement_stock الرسمية من Supabase RPC
-            const { error: rpcError } = await supabase.rpc('decrement_stock', {
-              row_id: line.productId,
-              amount: baseQty,
-            });
-
-            if (rpcError) {
-              console.warn('[SupermarketPOS] RPC decrement_stock warning, falling back to direct update:', rpcError);
-              newStock = Math.max(0, prevStock - baseQty);
-              await supabase
-                .from(PRODUCTS_TABLE)
-                .update({ [PRODUCTS_STOCK_COLUMN]: newStock })
-                .eq('id', line.productId);
-            } else {
-              newStock = Math.max(0, prevStock - baseQty);
-            }
-
-            // توثيق حركة المخزون في inventory_logs إن وُجد الجدول
-            try {
-              await insertInventoryLog({
-                storeId: store.id,
-                productId: line.productId,
-                barcode: line.barcode ? String(line.barcode) : null,
-                productName: factor > 1
-                  ? `${line.name} (${line.qty} ${line.unit} = ${baseQty} قطعة)`
-                  : (line.name || ''),
-                qtyBefore: prevStock,
-                qtyAfter: newStock,
-                reason: 'sale',
-              });
-            } catch (logErr) {
-              /* inventory_logs جدول اختياري */
-            }
-          } catch (stockErr) {
-            console.warn('[SupermarketPOS] Error decrementing stock for item:', line.name, stockErr);
-          }
+          const cur = stockDeductionsMap.get(line.productId) || {
+            productId: line.productId,
+            name: line.name || '',
+            barcode: line.barcode ? String(line.barcode) : null,
+            totalQty: 0,
+          };
+          cur.totalQty += baseQty;
+          stockDeductionsMap.set(line.productId, cur);
         }
       }
 
-      // تحديث المخزون في الذاكرة المحلية فوراً مع احتساب نسبة التحويل
-      setItems((prev) =>
-        prev.map((it) => {
-          const matched = orderItems.find((o) => o.productId === it.id);
-          if (matched) {
-            const factor = Number(matched.conversionFactor) || 1;
-            const baseQty = Math.max(1, Math.round((Number(matched.qty) || 1) * factor));
-            const curStock = Number(it.stock ?? it.stock_count ?? 0);
-            const nextStock = Math.max(0, curStock - baseQty);
-            return { ...it, stock: nextStock, stock_count: nextStock };
-          }
-          return it;
-        })
-      );
-
-      // ربط محاسبي لصندوق كاش المتجر إذا كان الدفع نقدي
-      if (paymentMode === 'cash') {
+      // ج. خصم المخزون بالتوازي لكافة المنتجات في الفاتورة عبر Promise.all
+      const stockPromises = Array.from(stockDeductionsMap.values()).map(async (item) => {
         try {
-          await applyCashSaleToMainCashFund(supabase, {
-            storeId: store.id,
-            saleId: saleRow.id,
-            totalAmount: payable,
-            sourceLabel: 'سوبرماركت POS',
-          });
-        } catch (fundErr) {
-          console.warn('Cash fund sync:', fundErr);
-        }
-      }
-
-      // في حالة البيع الآجل: تحديث رصيد دين الزبون وتسجيل الحركة في customer_ledger
-      if (paymentMode === 'credit' && selectedCustomer?.id) {
-        try {
-          const { data: cRow } = await supabase
-            .from('store_contacts')
-            .select('outstanding_amount, balance')
-            .eq('id', selectedCustomer.id)
-            .eq('store_id', store.id)
+          const { data: prodRow } = await supabase
+            .from(PRODUCTS_TABLE)
+            .select(PRODUCTS_STOCK_COLUMN)
+            .eq('id', item.productId)
             .maybeSingle();
 
-          const curOut = Number(cRow?.outstanding_amount ?? selectedCustomer.outstanding_amount ?? 0);
-          const curBal = Number(cRow?.balance ?? selectedCustomer.balance ?? 0);
-          const nextOut = roundMoney(Math.max(0, curOut) + payable);
-          const nextBal = roundMoney(curBal + payable);
+          const prevStock = Number(prodRow?.[PRODUCTS_STOCK_COLUMN] ?? 0);
+          const newStock = Math.max(0, prevStock - item.totalQty);
 
           await supabase
-            .from('store_contacts')
-            .update({
-              outstanding_amount: nextOut,
-              balance: nextBal,
-              debt_amount: nextOut,
-              payment_type: 'credit',
-            })
-            .eq('id', selectedCustomer.id)
-            .eq('store_id', store.id);
-        } catch (cErr) {
-          console.error('Error updating customer debt:', cErr);
-        }
+            .from(PRODUCTS_TABLE)
+            .update({ [PRODUCTS_STOCK_COLUMN]: newStock })
+            .eq('id', item.productId);
 
-        try {
-          await supabase.from('customer_ledger').insert([
-            {
-              store_id: store.id,
-              customer_id: selectedCustomer.id,
-              sale_id: saleRow.id,
-              debit: payable,
-              credit: 0,
-              description: `فاتورة سوبرماركت آجل #${String(saleRow.id).slice(0, 8).toUpperCase()}`,
-            },
-          ]);
-        } catch (ledgerErr) {
-          console.warn('Customer ledger insert:', ledgerErr);
+          // توثيق حركة المخزون في الخلفية دون تعطيل الكاشير
+          insertInventoryLog({
+            storeId: store.id,
+            productId: item.productId,
+            barcode: item.barcode,
+            productName: item.name,
+            qtyBefore: prevStock,
+            qtyAfter: newStock,
+            reason: 'sale',
+          }).catch(() => {});
+        } catch (stockErr) {
+          console.warn('[SupermarketPOS] Error decrementing stock for item:', item.name, stockErr);
         }
+      });
+
+      // د. ربط صندوق كاش المحل
+      let fundPromise = Promise.resolve();
+      if (paymentMode === 'cash') {
+        fundPromise = applyCashSaleToMainCashFund(supabase, {
+          storeId: store.id,
+          saleId: saleRow.id,
+          totalAmount: payable,
+          sourceLabel: 'سوبرماركت POS',
+        }).catch((fundErr) => console.warn('Cash fund sync:', fundErr));
       }
+
+      // هـ. في حالة البيع الآجل: تحديث رصيد دين الزبون
+      let creditPromise = Promise.resolve();
+      if (paymentMode === 'credit' && selectedCustomer?.id) {
+        creditPromise = (async () => {
+          try {
+            const { data: cRow } = await supabase
+              .from('store_contacts')
+              .select('outstanding_amount, balance')
+              .eq('id', selectedCustomer.id)
+              .eq('store_id', store.id)
+              .maybeSingle();
+
+            const curOut = Number(cRow?.outstanding_amount ?? selectedCustomer.outstanding_amount ?? 0);
+            const curBal = Number(cRow?.balance ?? selectedCustomer.balance ?? 0);
+            const nextOut = roundMoney(Math.max(0, curOut) + payable);
+            const nextBal = roundMoney(curBal + payable);
+
+            await supabase
+              .from('store_contacts')
+              .update({
+                outstanding_amount: nextOut,
+                balance: nextBal,
+                debt_amount: nextOut,
+                payment_type: 'credit',
+              })
+              .eq('id', selectedCustomer.id)
+              .eq('store_id', store.id);
+
+            await supabase.from('customer_ledger').insert([
+              {
+                store_id: store.id,
+                customer_id: selectedCustomer.id,
+                sale_id: saleRow.id,
+                debit: payable,
+                credit: 0,
+                description: `فاتورة سوبرماركت آجل #${String(saleRow.id).slice(0, 8).toUpperCase()}`,
+              },
+            ]);
+          } catch (cErr) {
+            console.error('Error updating customer debt:', cErr);
+          }
+        })();
+      }
+
+      // انتهاء كافة التحديثات بالتوازي دفعة واحدة
+      await Promise.all([
+        salesItemsPromise,
+        ...stockPromises,
+        fundPromise,
+        creditPromise,
+      ]);
+      console.timeEnd('⏱️ [3. تنفيذ مهام الفاتورة بالتوازي]');
 
       // تشغيل الصوت التفاعلي وإظهار toast النجاح فوراً
       playCashChime();
@@ -2349,7 +2317,9 @@ export default function SupermarketPOS() {
       });
 
       // تفريغ السلة/الجدول بالكامل بعد نجاح الحفظ
+      console.time('⏱️ [7. تفريغ السلة وlocalStorage]');
       clearInvoice();
+      console.timeEnd('⏱️ [7. تفريغ السلة وlocalStorage]');
 
       // تحديث عداد مبيعات الوردية اللحظي وقائمة آخر الفواتير
       if (paymentMode === 'credit') {
@@ -2368,11 +2338,14 @@ export default function SupermarketPOS() {
       fetchShiftRecentInvoices();
       fetchTopSellingProducts();
 
+      console.timeEnd('⏱️ [POS إجمالي الفاتورة]');
+
       // إعادة التركيز لحقل الباركود فوراً لمسح الزبون التالي
       setTimeout(() => {
         barcodeInputRef.current?.focus();
       }, 80);
     } catch (err) {
+      console.timeEnd('⏱️ [POS إجمالي الفاتورة]');
       console.error('Error submitting sale:', err);
       toast.error(
         'حدث خطأ أثناء حفظ الفاتورة: ' +
