@@ -18,6 +18,7 @@ import {
   Phone,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
+import SupplierFormModal from '../components/SupplierFormModal';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -60,6 +61,8 @@ export default function CustomersSuppliers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [supplierToEdit, setSupplierToEdit] = useState(null);
   const [filterBounced, setFilterBounced] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -77,12 +80,12 @@ export default function CustomersSuppliers() {
     try {
       let { data, error: qErr } = await supabase
         .from(CONTACTS_TABLE)
-        .select('id, name, phone, email, address, notes, payment_type, outstanding_amount, credit_limit, returned_cheques_notes, created_at')
+        .select('id, name, phone, email, address, notes, payment_type, outstanding_amount, credit_limit, returned_cheques_notes, contact_person_name, mobile_phone, city, licensed_operator, created_at')
         .eq('store_id', store.id)
         .eq('role', tab)
         .order('created_at', { ascending: false });
 
-      if (qErr && /credit_limit|returned_cheques_notes|column|schema|PGRST204/i.test(String(qErr.message || ''))) {
+      if (qErr && /contact_person_name|mobile_phone|city|licensed_operator|credit_limit|returned_cheques_notes|column|schema|PGRST204/i.test(String(qErr.message || ''))) {
         ({ data, error: qErr } = await supabase
           .from(CONTACTS_TABLE)
           .select('id, name, phone, email, address, notes, payment_type, outstanding_amount, created_at')
@@ -108,27 +111,37 @@ export default function CustomersSuppliers() {
   }, [storeLoading, fetchRows]);
 
   const openNew = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setModalOpen(true);
+    if (tab === 'supplier') {
+      setSupplierToEdit(null);
+      setSupplierModalOpen(true);
+    } else {
+      setEditingId(null);
+      setForm(emptyForm);
+      setModalOpen(true);
+    }
   };
 
   const openEdit = (row) => {
-    setEditingId(row.id);
-    setForm({
-      name: row.name || '',
-      phone: row.phone || '',
-      email: row.email || '',
-      address: row.address || '',
-      notes: row.notes || '',
-      payment_type: row.payment_type === 'credit' ? 'credit' : 'cash',
-      outstanding_amount: String(row.outstanding_amount ?? 0),
-      credit_limit:
-        row.credit_limit != null && row.credit_limit !== ''
-          ? String(row.credit_limit)
-          : '0',
-    });
-    setModalOpen(true);
+    if (tab === 'supplier') {
+      setSupplierToEdit(row);
+      setSupplierModalOpen(true);
+    } else {
+      setEditingId(row.id);
+      setForm({
+        name: row.name || '',
+        phone: row.phone || '',
+        email: row.email || '',
+        address: row.address || '',
+        notes: row.notes || '',
+        payment_type: row.payment_type === 'credit' ? 'credit' : 'cash',
+        outstanding_amount: String(row.outstanding_amount ?? 0),
+        credit_limit:
+          row.credit_limit != null && row.credit_limit !== ''
+            ? String(row.credit_limit)
+            : '0',
+      });
+      setModalOpen(true);
+    }
   };
 
   const closeModal = () => {
@@ -234,12 +247,21 @@ export default function CustomersSuppliers() {
     const qDigits = q.replace(/\D/g, '');
     return displayRows.filter((r) => {
       const name = (r.name || '').toLowerCase();
+      const contactPerson = (r.contact_person_name || '').toLowerCase();
+      const city = (r.city || '').toLowerCase();
+      const operator = (r.licensed_operator || '').toLowerCase();
       const phoneRaw = (r.phone || '').trim();
       const phoneNorm = phoneRaw.replace(/\s/g, '');
       const phoneLc = phoneRaw.toLowerCase();
-      const byName = name.includes(q);
+      const mobileRaw = (r.mobile_phone || '').trim();
+      const mobileNorm = mobileRaw.replace(/\s/g, '');
+      const mobileLc = mobileRaw.toLowerCase();
+
+      const byName = name.includes(q) || contactPerson.includes(q) || city.includes(q) || operator.includes(q);
       const byPhone =
-        phoneLc.includes(q) || (qDigits.length > 0 && phoneNorm.includes(qDigits));
+        phoneLc.includes(q) ||
+        mobileLc.includes(q) ||
+        (qDigits.length > 0 && (phoneNorm.includes(qDigits) || mobileNorm.includes(qDigits)));
       return byName || byPhone;
     });
   }, [displayRows, contactSearch]);
@@ -727,7 +749,9 @@ export default function CustomersSuppliers() {
                 const hasBounced = Boolean(String(row.returned_cheques_notes || '').trim());
                 const initial = (row.name && row.name.trim().charAt(0)) || '?';
                 const phoneTrim = (row.phone || '').trim();
-                const waDigits = phoneTrim ? whatsappDigitsFromPhone(phoneTrim) : '';
+                const mobileTrim = (row.mobile_phone || '').trim();
+                const callNumber = phoneTrim || mobileTrim;
+                const waDigits = mobileTrim ? whatsappDigitsFromPhone(mobileTrim) : (phoneTrim ? whatsappDigitsFromPhone(phoneTrim) : '');
                 return (
                   <div
                     key={row.id}
@@ -758,7 +782,7 @@ export default function CustomersSuppliers() {
                           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/50 dark:text-rose-300"
                           title={String(row.returned_cheques_notes).trim()}
                         >
-                          <AlertTriangle size={9} />
+                          <AlertTriangle size={12} />
                           شيك مرتجع
                         </span>
                       )}
@@ -810,10 +834,37 @@ export default function CustomersSuppliers() {
                     )}
 
                     <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      {tab === 'supplier' && row.contact_person_name?.trim() && (
+                        <p className="font-bold text-slate-700 dark:text-slate-200">
+                          <span aria-hidden>👤 </span>
+                          <span className="text-slate-400 font-normal">المسؤول: </span>
+                          {row.contact_person_name.trim()}
+                        </p>
+                      )}
                       {row.phone?.trim() && (
                         <p dir="ltr">
                           <span aria-hidden>📞 </span>
                           {row.phone.trim()}
+                        </p>
+                      )}
+                      {tab === 'supplier' && row.mobile_phone?.trim() && (
+                        <p dir="ltr">
+                          <span aria-hidden>📱 </span>
+                          {row.mobile_phone.trim()}
+                        </p>
+                      )}
+                      {tab === 'supplier' && row.city?.trim() && (
+                        <p>
+                          <span aria-hidden>🏙️ </span>
+                          <span className="text-slate-400 font-normal">المدينة: </span>
+                          {row.city.trim()}
+                        </p>
+                      )}
+                      {tab === 'supplier' && row.licensed_operator?.trim() && (
+                        <p>
+                          <span aria-hidden>🛡️ </span>
+                          <span className="text-slate-400 font-normal">المشغل: </span>
+                          {row.licensed_operator.trim()}
                         </p>
                       )}
                       {row.email?.trim() && (
@@ -850,9 +901,9 @@ export default function CustomersSuppliers() {
                             <MessageCircle size={18} />
                           </a>
                         )}
-                        {phoneTrim && (
+                        {callNumber && (
                           <a
-                            href={`tel:${phoneTrim.replace(/\s/g, '')}`}
+                            href={`tel:${callNumber.replace(/\s/g, '')}`}
                             className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-600 transition-colors hover:bg-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:hover:bg-blue-900/50"
                             title="اتصال"
                             aria-label="اتصال"
@@ -908,7 +959,7 @@ export default function CustomersSuppliers() {
         </div>
       </div>
 
-      {modalOpen && (
+      {modalOpen && tab === 'customer' && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 dark:bg-black/65"
           dir="rtl"
@@ -1083,6 +1134,19 @@ export default function CustomersSuppliers() {
           </div>
         </div>
       )}
+
+      {/* مودال إضافة وتعديل المورد الموحد */}
+      <SupplierFormModal
+        isOpen={supplierModalOpen}
+        onClose={() => {
+          setSupplierModalOpen(false);
+          setSupplierToEdit(null);
+        }}
+        supplierToEdit={supplierToEdit}
+        onSuccess={() => {
+          fetchRows();
+        }}
+      />
     </DashboardLayout>
   );
 }

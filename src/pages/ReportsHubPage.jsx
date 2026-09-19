@@ -28,11 +28,16 @@ import {
   UserCheck,
   ChevronDown,
   Eye,
+  Wallet,
   SlidersHorizontal,
   Layers,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import DashboardLayout from '../components/DashboardLayout';
+import PurchaseDetailModal from '../components/PurchaseDetailModal';
+import InvoiceModal from '../components/InvoiceModal';
+import QuickVoucherModal from '../components/QuickVoucherModal';
+import VoucherDetailModal from '../components/VoucherDetailModal';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
@@ -230,9 +235,19 @@ export default function ReportsHubPage() {
   const [productsList, setProductsList] = useState([]);
   const [selectedProductId, setSelectedProductId] = useState('');
 
-  // 3. حالة النتائج والتحميل
   const [loading, setLoading] = useState(false);
   const [reportResult, setReportResult] = useState(null); // { title, kpis: [], columns: [], rows: [] }
+
+  // حالات نوافذ التفاصيل التفاعلية والسندات
+  const [viewPurchaseId, setViewPurchaseId] = useState(null);
+  const [viewSaleId, setViewSaleId] = useState(null);
+  const [viewVoucherId, setViewVoucherId] = useState(null);
+  const [voucherModalState, setVoucherModalState] = useState({
+    open: false,
+    type: 'payment',
+    contact: null,
+    amount: 0,
+  });
 
   // جلب قوائم الزبائن والموردين والأصناف للفلاتر عند الحاجة
   useEffect(() => {
@@ -908,68 +923,140 @@ export default function ReportsHubPage() {
           const targetCust = customersList.find((c) => c.id === activeCustId);
           const custName = targetCust?.name || 'الزبون';
 
-          // جلب قيود العميل من customer_ledger
-          const { data: ledger, error: lErr } = await supabase
-            .from('customer_ledger')
-            .select('*')
-            .eq('store_id', store.id)
-            .eq('customer_id', activeCustId)
-            .gte('created_at', dateFrom + 'T00:00:00')
-            .lte('created_at', dateTo + 'T23:59:59')
-            .order('created_at', { ascending: true });
-
-          let cumulativeBalance = 0;
-          let totalDebit = 0;
-          let totalCredit = 0;
-          let rows = [];
-
-          if (!lErr && Array.isArray(ledger) && ledger.length > 0) {
-            rows = ledger.map((entry, idx) => {
-              const debit = Number(entry.debit || 0);
-              const credit = Number(entry.credit || 0);
-              totalDebit += debit;
-              totalCredit += credit;
-              cumulativeBalance += debit - credit;
-
-              const dateStr = entry.created_at ? entry.created_at.slice(0, 10) : '—';
-              return {
-                index: idx + 1,
-                date: dateStr,
-                description: entry.description || (debit > 0 ? 'فاتورة مبيعات آجل' : 'دفعة سند قبض'),
-                ref: entry.sale_id ? String(entry.sale_id).slice(0, 8).toUpperCase() : '—',
-                debit: debit > 0 ? formatMoney(debit) : '—',
-                credit: credit > 0 ? formatMoney(credit) : '—',
-                balance: formatMoney(cumulativeBalance),
-              };
-            });
-          } else {
-            // بديل: استعلام مباشر من sales للعميل
-            const { data: custSales } = await supabase
+          // جلب قيود العميل من customer_ledger + فواتير المبيعات sales + سندات القبض vouchers
+          const [ledgerRes, salesRes, vouchersRes] = await Promise.all([
+            supabase
+              .from('customer_ledger')
+              .select('*')
+              .eq('store_id', store.id)
+              .eq('customer_id', activeCustId)
+              .gte('created_at', dateFrom + 'T00:00:00')
+              .lte('created_at', dateTo + 'T23:59:59')
+              .order('created_at', { ascending: true }),
+            supabase
               .from('sales')
-              .select('id, created_at, total_amount, payment_mode, notes')
+              .select('id, created_at, total_amount, payment_mode, payment_method, notes')
               .eq('store_id', store.id)
               .eq('contact_id', activeCustId)
               .gte('created_at', dateFrom + 'T00:00:00')
               .lte('created_at', dateTo + 'T23:59:59')
-              .order('created_at', { ascending: true });
+              .order('created_at', { ascending: true }),
+            supabase
+              .from('vouchers')
+              .select('*')
+              .eq('store_id', store.id)
+              .eq('voucher_type', 'receipt')
+              .eq('account_id', activeCustId)
+              .gte('created_at', dateFrom + 'T00:00:00')
+              .lte('created_at', dateTo + 'T23:59:59')
+              .order('created_at', { ascending: true }),
+          ]);
 
-            rows = (custSales || []).map((s, idx) => {
-              const val = Number(s.total_amount || 0);
-              totalDebit += val;
-              cumulativeBalance += val;
-              return {
-                index: idx + 1,
-                date: s.created_at ? s.created_at.slice(0, 10) : '—',
-                description: `فاتورة بيع (${s.payment_mode === 'credit' ? 'آجل' : 'نقدي'})`,
-                ref: `#${String(s.id).slice(0, 8).toUpperCase()}`,
-                debit: formatMoney(val),
-                credit: '—',
-                balance: formatMoney(cumulativeBalance),
-              };
+          const ledger = ledgerRes.data || [];
+          const sales = salesRes.data || [];
+          const vouchers = vouchersRes.data || [];
+
+          const knownSaleIds = new Set(ledger.map((e) => e.sale_id).filter(Boolean));
+          const knownVoucherIds = new Set(
+            ledger.map((e) => e.voucher_id || (e.description?.match(/سند\s*#?([a-f0-9-]+)/i)?.[1])).filter(Boolean)
+          );
+
+          const movements = [];
+
+          // 1. حركات دفتر الأستاذ للعميل
+          for (const entry of ledger) {
+            movements.push({
+              date: entry.created_at,
+              description: entry.description || (Number(entry.debit || 0) > 0 ? 'فاتورة مبيعات آجل' : 'سند قبض'),
+              ref: entry.sale_id ? `#${String(entry.sale_id).slice(0, 8).toUpperCase()}` : 'قيد دفتر أستاذ',
+              saleId: entry.sale_id ? String(entry.sale_id) : null,
+              voucherId: entry.voucher_id ? String(entry.voucher_id) : null,
+              debit: Number(entry.debit || 0),
+              credit: Number(entry.credit || 0),
             });
           }
 
+          // 2. فواتير المبيعات (غير المكررة في دفتر الأستاذ)
+          for (const s of sales) {
+            if (knownSaleIds.has(s.id)) continue;
+            const amt = Number(s.total_amount || 0);
+            const pm = String(s.payment_mode || s.payment_method || '').toLowerCase();
+            const isCredit = ['credit', 'deferred'].includes(pm);
+
+            if (isCredit) {
+              movements.push({
+                date: s.created_at,
+                description: s.notes ? `فاتورة مبيعات (آجل) — ${s.notes}` : 'فاتورة مبيعات (آجل)',
+                ref: `#${String(s.id).slice(0, 8).toUpperCase()}`,
+                saleId: String(s.id),
+                voucherId: null,
+                debit: amt,
+                credit: 0,
+              });
+            } else {
+              // فاتورة نقدية: تظهر كمرجع تاريخي دون أثر صافٍ على الرصيد
+              movements.push({
+                date: s.created_at,
+                description: s.notes ? `فاتورة مبيعات (نقدي — مسددة) — ${s.notes}` : 'فاتورة مبيعات (نقدي — مسددة)',
+                ref: `#${String(s.id).slice(0, 8).toUpperCase()}`,
+                saleId: String(s.id),
+                voucherId: null,
+                debit: amt,
+                credit: amt,
+              });
+            }
+          }
+
+          // 3. سندات القبض (غير المكررة في دفتر الأستاذ)
+          for (const v of vouchers) {
+            if (knownVoucherIds.has(v.id)) continue;
+            const amt = Number(v.amount || 0);
+            movements.push({
+              date: v.created_at || v.date,
+              description: v.description || 'سند قبض نقدي / شيكات',
+              ref: v.reference_number ? `سند #${v.reference_number}` : (v.voucher_number ? `سند #${v.voucher_number}` : 'سند قبض'),
+              saleId: null,
+              voucherId: String(v.id),
+              debit: 0,
+              credit: amt,
+            });
+          }
+
+          // ترتيب زمني للحركات
+          movements.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+          let cumulativeBalance = 0;
+          let totalDebit = 0;
+          let totalCredit = 0;
+
+          const rows = movements.map((m, idx) => {
+            totalDebit += m.debit;
+            totalCredit += m.credit;
+            cumulativeBalance += m.debit - m.credit;
+
+            return {
+              index: idx + 1,
+              date: m.date ? m.date.slice(0, 10) : '—',
+              description: m.description,
+              ref: m.ref,
+              saleId: m.saleId,
+              voucherId: m.voucherId,
+              debit: m.debit > 0 ? formatMoney(m.debit) : '—',
+              credit: m.credit > 0 ? formatMoney(m.credit) : '—',
+              balance: formatMoney(cumulativeBalance),
+              rawDebit: m.debit,
+              rawCredit: m.credit,
+              rawBalance: cumulativeBalance,
+            };
+          });
+
           setReportResult({
+            reportKey: 'customer_statement',
+            contact: targetCust,
+            activeContactId: activeCustId,
+            closingBalance: cumulativeBalance,
+            totalDebit,
+            totalCredit,
             title: `كشف حساب الزبون: ${custName} (من ${dateFrom} إلى ${dateTo})`,
             kpis: [
               { label: 'إجمالي المدين (عليه)', value: `${formatMoney(totalDebit)} ₪`, tone: 'rose' },
@@ -1085,7 +1172,7 @@ export default function ReportsHubPage() {
               .from('store_purchases')
               .select('*')
               .eq('store_id', store.id)
-              .eq('supplier_id', activeSupId)
+              .eq('supplier_contact_id', activeSupId)
               .gte('created_at', dateFrom + 'T00:00:00')
               .lte('created_at', dateTo + 'T23:59:59')
               .order('created_at', { ascending: true }),
@@ -1093,8 +1180,8 @@ export default function ReportsHubPage() {
               .from('vouchers')
               .select('*')
               .eq('store_id', store.id)
-              .eq('type', 'payment')
-              .or(`party_id.eq.${activeSupId},supplier_id.eq.${activeSupId}`)
+              .eq('voucher_type', 'payment')
+              .eq('account_id', activeSupId)
               .gte('created_at', dateFrom + 'T00:00:00')
               .lte('created_at', dateTo + 'T23:59:59')
               .order('created_at', { ascending: true }),
@@ -1106,17 +1193,23 @@ export default function ReportsHubPage() {
           // دمج وترتيب الحركات زمنياً
           const merged = [
             ...purchases.map((p) => ({
-              date: p.created_at || p.invoice_date,
+              id: p.id,
+              purchaseId: p.id,
+              voucherId: null,
+              date: p.created_at || p.invoice_date || p.purchase_date,
               type: 'purchase',
               ref: p.invoice_number ? `#${p.invoice_number}` : 'فاتورة شراء',
-              description: p.notes || 'فاتورة توريد بضاعة',
+              description: p.notes || (p.supplier_company_name ? `فاتورة توريد من ${p.supplier_company_name}` : 'فاتورة توريد بضاعة'),
               amountDue: Number(p.total_amount || 0),
               amountPaid: 0,
             })),
             ...vouchers.map((v) => ({
-              date: v.created_at,
+              id: v.id,
+              purchaseId: null,
+              voucherId: v.id,
+              date: v.created_at || v.date,
               type: 'payment',
-              ref: v.voucher_number ? `سند #${v.voucher_number}` : 'سند صرف',
+              ref: v.reference_number ? `سند #${v.reference_number}` : (v.voucher_number ? `سند #${v.voucher_number}` : 'سند صرف'),
               description: v.description || 'تسديد دفعة للمورد',
               amountDue: 0,
               amountPaid: Number(v.amount || 0),
@@ -1137,13 +1230,27 @@ export default function ReportsHubPage() {
               date: m.date ? m.date.slice(0, 10) : '—',
               ref: m.ref,
               description: m.description,
+              purchaseId: m.purchaseId,
+              voucherId: m.voucherId,
+              type: m.type,
+              debit: m.amountDue > 0 ? formatMoney(m.amountDue) : '—',
+              credit: m.amountPaid > 0 ? formatMoney(m.amountPaid) : '—',
               billAmount: m.amountDue > 0 ? formatMoney(m.amountDue) : '—',
               paymentAmount: m.amountPaid > 0 ? formatMoney(m.amountPaid) : '—',
               balance: formatMoney(cumBalance),
+              rawDebit: m.amountDue,
+              rawCredit: m.amountPaid,
+              rawBalance: cumBalance,
             };
           });
 
           setReportResult({
+            reportKey: 'supplier_statement',
+            contact: targetSup,
+            activeContactId: activeSupId,
+            closingBalance: cumBalance,
+            totalBills,
+            totalPayments,
             title: `كشف حساب المورد: ${supName} (من ${dateFrom} إلى ${dateTo})`,
             kpis: [
               { label: 'إجمالي فواتير الشراء', value: `${formatMoney(totalBills)} ₪`, tone: 'amber' },
@@ -1155,8 +1262,8 @@ export default function ReportsHubPage() {
               { key: 'date', header: 'التاريخ', width: 14 },
               { key: 'ref', header: 'رقم المرجع/السند', width: 16 },
               { key: 'description', header: 'البيان والتفاصيل', width: 32 },
-              { key: 'billAmount', header: 'فاتورة شراء (له)', width: 16 },
-              { key: 'paymentAmount', header: 'سند صرف (منه)', width: 16 },
+              { key: 'debit', header: 'فاتورة شراء (له)', width: 16 },
+              { key: 'credit', header: 'سند صرف (منه)', width: 16 },
               { key: 'balance', header: 'الرصيد المستحق (₪)', width: 18 },
             ],
             rows,
@@ -1447,7 +1554,7 @@ export default function ReportsHubPage() {
             .from('vouchers')
             .select('*')
             .eq('store_id', store.id)
-            .eq('type', 'receipt')
+            .eq('voucher_type', 'receipt')
             .gte('created_at', dateFrom + 'T00:00:00')
             .lte('created_at', dateTo + 'T23:59:59')
             .order('created_at', { ascending: false });
@@ -1463,7 +1570,7 @@ export default function ReportsHubPage() {
             const dt = v.created_at ? v.created_at.slice(0, 10) : '—';
             return {
               index: idx + 1,
-              voucherNo: v.voucher_number ? `#${v.voucher_number}` : `#R-${idx + 1}`,
+              voucherNo: v.reference_number ? `سند #${v.reference_number}` : (v.voucher_number ? `#${v.voucher_number}` : `#R-${idx + 1}`),
               date: dt,
               party: v.party_name || v.description?.slice(0, 30) || 'زبون / جهة',
               amount: formatMoney(amt),
@@ -1498,7 +1605,7 @@ export default function ReportsHubPage() {
             .from('vouchers')
             .select('*')
             .eq('store_id', store.id)
-            .eq('type', 'payment')
+            .eq('voucher_type', 'payment')
             .gte('created_at', dateFrom + 'T00:00:00')
             .lte('created_at', dateTo + 'T23:59:59')
             .order('created_at', { ascending: false });
@@ -1845,6 +1952,38 @@ export default function ReportsHubPage() {
               </>
             )}
 
+            {/* تنبيه النطاق الزمني لكشف حساب الزبون والمورد لتوضيح أن الافتراضي 30 يوم وإتاحة توسيعه */}
+            {['customer_statement', 'supplier_statement'].includes(selectedReport) && (
+              <div className="col-span-full bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <strong>تنبيه النطاق الزمني:</strong> يُعرض كشف الحساب افتراضياً لآخر 30 يوماً فقط. إذا كانت هناك فواتير أو سندات سابقة غير ظاهرة، يمكنك توسيع الفترة بنقرة واحدة:
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDateFrom('2020-01-01')}
+                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors"
+                  >
+                    عرض كل الفترات (من البداية)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setFullYear(d.getFullYear() - 1);
+                      setDateFrom(d.toISOString().slice(0, 10));
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-900 dark:text-amber-200 transition-colors"
+                  >
+                    آخر سنة
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* فلتر اختيار زبون محدد لكشف الحساب */}
             {selectedReport === 'customer_statement' && (
               <div className="col-span-1 sm:col-span-2">
@@ -2125,72 +2264,348 @@ export default function ReportsHubPage() {
               </span>
             </div>
 
-            {/* بطاقات المؤشرات الإجمالية (KPIs) */}
-            {reportResult.kpis && reportResult.kpis.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {reportResult.kpis.map((kpi, idx) => (
+            {['supplier_statement', 'customer_statement'].includes(reportResult.reportKey) ? (
+              /* ── العرض الموحّد الراقي لكشف حساب المورد والزبون ── */
+              <div className="space-y-5">
+                {/* 1. بطاقات المؤشرات مع زر السند البارز */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* بطاقة الرصيد المستحق + زر السند المباشر */}
                   <div
-                    key={idx}
-                    className="p-4 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-xs"
+                    className={`p-5 rounded-2xl border shadow-xs flex flex-col justify-between ${
+                      reportResult.reportKey === 'supplier_statement'
+                        ? 'bg-gradient-to-br from-rose-50 to-orange-50/70 border-rose-200 dark:from-rose-950/40 dark:to-orange-950/20 dark:border-rose-900/50'
+                        : 'bg-gradient-to-br from-indigo-50 to-blue-50/70 border-indigo-200 dark:from-indigo-950/40 dark:to-blue-950/20 dark:border-indigo-900/50'
+                    }`}
                   >
-                    <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
-                      {kpi.label}
-                    </span>
-                    <span className="block text-xl font-black font-mono text-slate-900 dark:text-white">
-                      {kpi.value}
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <span
+                          className={`text-xs font-black block ${
+                            reportResult.reportKey === 'supplier_statement'
+                              ? 'text-rose-800 dark:text-rose-300'
+                              : 'text-indigo-800 dark:text-indigo-300'
+                          }`}
+                        >
+                          {reportResult.reportKey === 'supplier_statement'
+                            ? 'رصيد المورد المستحق حالياً (له علينا)'
+                            : 'الرصيد المستحق على الزبون (عليه للمتجر)'}
+                        </span>
+                        <span
+                          className={`text-2xl font-black font-mono mt-1 block ${
+                            reportResult.reportKey === 'supplier_statement'
+                              ? 'text-rose-900 dark:text-rose-100'
+                              : 'text-indigo-950 dark:text-indigo-100'
+                          }`}
+                        >
+                          {formatMoney(reportResult.closingBalance || 0)} ₪
+                        </span>
+                      </div>
+                      <div
+                        className={`p-2.5 rounded-xl ${
+                          reportResult.reportKey === 'supplier_statement'
+                            ? 'bg-rose-200/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200'
+                            : 'bg-indigo-200/80 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200'
+                        }`}
+                      >
+                        {reportResult.reportKey === 'supplier_statement' ? <Wallet size={22} /> : <Receipt size={22} />}
+                      </div>
+                    </div>
+
+                    {/* زر السند البارز المباشر */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVoucherModalState({
+                          open: true,
+                          type: reportResult.reportKey === 'supplier_statement' ? 'payment' : 'receipt',
+                          contact: reportResult.contact,
+                          amount: reportResult.closingBalance || 0,
+                        })
+                      }
+                      className={`w-full py-2.5 px-4 rounded-xl font-black text-xs text-white shadow-md flex items-center justify-center gap-2 transition-all active:scale-98 ${
+                        reportResult.reportKey === 'supplier_statement'
+                          ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25'
+                          : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25'
+                      }`}
+                    >
+                      {reportResult.reportKey === 'supplier_statement' ? (
+                        <>
+                          <Wallet size={16} />
+                          <span>تسجيل سند صرف للمورد (تسديد دفعة) 💳</span>
+                        </>
+                      ) : (
+                        <>
+                          <Receipt size={16} />
+                          <span>تسجيل سند قبض من الزبون (استلام دفعة) 💰</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* بطاقة إجمالي الفواتير (شراء / مبيعات) */}
+                  <div className="p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        {reportResult.reportKey === 'supplier_statement'
+                          ? 'إجمالي فواتير الشراء والتوريد'
+                          : 'إجمالي فواتير المبيعات (المدين)'}
+                      </span>
+                      <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                        {reportResult.reportKey === 'supplier_statement' ? <Truck size={18} /> : <ShoppingCart size={18} />}
+                      </div>
+                    </div>
+                    <span className="text-xl font-black font-mono text-slate-900 dark:text-white">
+                      {formatMoney(
+                        reportResult.reportKey === 'supplier_statement'
+                          ? reportResult.totalBills || 0
+                          : reportResult.totalDebit || 0
+                      )}{' '}
+                      ₪
                     </span>
                   </div>
-                ))}
-              </div>
-            )}
 
-            {/* جدول النتائج التفاعلي */}
-            <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
-              {reportResult.rows && reportResult.rows.length > 0 ? (
-                <table className="w-full text-right text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-indigo-600 text-white border-b border-indigo-700 select-none">
-                      {reportResult.columns.map((col) => (
-                        <th
-                          key={col.key}
-                          className="py-3 px-3 font-black text-xs whitespace-nowrap"
-                        >
-                          {col.header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                    {reportResult.rows.map((row, rIdx) => (
-                      <tr
-                        key={rIdx}
-                        className={`transition-colors ${
-                          rIdx % 2 === 0
-                            ? 'bg-white dark:bg-slate-900'
-                            : 'bg-slate-50/70 dark:bg-slate-800/30'
-                        } hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40`}
-                      >
-                        {reportResult.columns.map((col) => {
-                          const val = row[col.key];
+                  {/* بطاقة إجمالي المدفوعات / السندات */}
+                  <div className="p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        {reportResult.reportKey === 'supplier_statement'
+                          ? 'إجمالي المدفوعات وسندات الصرف'
+                          : 'إجمالي المقبوضات وسندات القبض'}
+                      </span>
+                      <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                        <CheckCircle2 size={18} />
+                      </div>
+                    </div>
+                    <span className="text-xl font-black font-mono text-slate-900 dark:text-white">
+                      {formatMoney(
+                        reportResult.reportKey === 'supplier_statement'
+                          ? reportResult.totalPayments || 0
+                          : reportResult.totalCredit || 0
+                      )}{' '}
+                      ₪
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. جدول الحركات التفصيلي مع إمكانية النقر وعرض التفاصيل */}
+                <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
+                  {reportResult.rows && reportResult.rows.length > 0 ? (
+                    <table className="w-full text-right text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-900 text-white dark:bg-slate-950 border-b border-slate-800 select-none">
+                          <th className="py-3 px-3 font-black text-center w-10">#</th>
+                          <th className="py-3 px-3 font-black whitespace-nowrap">التاريخ</th>
+                          <th className="py-3 px-3 font-black min-w-[200px]">البيان</th>
+                          <th className="py-3 px-3 font-black whitespace-nowrap">المرجع</th>
+                          <th className="py-3 px-3 font-black text-center w-28 whitespace-nowrap">تفاصيل الفاتورة / السند</th>
+                          <th className="py-3 px-3 font-black text-center whitespace-nowrap">
+                            {reportResult.reportKey === 'supplier_statement' ? 'مدين (له)' : 'مدين (+) عليه'}
+                          </th>
+                          <th className="py-3 px-3 font-black text-center whitespace-nowrap">
+                            {reportResult.reportKey === 'supplier_statement' ? 'دائن (منه)' : 'دائن (-) له'}
+                          </th>
+                          <th className="py-3 px-3 font-black text-center whitespace-nowrap">
+                            {reportResult.reportKey === 'supplier_statement' ? 'الرصيد المستحق (₪)' : 'الرصيد التراكمي (₪)'}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                        {reportResult.rows.map((row, rIdx) => {
+                          const hasPurchase = Boolean(row.purchaseId);
+                          const hasSale = Boolean(row.saleId);
+                          const hasVoucher = Boolean(row.voucherId);
+                          const isClickable = hasPurchase || hasSale || hasVoucher;
+
                           return (
-                            <td
-                              key={col.key}
-                              className="py-2.5 px-3 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap"
+                            <tr
+                              key={rIdx}
+                              onClick={() => {
+                                if (hasPurchase) setViewPurchaseId(row.purchaseId);
+                                else if (hasSale) setViewSaleId(row.saleId);
+                                else if (hasVoucher) setViewVoucherId(row.voucherId);
+                              }}
+                              className={`transition-colors ${
+                                isClickable
+                                  ? 'cursor-pointer hover:bg-teal-50/70 dark:hover:bg-teal-950/40'
+                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                              } ${
+                                rIdx % 2 === 0
+                                  ? 'bg-white dark:bg-slate-900'
+                                  : 'bg-slate-50/60 dark:bg-slate-800/30'
+                              }`}
+                              title={
+                                hasPurchase
+                                  ? 'اضغط لعرض تفاصيل فاتورة المشتريات والأصناف'
+                                  : hasSale
+                                  ? 'اضغط لعرض تفاصيل فاتورة المبيعات والأصناف'
+                                  : hasVoucher
+                                  ? 'اضغط لعرض تفاصيل السند'
+                                  : undefined
+                              }
                             >
-                              {val != null ? String(val) : '—'}
-                            </td>
+                              <td className="py-2.5 px-3 text-center text-slate-400 font-bold">{rIdx + 1}</td>
+                              <td className="py-2.5 px-3 font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap" dir="ltr">
+                                {row.date}
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-slate-100">
+                                {row.description}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap" dir="ltr">
+                                {row.ref}
+                              </td>
+                              <td className="py-2.5 px-3 text-center align-middle whitespace-nowrap">
+                                {hasPurchase ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewPurchaseId(row.purchaseId);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-black text-teal-900 hover:bg-teal-100 dark:border-teal-800/50 dark:bg-teal-950/40 dark:text-teal-200 transition-colors"
+                                  >
+                                    <Eye size={13} />
+                                    <span>عرض الفاتورة</span>
+                                  </button>
+                                ) : hasSale ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewSaleId(row.saleId);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-black text-indigo-900 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/40 dark:text-indigo-200 transition-colors"
+                                  >
+                                    <Eye size={13} />
+                                    <span>عرض الفاتورة</span>
+                                  </button>
+                                ) : hasVoucher ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewVoucherId(row.voucherId);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-950 hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-200 transition-colors"
+                                  >
+                                    <Receipt size={13} />
+                                    <span>تفاصيل السند</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400 text-xs">—</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap" dir="ltr">
+                                {row.debit}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap" dir="ltr">
+                                {row.credit}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-black text-slate-900 dark:text-white whitespace-nowrap" dir="ltr">
+                                {row.balance}
+                              </td>
+                            </tr>
                           );
                         })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="py-16 text-center text-slate-500 dark:text-slate-400 text-xs">
-                  لا توجد حركات أو نتائج مطابقة لمعايير البحث في هذا التقرير.
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-16 text-center text-slate-500 dark:text-slate-400 text-xs">
+                      لا توجد حركات مسجلة لهذا الحساب خلال الفترة المحددة.
+                    </div>
+                  )}
+
+                  {/* شريط الرصيد الختامي أسفل الجدول */}
+                  {reportResult.rows && reportResult.rows.length > 0 && (
+                    <div
+                      className={`flex justify-between items-center px-4 py-3.5 border-t text-xs font-black ${
+                        reportResult.reportKey === 'supplier_statement'
+                          ? 'bg-rose-50/70 border-rose-200 text-rose-950 dark:bg-rose-950/30 dark:border-rose-900/40 dark:text-rose-200'
+                          : 'bg-indigo-50/70 border-indigo-200 text-indigo-950 dark:bg-indigo-950/30 dark:border-indigo-900/40 dark:text-indigo-200'
+                      }`}
+                    >
+                      <span>
+                        {reportResult.reportKey === 'supplier_statement'
+                          ? 'رصيد الذمة الختامي للمورد (محسوب من الحركات)'
+                          : 'الرصيد النهائي المستحق على الزبون (محسوب من الحركات)'}
+                      </span>
+                      <span className="font-mono text-sm" dir="ltr">
+                        ₪ {formatMoney(reportResult.closingBalance || 0)}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              /* ── العرض الافتراضي لباقي التقارير كما هو ── */
+              <>
+                {/* بطاقات المؤشرات الإجمالية (KPIs) */}
+                {reportResult.kpis && reportResult.kpis.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {reportResult.kpis.map((kpi, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-xs"
+                      >
+                        <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
+                          {kpi.label}
+                        </span>
+                        <span className="block text-xl font-black font-mono text-slate-900 dark:text-white">
+                          {kpi.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* جدول النتائج التفاعلي */}
+                <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
+                  {reportResult.rows && reportResult.rows.length > 0 ? (
+                    <table className="w-full text-right text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-indigo-600 text-white border-b border-indigo-700 select-none">
+                          {reportResult.columns.map((col) => (
+                            <th
+                              key={col.key}
+                              className="py-3 px-3 font-black text-xs whitespace-nowrap"
+                            >
+                              {col.header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                        {reportResult.rows.map((row, rIdx) => (
+                          <tr
+                            key={rIdx}
+                            className={`transition-colors ${
+                              rIdx % 2 === 0
+                                ? 'bg-white dark:bg-slate-900'
+                                : 'bg-slate-50/70 dark:bg-slate-800/30'
+                            } hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40`}
+                          >
+                            {reportResult.columns.map((col) => {
+                              const val = row[col.key];
+                              return (
+                                <td
+                                  key={col.key}
+                                  className="py-2.5 px-3 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap"
+                                >
+                                  {val != null ? String(val) : '—'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-16 text-center text-slate-500 dark:text-slate-400 text-xs">
+                      لا توجد حركات أو نتائج مطابقة لمعايير البحث في هذا التقرير.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         ) : (
           /* رسالة بداية لطيفة تشجع على اختيار التقرير وعرضه */
@@ -2208,6 +2623,39 @@ export default function ReportsHubPage() {
           </div>
         )}
       </div>
+
+      {/* نوافذ التفاصيل التفاعلية والسندات */}
+      <PurchaseDetailModal
+        isOpen={Boolean(viewPurchaseId)}
+        purchaseId={viewPurchaseId}
+        storeId={store?.id}
+        onClose={() => setViewPurchaseId(null)}
+      />
+
+      <InvoiceModal
+        isOpen={Boolean(viewSaleId)}
+        saleId={viewSaleId}
+        store={store}
+        onClose={() => setViewSaleId(null)}
+        onInvoiceUpdated={handleExecuteReport}
+      />
+
+      <QuickVoucherModal
+        isOpen={voucherModalState.open}
+        onClose={() => setVoucherModalState((prev) => ({ ...prev, open: false }))}
+        type={voucherModalState.type}
+        contact={voucherModalState.contact}
+        initialAmount={voucherModalState.amount}
+        store={store}
+        onSuccess={handleExecuteReport}
+      />
+
+      <VoucherDetailModal
+        isOpen={Boolean(viewVoucherId)}
+        voucherId={viewVoucherId}
+        storeId={store?.id}
+        onClose={() => setViewVoucherId(null)}
+      />
     </DashboardLayout>
   );
 }

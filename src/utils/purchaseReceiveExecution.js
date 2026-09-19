@@ -213,6 +213,114 @@ async function incrementSupplierDebtForCredit(storeId, contactId, amount) {
 }
 
 /**
+ * تحديث سعر الشراء الرسمي (purchase_price و last_purchase_price) بالسعر المُدخل،
+ * وتحديث متوسط التكلفة المرجح (avg_purchase_price) بمعادلة WAC لكل صنف في الفاتورة.
+ */
+async function updateProductOfficialPricesAndWac({ lines, linePayloads, storeId, updateCatalogCosts }) {
+  const grouped = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const row = lines[i];
+    const pl = linePayloads[i];
+    if (!row.productId) continue;
+    const qty = stockQtyFromLine(row);
+    if (qty <= 0) continue;
+
+    const factor = Number(row?.conversionFactor) || 1;
+    const rawUnitPrice = Math.max(0, parseFloat(String(row.unit_price).replace(',', '.')) || 0);
+    const baseEnteredPrice = rawUnitPrice / factor;
+    const baseEffectiveCost = (effectiveUnitCost(row) + Number(pl?.landed_unit_extra || 0)) / factor;
+
+    if (!grouped.has(row.productId)) {
+      grouped.set(row.productId, {
+        productId: row.productId,
+        totalQty: 0,
+        totalCost: 0,
+        latestEnteredPrice: baseEnteredPrice,
+        unitRows: [],
+      });
+    }
+    const item = grouped.get(row.productId);
+    item.totalQty += qty;
+    item.totalCost += qty * baseEffectiveCost;
+    item.latestEnteredPrice = baseEnteredPrice;
+    if (row.unit && row.unit !== 'قطعة') {
+      item.unitRows.push({ unitName: row.unit, costPrice: rawUnitPrice });
+    }
+  }
+
+  for (const [productId, item] of grouped.entries()) {
+    try {
+      const { data: pr, error: fetchErr } = await supabase
+        .from(PRODUCTS_TABLE)
+        .select(`${PRODUCTS_STOCK_COLUMN}, purchase_price, last_purchase_price, avg_purchase_price, full_price`)
+        .eq('id', productId)
+        .eq('store_id', storeId)
+        .maybeSingle();
+
+      if (fetchErr || !pr) continue;
+
+      const currentStock = readProductStock(pr);
+      const preStock = Math.max(0, currentStock - item.totalQty);
+      const prevAvgCost = Number(pr.avg_purchase_price ?? pr.purchase_price ?? pr.full_price ?? 0);
+
+      const totalStock = preStock + item.totalQty;
+      let newWac = 0;
+      if (totalStock > 0) {
+        if (preStock > 0 && prevAvgCost > 0) {
+          newWac = (preStock * prevAvgCost + item.totalCost) / totalStock;
+        } else {
+          newWac = item.totalQty > 0 ? item.totalCost / item.totalQty : item.latestEnteredPrice;
+        }
+      } else {
+        newWac = item.latestEnteredPrice;
+      }
+
+      newWac = roundMoney(newWac);
+      const newPurchasePrice = roundMoney(item.latestEnteredPrice);
+
+      const updateData = {
+        purchase_price: newPurchasePrice,
+        last_purchase_price: newPurchasePrice,
+        avg_purchase_price: newWac,
+      };
+      if (updateCatalogCosts) {
+        updateData.full_price = newWac;
+      }
+
+      const { error: upErr } = await supabase
+        .from(PRODUCTS_TABLE)
+        .update(updateData)
+        .eq('id', productId)
+        .eq('store_id', storeId);
+
+      if (upErr && /avg_purchase_price/i.test(upErr.message)) {
+        delete updateData.avg_purchase_price;
+        await supabase
+          .from(PRODUCTS_TABLE)
+          .update(updateData)
+          .eq('id', productId)
+          .eq('store_id', storeId);
+      }
+
+      for (const u of item.unitRows) {
+        try {
+          await supabase
+            .from('product_units')
+            .update({ cost_price: roundMoney(u.costPrice) })
+            .eq('product_id', productId)
+            .eq('store_id', storeId)
+            .eq('unit_name', u.unitName);
+        } catch {
+          // ignore if product_units update fails
+        }
+      }
+    } catch (costErr) {
+      console.warn(`[purchase] Error updating cost and WAC for product ${productId}:`, costErr);
+    }
+  }
+}
+
+/**
  * @param {object} p
  * @param {string} p.storeId
  * @param {string} p.purchaseId
@@ -258,6 +366,14 @@ export async function executePurchaseReceiveEffects({
     } else {
       await applyReceiveIncrementOnly(lines, storeId);
     }
+
+    // اعتماد سعر الشراء المُدخل كسعر رسمي للصنف + تحديث avg_purchase_price بالمتوسط المرجح WAC
+    await updateProductOfficialPricesAndWac({
+      lines,
+      linePayloads,
+      storeId,
+      updateCatalogCosts,
+    });
   } catch (stockErr) {
     if (cashPurchaseApplied) {
       try {

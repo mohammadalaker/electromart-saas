@@ -46,7 +46,10 @@ BEGIN
   UPDATE public.products
   SET
     stock_count = v_total,
-    full_price = ROUND(v_new, 2)
+    full_price = ROUND(v_new, 2),
+    purchase_price = v_uc,
+    last_purchase_price = v_uc,
+    avg_purchase_price = ROUND(v_new, 2)
   WHERE id = p_product_id AND store_id = p_store_id;
 
   RETURN ROUND(v_new, 2);

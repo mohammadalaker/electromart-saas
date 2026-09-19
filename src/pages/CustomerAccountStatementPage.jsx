@@ -169,16 +169,29 @@ function voucherReceiptToMovement(v) {
 function saleRowToMovement(s, legacyLabel) {
   const amt = Number(s.total_amount ?? 0);
   if (amt <= 0) return null;
-  return {
-    date: s.created_at,
-    debit: amt,
-    credit: 0,
-    description: legacyLabel
-      ? 'فاتورة مبيعات (ذمة — مطابقة من نص الفاتورة / قديمة)'
-      : 'فاتورة مبيعات (ذمة)',
-    saleId: s.id,
-    voucherId: null,
-  };
+  const isCredit = isCreditSaleRow(s);
+  if (isCredit) {
+    return {
+      date: s.created_at,
+      debit: amt,
+      credit: 0,
+      description: legacyLabel
+        ? 'فاتورة مبيعات (ذمة — مطابقة من نص الفاتورة / قديمة)'
+        : 'فاتورة مبيعات (ذمة)',
+      saleId: s.id,
+      voucherId: null,
+    };
+  } else {
+    // فاتورة بيع نقدي: تُعرض كمرجع تاريخي بصافي صفر على الذمة (مدين = دائن)
+    return {
+      date: s.created_at,
+      debit: amt,
+      credit: amt,
+      description: 'فاتورة مبيعات (نقدي — مسددة)',
+      saleId: s.id,
+      voucherId: null,
+    };
+  }
 }
 
 /**
@@ -251,9 +264,9 @@ function isColumnMissing(err) {
  * أو مرتبطة بزبون ولم تُعلَّم ككاش صراحة (فواتير قديمة بلا عمود payment_mode).
  */
 function isCreditSaleRow(s) {
-  const pm = String(s.payment_mode ?? '').toLowerCase();
+  const pm = String(s.payment_mode ?? s.payment_method ?? '').toLowerCase();
   if (pm === 'cash') return false;
-  if (pm === 'credit') return true;
+  if (pm === 'credit' || pm === 'deferred') return true;
   const n = String(s.notes || '');
   if (/ذمة|دين|آجل|credit|بالذمة/i.test(n)) return true;
   if (s.contact_id && pm !== 'cash') return true;
@@ -261,28 +274,24 @@ function isCreditSaleRow(s) {
 }
 
 function buildRowsFromSales(sales, opts = {}) {
-  const { looseCredit = false, legacyLabel = false } = opts;
+  const { legacyLabel = false } = opts;
   let bal = 0;
   const rows = [];
   for (const s of sales) {
     const amt = Number(s.total_amount ?? 0);
     if (amt <= 0) continue;
-    const pm = String(s.payment_mode ?? '').toLowerCase();
-    const creditOk =
-      isCreditSaleRow(s) ||
-      (looseCredit && pm !== 'cash');
-    if (!creditOk) continue;
-    bal += amt;
+    const isCredit = isCreditSaleRow(s);
+    if (isCredit) bal += amt;
     rows.push({
       dateLabel: formatDateLabel(s.created_at),
-      description: legacyLabel
-        ? 'فاتورة مبيعات (ذمة — مطابقة من نص الفاتورة / قديمة)'
-        : 'فاتورة مبيعات (ذمة)',
+      description: isCredit
+        ? (legacyLabel ? 'فاتورة مبيعات (ذمة — مطابقة من نص الفاتورة / قديمة)' : 'فاتورة مبيعات (ذمة)')
+        : 'فاتورة مبيعات (نقدي — مسددة)',
       ref: String(s.id).slice(0, 8),
       saleId: String(s.id),
       voucherId: null,
       debit: amt,
-      credit: null,
+      credit: isCredit ? null : amt,
       balance: bal,
     });
   }
@@ -297,6 +306,8 @@ function escapeRegExp(s) {
  * جلب مبيعات الزبون: أولاً بـ contact_id، وإن لم تُحسب ذمة → مطابقة اسم/هاتف في notes (فواتير قديمة).
  */
 async function fetchSalesForCustomerStatement(supabaseClient, storeId, contactId, contactName, contactPhone) {
+  const baseSelectWithMethod =
+    'id, created_at, total_amount, payment_mode, payment_method, contact_id, notes';
   const baseSelectFull =
     'id, created_at, total_amount, payment_mode, contact_id, notes';
   const baseSelectNoNotes = 'id, created_at, total_amount, payment_mode, contact_id';
@@ -305,12 +316,22 @@ async function fetchSalesForCustomerStatement(supabaseClient, storeId, contactId
   let e1;
   let res = await supabaseClient
     .from(SALES_TABLE)
-    .select(baseSelectFull)
+    .select(baseSelectWithMethod)
     .eq('store_id', storeId)
     .eq('contact_id', contactId)
     .order('created_at', { ascending: true });
   d1 = res.data;
   e1 = res.error;
+  if (e1 && isColumnMissing(e1)) {
+    res = await supabaseClient
+      .from(SALES_TABLE)
+      .select(baseSelectFull)
+      .eq('store_id', storeId)
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: true });
+    d1 = res.data;
+    e1 = res.error;
+  }
   if (e1 && isColumnMissing(e1)) {
     res = await supabaseClient
       .from(SALES_TABLE)
@@ -324,10 +345,7 @@ async function fetchSalesForCustomerStatement(supabaseClient, storeId, contactId
   if (e1) throw e1;
 
   if (d1?.length) {
-    const trial = buildRowsFromSales(d1);
-    if (trial.rows.length > 0) {
-      return { rows: d1, source: 'contact_id' };
-    }
+    return { rows: d1, source: 'contact_id' };
   }
 
   let wide;
@@ -528,6 +546,7 @@ export default function CustomerAccountStatementPage() {
       const receiptVouchers = await fetchReceiptVouchersForContact(supabase, store.id, contactId);
       const voucherMovements = receiptVouchers.map(voucherReceiptToMovement);
 
+      let ledgerEntries = [];
       const { data: ledgerData, error: ledgerErr } = await supabase
         .from(LEDGER_TABLE)
         .select('id, created_at, debit, credit, description, sale_id')
@@ -535,67 +554,13 @@ export default function CustomerAccountStatementPage() {
         .eq('customer_id', contactId)
         .order('created_at', { ascending: true });
 
-      if (ledgerErr) {
-        if (isRelationMissing(ledgerErr)) {
-          console.warn('[customer-statement] customer_ledger غير متاح — عرض مبيعات ذمة من sales', ledgerErr);
-          const { rows: salesRows, source } = await fetchSalesForCustomerStatement(
-            supabase,
-            store.id,
-            contactId,
-            contactRow?.name,
-            contactRow?.phone
-          );
-          const loose = source === 'notes_or_legacy';
-          const movements = [];
-          for (const s of salesRows) {
-            const pm = String(s.payment_mode ?? '').toLowerCase();
-            const creditOk = isCreditSaleRow(s) || (loose && pm !== 'cash');
-            if (!creditOk) continue;
-            const mv = saleRowToMovement(s, loose);
-            if (mv) movements.push(mv);
-          }
-          movements.push(...voucherMovements);
-          const built = computeMergedStatementRows(movements);
-          setLedgerRows(built.rows);
-          setClosingBalance(built.closingBalance);
-          const noteSales =
-            source === 'notes_or_legacy'
-              ? 'يُعرض من فواتير المبيعات (مطابقة اسم/هاتف في نص الفاتورة لأن contact_id أو payment_mode غير موثوق). نفّذ supabase/customer_ledger.sql لسجل أدق.'
-              : 'يُعرض من فواتير المبيعات (جدول customer_ledger غير منشأ أو غير متاح). نفّذ ملف supabase/customer_ledger.sql لاحقاً لسجل حركات أدق.';
-          const hasSalesMov = movements.some((m) => m.saleId);
-          const hasVoucherMov = voucherMovements.length > 0;
-          let combinedNote = '';
-          if (hasSalesMov) combinedNote = noteSales;
-          if (hasVoucherMov)
-            combinedNote += (combinedNote ? ' ' : '') + 'سندات القبض من جدول vouchers مُدمجة كدفعات دائنة.';
-          if (built.rows.length && !combinedNote) combinedNote = 'سندات قبض من جدول vouchers.';
-          setDataSourceNote(
-            built.rows.length
-              ? combinedNote
-              : hasVoucherMov
-                ? 'سندات قبض فقط (من vouchers) — لا توجد فواتير ذمة مرتبطة في sales بهذا الشكل.'
-                : 'لا توجد فواتير ذمة مرتبطة بهذا الزبون في sales رغم وجود رصيد في الدليل — راجع أعمدة contact_id وpayment_mode في قاعدة البيانات.'
-          );
-          return;
-        }
-        throw ledgerErr;
+      if (!ledgerErr && Array.isArray(ledgerData)) {
+        ledgerEntries = ledgerData;
+      } else if (ledgerErr && !isRelationMissing(ledgerErr)) {
+        console.warn('[customer-statement] customer_ledger query notice:', ledgerErr);
       }
 
-      if (ledgerData?.length) {
-        const voucherExtra = filterVoucherMovementsNotInLedger(ledgerData, voucherMovements);
-        const movements = ledgerData.map(ledgerEntryToMovement);
-        movements.push(...voucherExtra);
-        const built = computeMergedStatementRows(movements);
-        setLedgerRows(built.rows);
-        setClosingBalance(built.closingBalance);
-        setDataSourceNote(
-          voucherExtra.length
-            ? 'يُعرض من جدول customer_ledger + سندات قبض من vouchers غير مكرّرة في الدفتر (قديمة).'
-            : 'يُعرض من جدول customer_ledger (مدين / دائن) — بما فيها سندات القبض المسجّلة كدائن.'
-        );
-        return;
-      }
-
+      // جلب فواتير المبيعات المرتبطة بالزبون دائماً (contact_id أو مطابقة الاسم/الهاتف)
       const { rows: salesRows, source } = await fetchSalesForCustomerStatement(
         supabase,
         store.id,
@@ -604,33 +569,47 @@ export default function CustomerAccountStatementPage() {
         contactRow?.phone
       );
       const loose = source === 'notes_or_legacy';
-      const voucherExtra = filterVoucherMovementsNotInLedger(ledgerData || [], voucherMovements);
-      const movements = [];
-      for (const s of salesRows) {
-        const pm = String(s.payment_mode ?? '').toLowerCase();
-        const creditOk = isCreditSaleRow(s) || (loose && pm !== 'cash');
-        if (!creditOk) continue;
-        const mv = saleRowToMovement(s, loose);
-        if (mv) movements.push(mv);
+
+      // معرّفات الفواتير المسجلة مسبقاً في customer_ledger لمنع التكرار
+      const ledgerSaleIds = new Set();
+      for (const e of ledgerEntries) {
+        if (e.sale_id) ledgerSaleIds.add(String(e.sale_id));
       }
-      movements.push(...voucherExtra);
-      const built = computeMergedStatementRows(movements);
+
+      const ledgerMovements = ledgerEntries.map(ledgerEntryToMovement);
+
+      // تحويل فواتير المبيعات إلى حركات (سواء ذمة أو نقدية بصافي صفر على الذمة)
+      const salesMovements = [];
+      for (const s of salesRows || []) {
+        if (s.id && ledgerSaleIds.has(String(s.id))) continue;
+        const mv = saleRowToMovement(s, loose);
+        if (mv) salesMovements.push(mv);
+      }
+
+      // سندات القبض غير المسجلة مسبقاً في الدفتر
+      const voucherExtra = filterVoucherMovementsNotInLedger(ledgerEntries, voucherMovements);
+
+      // دمج جميع المصادر وترتيبها زمنياً دون أن يلغي أي مصدر الباقي
+      const allMovements = [
+        ...ledgerMovements,
+        ...salesMovements,
+        ...voucherExtra,
+      ];
+
+      const built = computeMergedStatementRows(allMovements);
       setLedgerRows(built.rows);
       setClosingBalance(built.closingBalance);
-      if (built.rows.length) {
-        setDataSourceNote(
-          `${source === 'notes_or_legacy'
-            ? 'لا توجد حركات في customer_ledger — عُثر على فواتير عبر مطابقة النص (قديمة). يُفضّل تنفيذ customer_ledger.sql.'
-            : 'لا توجد حركات في customer_ledger — يُعرض من فواتير المبيعات بالذمة (sales)'
-          }${voucherExtra.length ? ' + سندات القبض (vouchers).' : ' فقط.'}`
-        );
-      } else {
-        setDataSourceNote(
-          voucherExtra.length
-            ? 'سندات قبض فقط من vouchers — لا توجد حركات في sales أو customer_ledger لهذا الزبون.'
-            : 'لا توجد حركات مسجّلة لهذا الزبون في sales أو customer_ledger. إن ظهر رصيد في الدليل فالفواتير قد تكون بلا contact_id — راجع الجدول في Supabase.'
-        );
-      }
+
+      const parts = [];
+      if (ledgerMovements.length) parts.push('دفتر الحسابات');
+      if (salesMovements.length) parts.push('فواتير المبيعات');
+      if (voucherExtra.length) parts.push('سندات القبض');
+
+      setDataSourceNote(
+        built.rows.length
+          ? `حركات مدمجة من: ${parts.join(' + ')}.`
+          : 'لا توجد حركات مسجلة لهذا الزبون في المبيعات أو الدفتر أو السندات.'
+      );
     } catch (e) {
       console.error(e);
       setError(e.message || 'تعذّر تحميل كشف الحساب');

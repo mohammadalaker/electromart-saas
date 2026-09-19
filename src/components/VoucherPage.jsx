@@ -15,6 +15,7 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
+import SupplierFormModal from './SupplierFormModal';
 import { supabase } from '../lib/supabaseClient';
 import { useStore } from '../context/StoreContext';
 import { normalizeDigitsToLatin } from '../utils/normalizeDigits';
@@ -75,6 +76,56 @@ function formatChecksForDescription(lines, sym = '₪') {
   return `\n[تفاصيل الشيكات]\n${parts.join('\n')}`;
 }
 
+/** دالة تنسيق الحقول وفق الحالة والترميز اللوني */
+function getInputClass({
+  filled = false,
+  isAmount = false,
+  isPayment = false,
+  amountVal = 0,
+  isReadOnly = false,
+  extra = '',
+}) {
+  const common =
+    'h-12 w-full rounded-2xl px-4 text-base font-bold outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 disabled:opacity-60 ';
+
+  if (isReadOnly) {
+    return (
+      common +
+      'border border-violet-200/90 bg-violet-50/70 dark:border-violet-900/60 dark:bg-violet-950/40 text-violet-800 dark:text-violet-300 font-mono font-black select-all cursor-default ' +
+      extra
+    );
+  }
+
+  if (isAmount && amountVal > 0) {
+    if (isPayment) {
+      return (
+        common +
+        'border-2 border-rose-400 dark:border-rose-500/80 bg-rose-50/60 dark:bg-rose-950/30 text-rose-950 dark:text-rose-200 font-currency font-black ' +
+        extra
+      );
+    }
+    return (
+      common +
+      'border-2 border-emerald-400 dark:border-emerald-500/80 bg-emerald-50/60 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-200 font-currency font-black ' +
+      extra
+    );
+  }
+
+  if (filled) {
+    return (
+      common +
+      'border border-emerald-400 dark:border-emerald-500/70 bg-white dark:bg-slate-800/90 text-slate-900 dark:text-white ' +
+      extra
+    );
+  }
+
+  return (
+    common +
+    'border border-slate-200 dark:border-slate-700 bg-slate-50/70 focus:bg-white dark:bg-slate-800/60 dark:focus:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 ' +
+    extra
+  );
+}
+
 /**
  * إدراج في جدول vouchers: store_id + معرّف الطرف في account_id / supplier_contact_id.
  * يدعم أعمدة اختيارية: voucher_tender, cash_amount, check_lines (بعد تشغيل vouchers_tender_cheques.sql).
@@ -87,20 +138,34 @@ async function handleInsert({
   description,
   date,
   tender,
+  voucherNumber,
+  manualVoucherNo,
+  manualVoucherDate,
 }) {
   const descriptionTrimmed = description?.trim() || '';
   const dateStr = String(date || '').slice(0, 10);
+  const manualTrimmed = manualVoucherNo?.trim() || '';
+  const manualDateTrimmed = manualVoucherDate?.trim() || '';
 
   if (!storeId || !supplierId) {
     console.error('[vouchers:insert] بيانات ناقصة', { storeId, supplierId });
     return { ok: false, error: { message: 'store_id أو الطرف مفقود' } };
   }
 
+  const metaTags = [];
+  if (voucherNumber) metaTags.push(`[رقم: ${voucherNumber}]`);
+  if (manualTrimmed) {
+    metaTags.push(`[سند يدوي: ${manualTrimmed}${manualDateTrimmed ? ` بتاريخ ${manualDateTrimmed}` : ''}]`);
+  }
+  const prefixNotes = metaTags.length > 0 ? metaTags.join(' ') : '';
+  const fullDesc = [prefixNotes, descriptionTrimmed].filter(Boolean).join(' — ');
+
   const base = {
     store_id: storeId,
     voucher_type: voucherType,
     amount,
-    description: descriptionTrimmed || null,
+    description: fullDesc || null,
+    reference_number: voucherNumber || manualTrimmed || null,
     date: dateStr,
   };
 
@@ -156,7 +221,7 @@ async function handleInsert({
             : '';
   const curLabel = CURRENCIES.find((c) => c.code === (tender?.currency_code || 'ILS'))?.label ?? 'شيكل';
   const fallbackDesc =
-    descriptionTrimmed +
+    (fullDesc ? fullDesc + '\n' : '') +
     (tender?.check_lines?.length ? formatChecksForDescription(tender.check_lines, sym) : '') +
     (tenderLabel ? `\n[طريقة الدفع: ${tenderLabel}]` : '') +
     (tender ? `\n[العملة: ${curLabel}]` : '') +
@@ -271,6 +336,7 @@ export default function VoucherPage({ type }) {
   const [suppliers, setSuppliers] = useState([]);
   const [suppliersLoading, setSuppliersLoading] = useState(true);
   const [suppliersSource, setSuppliersSource] = useState(null);
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
 
   const [customers, setCustomers] = useState([]);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -280,6 +346,49 @@ export default function VoucherPage({ type }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [supplierId, setSupplierId] = useState('');
   const [customerId, setCustomerId] = useState('');
+
+  // حقول رقم السند (افتراضي تلقائي وقابل للتعديل) والسند اليدوي
+  const [voucherNumber, setVoucherNumber] = useState('');
+  const [isVoucherNumberTouched, setIsVoucherNumberTouched] = useState(false);
+  const [manualVoucherNo, setManualVoucherNo] = useState('');
+  const [manualVoucherDate, setManualVoucherDate] = useState('');
+  const [voucherSeq, setVoucherSeq] = useState(1);
+
+  const fetchVoucherCount = useCallback(async () => {
+    if (!store?.id) return;
+    try {
+      const { count, error } = await supabase
+        .from(VOUCHERS_TABLE)
+        .select('id', { count: 'exact', head: true })
+        .eq('store_id', store.id)
+        .eq('voucher_type', voucherType);
+
+      if (!error && count != null) {
+        setVoucherSeq(count + 1);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch voucher count:', err);
+    }
+  }, [store?.id, voucherType]);
+
+  useEffect(() => {
+    fetchVoucherCount();
+  }, [fetchVoucherCount]);
+
+  // رقم السند الافتراضي بصيغة: REC-YYYYMMDD-XXXX أو PAY-YYYYMMDD-XXXX
+  const defaultVoucherNumber = useMemo(() => {
+    const prefix = isPayment ? 'PAY' : 'REC';
+    const dateClean = (date || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+    const seqStr = String(voucherSeq).padStart(4, '0');
+    return `${prefix}-${dateClean}-${seqStr}`;
+  }, [isPayment, date, voucherSeq]);
+
+  // تحديث رقم السند بالقيمة المقترحة تلقائياً طالما لم يقم المستخدم بتعديله يدوياً
+  useEffect(() => {
+    if (!isVoucherNumberTouched) {
+      setVoucherNumber(defaultVoucherNumber);
+    }
+  }, [defaultVoucherNumber, isVoucherNumberTouched]);
 
   /** كاش | شيكات | فيزا */
   const [tenderType, setTenderType] = useState('cash');
@@ -293,6 +402,17 @@ export default function VoucherPage({ type }) {
       bank_name: '',
     },
   ]);
+
+  // حساب مجموع الشيكات ومزامنته مع المبلغ عند اختيار شيكات
+  const totalChecksAmount = useMemo(() => {
+    return sanitizeCheckLinesForDb(checkRows).reduce((s, c) => s + c.amount, 0);
+  }, [checkRows]);
+
+  useEffect(() => {
+    if (tenderType === 'checks') {
+      setAmount(totalChecksAmount > 0 ? String(totalChecksAmount) : '');
+    }
+  }, [tenderType, totalChecksAmount]);
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -561,6 +681,10 @@ export default function VoucherPage({ type }) {
     setDate(new Date().toISOString().slice(0, 10));
     setSupplierId('');
     setCustomerId('');
+    setIsVoucherNumberTouched(false);
+    setVoucherNumber('');
+    setManualVoucherNo('');
+    setManualVoucherDate('');
     setTenderType('cash');
     setCurrencyCode('ILS');
     setVisaLast4Input('');
@@ -573,7 +697,8 @@ export default function VoucherPage({ type }) {
       },
     ]);
     setFormError(null);
-  }, []);
+    fetchVoucherCount();
+  }, [fetchVoucherCount]);
 
   const updateCheckRow = (index, field, value) => {
     setCheckRows((prev) => {
@@ -665,6 +790,8 @@ export default function VoucherPage({ type }) {
     setSubmitting(true);
     setFormError(null);
 
+    const finalVoucherNumber = voucherNumber.trim() || defaultVoucherNumber;
+
     const result = await handleInsert({
       storeId: store.id,
       supplierId: activePartyId,
@@ -673,6 +800,9 @@ export default function VoucherPage({ type }) {
       description,
       date,
       tender,
+      voucherNumber: finalVoucherNumber,
+      manualVoucherNo,
+      manualVoucherDate,
     });
 
     if (result.ok) {
@@ -820,167 +950,279 @@ export default function VoucherPage({ type }) {
               </p>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-3">
-              {/* شريط الحقول الأفقي المضغوط بنمط فاتورة المشتريات */}
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* الطرف: زبون / مورد */}
-                  <div className="w-36 sm:w-40 shrink-0">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                      الطرف
-                    </label>
-                    <div className="flex h-8.5 rounded-lg border border-slate-200 bg-slate-50/70 p-0.5 dark:border-slate-700 dark:bg-slate-800">
-                      {[
-                        { val: 'supplier', label: 'مورد', Icon: Truck },
-                        { val: 'customer', label: 'زبون', Icon: Users },
-                      ].map(({ val, label, Icon }) => (
-                        <button
-                          key={val}
-                          type="button"
-                          onClick={() => { setPartyType(val); setSupplierId(''); setCustomerId(''); }}
-                          className={`flex flex-1 items-center justify-center gap-1 rounded-md text-xs font-bold transition ${
-                            partyType === val
-                              ? 'bg-white text-indigo-600 shadow-xs dark:bg-slate-700 dark:text-indigo-300'
-                              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                          }`}
-                        >
-                          <Icon size={13} />
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="rounded-3xl border border-slate-200/90 bg-white/95 p-6 sm:p-8 shadow-xl backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 space-y-6">
 
-                  {/* العملة */}
-                  <div className="w-24 sm:w-28 shrink-0">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                      العملة
+                {/* 1. الصف الأول: رقم السند (تلقائي) + تاريخ السند */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                  {/* رقم السند */}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Receipt size={16} className="text-violet-600 dark:text-violet-400" />
+                        رقم السند
+                      </span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-300 font-bold">
+                        {isVoucherNumberTouched ? 'معدّل يدوياً' : 'تلقائي (قابل للتعديل)'}
+                      </span>
                     </label>
-                    <select
-                      value={currencyCode}
-                      onChange={(e) => setCurrencyCode(e.target.value)}
-                      className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2 text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900"
-                    >
-                      {CURRENCIES.map((c) => (
-                        <option key={c.code} value={c.code}>
-                          {c.code} ({c.symbol})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* اختيار الطرف (مورد أو زبون) */}
-                  <div className="relative min-w-[180px] flex-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                        {partyType === 'supplier' ? 'المورد' : 'الزبون'} <span className="text-rose-500">*</span>
-                      </label>
-                    </div>
-                    <div className="relative">
-                      {partyType === 'supplier' ? (
-                        <select
-                          value={supplierId}
-                          onChange={(e) => setSupplierId(e.target.value)}
-                          disabled={suppliersLoading || !store?.id}
-                          className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 disabled:opacity-50"
-                        >
-                          <option value="">— اختر المورد —</option>
-                          {suppliers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name || 'بدون اسم'}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <select
-                          value={customerId}
-                          onChange={(e) => setCustomerId(e.target.value)}
-                          disabled={customersLoading || !store?.id}
-                          className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 disabled:opacity-50"
-                        >
-                          <option value="">— اختر الزبون —</option>
-                          {customers.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name || 'بدون اسم'}
-                              {c.outstanding_amount > 0
-                                ? ` (عليه: ${currencySymbol(currencyCode)}${Number(c.outstanding_amount).toFixed(2)})`
-                                : ''}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      {(suppliersLoading || customersLoading) && (
-                        <Loader2 className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 animate-spin text-indigo-500" />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* طريقة الدفع */}
-                  <div className="w-44 sm:w-48 shrink-0">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                      طريقة الدفع
-                    </label>
-                    <div className="flex h-8.5 rounded-lg border border-slate-200 bg-slate-50/70 p-0.5 dark:border-slate-700 dark:bg-slate-800">
-                      {TENDER_TYPES.map((t) => (
-                        <button
-                          key={t.value}
-                          type="button"
-                          onClick={() => setTenderType(t.value)}
-                          className={`flex flex-1 items-center justify-center gap-1 rounded-md text-xs font-bold transition ${
-                            tenderType === t.value
-                              ? 'bg-white text-indigo-600 shadow-xs dark:bg-slate-700 dark:text-indigo-300'
-                              : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                          }`}
-                        >
-                          {t.value === 'cash' ? (
-                            <Banknote size={13} className="shrink-0" />
-                          ) : t.value === 'visa' ? (
-                            <CreditCard size={13} className="shrink-0" />
-                          ) : null}
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
+                    <input
+                      type="text"
+                      value={voucherNumber}
+                      onChange={(e) => {
+                        setVoucherNumber(e.target.value);
+                        setIsVoucherNumberTouched(true);
+                      }}
+                      placeholder={defaultVoucherNumber}
+                      className={getInputClass({ filled: Boolean(voucherNumber.trim()) })}
+                      dir="ltr"
+                      title="رقم السند (معبأ برقم مقترح تلقائياً ويمكن تعديله)"
+                    />
                   </div>
 
                   {/* تاريخ السند */}
-                  <div className="w-32 sm:w-36 shrink-0">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2">
                       تاريخ السند <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="date"
                       value={date}
                       onChange={(e) => setDate(normalizeDigitsToLatin(e.target.value))}
-                      className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2 text-xs font-currency text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900"
+                      className={getInputClass({ filled: Boolean(date), extra: 'font-currency' })}
+                      dir="ltr"
+                      lang="en"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* 2. الصف الثاني: سند يدوي + تاريخه */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                  {/* سند يدوي */}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
+                      <span>سند يدوي</span>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal">
+                        (اختياري — ربط سند ورقي سابق)
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={manualVoucherNo}
+                      onChange={(e) => setManualVoucherNo(e.target.value)}
+                      placeholder="مثال: 1042 أو رقم الدفتر الورقي"
+                      className={getInputClass({ filled: Boolean(manualVoucherNo.trim()) })}
+                    />
+                  </div>
+
+                  {/* تاريخ السند اليدوي */}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
+                      <span>تاريخ السند اليدوي</span>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal">
+                        (اختياري — لو الورقي بتاريخ سابق)
+                      </span>
+                    </label>
+                    <input
+                      type="date"
+                      value={manualVoucherDate}
+                      onChange={(e) => setManualVoucherDate(normalizeDigitsToLatin(e.target.value))}
+                      className={getInputClass({ filled: Boolean(manualVoucherDate), extra: 'font-currency' })}
                       dir="ltr"
                       lang="en"
                     />
                   </div>
+                </div>
 
-                  {/* المبلغ (كاش / فيزا) */}
-                  {(tenderType === 'cash' || tenderType === 'visa') && (
-                    <div className="w-32 sm:w-36 shrink-0">
-                      <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                        المبلغ ({currencySymbol(currencyCode)}) <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={amount}
-                        onChange={(e) => setAmount(normalizeDigitsToLatin(e.target.value))}
-                        placeholder="0.00"
-                        dir="ltr"
-                        className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-xs font-currency font-bold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900"
-                      />
+                {/* 3. الصف الثالث: الطرف (المدفوع له / المقبوض منه) - عرض كامل */}
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <label className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <span className="text-indigo-600 dark:text-indigo-400">●</span>
+                      <span>{isPayment ? 'المدفوع له' : 'المقبوض منه (المدفوع له)'}</span>
+                      <span className="text-rose-500">*</span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      {/* تبديل نوع الطرف: مورد / زبون */}
+                      <div className="flex h-9 rounded-xl border border-slate-200 bg-slate-100/90 p-0.5 dark:border-slate-700 dark:bg-slate-800">
+                        {[
+                          { val: 'supplier', label: 'مورد', Icon: Truck },
+                          { val: 'customer', label: 'زبون', Icon: Users },
+                        ].map(({ val, label, Icon }) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => {
+                              setPartyType(val);
+                              setSupplierId('');
+                              setCustomerId('');
+                            }}
+                            className={`flex items-center gap-1.5 px-3 rounded-lg text-xs font-black transition ${
+                              partyType === val
+                                ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
+                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            <Icon size={14} />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* زر إضافة مورد جديد عبر المودال الموحد */}
+                      {partyType === 'supplier' && (
+                        <button
+                          type="button"
+                          onClick={() => setSupplierModalOpen(true)}
+                          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300 text-xs font-black transition"
+                        >
+                          <Plus size={14} />
+                          <span>مورد جديد</span>
+                        </button>
+                      )}
                     </div>
-                  )}
+                  </div>
+
+                  <div className="relative">
+                    {partyType === 'supplier' ? (
+                      <select
+                        value={supplierId}
+                        onChange={(e) => setSupplierId(e.target.value)}
+                        disabled={suppliersLoading || !store?.id}
+                        className={getInputClass({
+                          filled: Boolean(supplierId),
+                          extra: 'cursor-pointer pr-4 pl-10',
+                        })}
+                      >
+                        <option value="">— اختر المورد المدفوع له —</option>
+                        {suppliers.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name || 'بدون اسم'} {s.phone ? `(${s.phone})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select
+                        value={customerId}
+                        onChange={(e) => setCustomerId(e.target.value)}
+                        disabled={customersLoading || !store?.id}
+                        className={getInputClass({
+                          filled: Boolean(customerId),
+                          extra: 'cursor-pointer pr-4 pl-10',
+                        })}
+                      >
+                        <option value="">— اختر الزبون —</option>
+                        {customers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name || 'بدون اسم'}
+                            {c.outstanding_amount > 0
+                              ? ` (عليه: ${currencySymbol(currencyCode)}${Number(c.outstanding_amount).toFixed(2)})`
+                              : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {(suppliersLoading || customersLoading) && (
+                      <Loader2 className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 animate-spin text-indigo-500" />
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. الصف الرابع: عملة السند + مبلغ السند */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                  {/* عملة السند */}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2">
+                      عملة السند
+                    </label>
+                    <select
+                      value={currencyCode}
+                      onChange={(e) => setCurrencyCode(e.target.value)}
+                      className={getInputClass({
+                        filled: true,
+                        extra: 'cursor-pointer',
+                      })}
+                    >
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code} — {c.label} ({c.symbol})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* مبلغ السند */}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
+                      <span>
+                        مبلغ السند ({currencySymbol(currencyCode)}) <span className="text-rose-500">*</span>
+                      </span>
+                      {parseMoneyInput(amount) > 0 && (
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                            isPayment
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          }`}
+                        >
+                          {isPayment ? 'صرف مالي' : 'قبض نقدي'}
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={amount}
+                      onChange={(e) => setAmount(normalizeDigitsToLatin(e.target.value))}
+                      placeholder="0.00"
+                      dir="ltr"
+                      className={getInputClass({
+                        isAmount: true,
+                        isPayment,
+                        amountVal: parseMoneyInput(amount),
+                        filled: parseMoneyInput(amount) > 0,
+                        extra: 'text-lg',
+                      })}
+                      disabled={tenderType === 'checks'}
+                      title={tenderType === 'checks' ? 'يُحسب المبلغ تلقائياً من مجموع الشيكات' : ''}
+                    />
+                  </div>
+                </div>
+
+                {/* 5. الصف الخامس: طريقة الدفع */}
+                <div>
+                  <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2">
+                    طريقة الدفع
+                  </label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {TENDER_TYPES.map((t) => {
+                      const isSelected = tenderType === t.value;
+                      const Icon = t.value === 'cash' ? Banknote : t.value === 'visa' ? CreditCard : Receipt;
+                      return (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => setTenderType(t.value)}
+                          className={`h-12 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-black border-2 transition-all ${
+                            isSelected
+                              ? 'border-indigo-600 bg-indigo-50/80 text-indigo-700 shadow-sm dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-200'
+                              : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-slate-100 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <Icon size={18} />
+                          <span>{t.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
                   {/* فيزا: آخر 4 أرقام */}
                   {tenderType === 'visa' && (
-                    <div className="w-24 sm:w-28 shrink-0">
-                      <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                        آخر 4 أرقام
+                    <div className="mt-4 max-w-xs">
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                        آخر 4 أرقام من البطاقة
                       </label>
                       <input
                         type="text"
@@ -994,52 +1236,57 @@ export default function VoucherPage({ type }) {
                         }
                         placeholder="••••"
                         dir="ltr"
-                        className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2 text-xs font-currency text-center tracking-widest outline-none focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900"
+                        className={getInputClass({
+                          filled: visaLast4Input.length === 4,
+                          extra: 'text-center font-mono tracking-widest text-lg',
+                        })}
                       />
                     </div>
                   )}
                 </div>
 
-                {/* تفاصيل الشيكات (عند اختيار شيكات) */}
+                {/* 6. تفاصيل الشيكات (عند اختيار شيكات) */}
                 {tenderType === 'checks' && (
-                  <div className="mt-3 space-y-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      <label className="text-sm font-black text-slate-800 dark:text-slate-200">
                         تفاصيل الشيكات ({checkRows.length})
                       </label>
                       <button
                         type="button"
                         onClick={addCheckRow}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-indigo-400 dark:hover:bg-slate-700 transition"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60 transition"
                       >
-                        <Plus size={13} />
-                        إضافة شيك
+                        <Plus size={14} />
+                        <span>إضافة شيك</span>
                       </button>
                     </div>
-                    <div className="space-y-2">
+
+                    <div className="space-y-3">
                       {checkRows.map((row, idx) => (
                         <div
                           key={idx}
-                          className="rounded-lg border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-700/60 dark:bg-slate-800/40"
+                          className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700/80 dark:bg-slate-800/40"
                         >
-                          <div className="mb-1.5 flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                              شيك {idx + 1}
+                          <div className="mb-2.5 flex items-center justify-between">
+                            <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
+                              شيك رقم {idx + 1}
                             </span>
                             {checkRows.length > 1 && (
                               <button
                                 type="button"
                                 onClick={() => removeCheckRow(idx)}
-                                className="rounded p-0.5 text-rose-400 hover:bg-rose-500/20"
+                                className="rounded-lg p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                                 aria-label="حذف الشيك"
+                                title="حذف هذا الشيك"
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={16} />
                               </button>
                             )}
                           </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                             <div>
-                              <label className="mb-0.5 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              <label className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">
                                 رقم الشيك
                               </label>
                               <input
@@ -1049,11 +1296,15 @@ export default function VoucherPage({ type }) {
                                   updateCheckRow(idx, 'check_number', normalizeDigitsToLatin(e.target.value))
                                 }
                                 dir="ltr"
-                                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                placeholder="رقم الشيك"
+                                className={getInputClass({
+                                  filled: Boolean(row.check_number.trim()),
+                                  extra: 'h-10 text-sm font-currency',
+                                })}
                               />
                             </div>
                             <div>
-                              <label className="mb-0.5 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              <label className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">
                                 تاريخ الشيك
                               </label>
                               <input
@@ -1063,11 +1314,14 @@ export default function VoucherPage({ type }) {
                                   updateCheckRow(idx, 'check_date', normalizeDigitsToLatin(e.target.value))
                                 }
                                 dir="ltr"
-                                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:[color-scheme:dark]"
+                                className={getInputClass({
+                                  filled: Boolean(row.check_date),
+                                  extra: 'h-10 text-sm font-currency',
+                                })}
                               />
                             </div>
                             <div>
-                              <label className="mb-0.5 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              <label className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">
                                 المبلغ ({currencySymbol(currencyCode)})
                               </label>
                               <input
@@ -1078,11 +1332,15 @@ export default function VoucherPage({ type }) {
                                   updateCheckRow(idx, 'amount', normalizeDigitsToLatin(e.target.value))
                                 }
                                 dir="ltr"
-                                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 font-currency text-xs outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                placeholder="0.00"
+                                className={getInputClass({
+                                  filled: parseMoneyInput(row.amount) > 0,
+                                  extra: 'h-10 text-sm font-currency font-bold',
+                                })}
                               />
                             </div>
                             <div>
-                              <label className="mb-0.5 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              <label className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-400">
                                 اسم البنك
                               </label>
                               <input
@@ -1092,58 +1350,64 @@ export default function VoucherPage({ type }) {
                                   updateCheckRow(idx, 'bank_name', normalizeDigitsToLatin(e.target.value))
                                 }
                                 placeholder="مثال: بنك فلسطين"
-                                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                className={getInputClass({
+                                  filled: Boolean(row.bank_name.trim()),
+                                  extra: 'h-10 text-sm',
+                                })}
                               />
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
-                    <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                      <span>إجمالي الشيكات:</span>
-                      <span dir="ltr" className="font-currency font-black">
-                        {currencySymbol(currencyCode)}
-                        {sanitizeCheckLinesForDb(checkRows)
-                          .reduce((s, c) => s + c.amount, 0)
-                          .toFixed(2)}
+
+                    <div className="flex items-center justify-between rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200">
+                      <span>إجمالي مبالغ الشيكات:</span>
+                      <span dir="ltr" className="font-currency font-black text-base">
+                        {currencySymbol(currencyCode)} {totalChecksAmount.toFixed(2)}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* البيان / الوصف + زر الحفظ في نفس السطر بشكل مضغوط */}
-                <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                  <div className="flex-1">
-                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">
-                      البيان / الوصف
+                {/* 7. الصف السابع: البيان / الوصف + زر الحفظ */}
+                <div className="space-y-4 pt-4 border-t border-slate-200/80 dark:border-slate-800">
+                  <div>
+                    <label className="block text-xs sm:text-sm font-black text-slate-700 dark:text-slate-300 mb-2">
+                      البيان / تفاصيل السند
                     </label>
                     <input
                       type="text"
                       value={description}
                       onChange={(e) => setDescription(normalizeDigitsToLatin(e.target.value))}
-                      placeholder="تفاصيل السند…"
-                      className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900"
+                      placeholder="تفاصيل السند، سبب الصرف/القبض، أو ملاحظات إضافية…"
+                      className={getInputClass({ filled: Boolean(description.trim()) })}
                     />
                   </div>
+
                   <button
                     type="submit"
                     disabled={submitting || storeLoading || !store?.id}
-                    className={`h-8.5 px-6 shrink-0 inline-flex items-center justify-center gap-2 rounded-lg text-xs font-black shadow-xs transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`w-full h-13 rounded-2xl text-base font-black text-white shadow-lg transition active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                       isPayment
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white dark:bg-rose-600 dark:hover:bg-rose-500'
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500'
+                        ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                        : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
                     }`}
                   >
                     {submitting ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        جاري الحفظ…
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>جاري حفظ السند…</span>
                       </>
                     ) : (
-                      isPayment ? 'حفظ سند الصرف' : 'حفظ سند القبض'
+                      <>
+                        <CheckCircle2 size={20} />
+                        <span>{isPayment ? 'اعتماد وحفظ سند الصرف' : 'اعتماد وحفظ سند القبض'}</span>
+                      </>
                     )}
                   </button>
                 </div>
+
               </div>
             </form>
 
@@ -1287,6 +1551,17 @@ export default function VoucherPage({ type }) {
           onDismiss={() => setToast(null)}
         />
       )}
+
+      {/* مودال إضافة مورد جديد */}
+      <SupplierFormModal
+        isOpen={supplierModalOpen}
+        onClose={() => setSupplierModalOpen(false)}
+        onSuccess={(newSupplier) => {
+          setSuppliers((prev) => [newSupplier, ...prev.filter((s) => s.id !== newSupplier.id)]);
+          setSupplierId(newSupplier.id);
+          setSupplierModalOpen(false);
+        }}
+      />
     </DashboardLayout>
   );
 }

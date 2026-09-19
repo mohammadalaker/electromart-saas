@@ -154,11 +154,7 @@ export async function applyCashPurchaseFromFund(supabase, { storeId, purchaseId,
   if (!cashRow?.id) return { ok: false, reason: 'no_cash_account' };
 
   const prev = roundMoney(Number(cashRow.balance ?? 0));
-  if (prev < amt) {
-    throw new Error(
-      'رصيد كاش المحل غير كافٍ لتسجيل دفع المشتريات نقداً. راجع الصندوق أو سجّل الفاتورة آجلاً.'
-    );
-  }
+  // يسمح بالرصيد السالب لتسجيل دفع المشتريات نقداً حتى لو كان رصيد الصندوق غير كافٍ
   const next = roundMoney(prev - amt);
 
   const { error: uErr } = await supabase

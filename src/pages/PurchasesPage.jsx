@@ -31,12 +31,14 @@ import {
   Barcode as BarcodeIcon,
   Percent,
   Building2,
+  Pencil,
 } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import PrintPurchaseInvoice from '../components/PrintPurchaseInvoice';
 import PrintPurchaseBarcodesModal from '../components/PrintPurchaseBarcodesModal';
 import PurchaseAttachmentsModal from '../components/PurchaseAttachmentsModal';
 import StorageObjectImage from '../components/StorageObjectImage';
+import SupplierFormModal from '../components/SupplierFormModal';
 import { supabase, PRODUCTS_TABLE } from '../lib/supabaseClient';
 import { uploadPurchaseInvoiceScan } from '../utils/uploadProductImage';
 import { useStore } from '../context/StoreContext';
@@ -170,6 +172,13 @@ export default function PurchasesPage() {
   const [suppliersList, setSuppliersList] = useState([]);
   const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
   const supplierDropdownRef = useRef(null);
+
+  // New Supplier Modal State
+  const [newSupplierModalOpen, setNewSupplierModalOpen] = useState(false);
+  const [newSupplierInitialName, setNewSupplierInitialName] = useState('');
+
+  // View-Only Saved Mode State
+  const [isSavedMode, setIsSavedMode] = useState(false);
 
   // -------------------------------------------------------------
   // Accounting Account, Taxes & Warehouse State
@@ -528,6 +537,7 @@ export default function PurchasesPage() {
         }
 
         setLines(rawLines.length > 0 ? rawLines : [newLine()]);
+        setIsSavedMode(true);
       } catch (err) {
         console.error('Failed to load purchase invoice', err);
         toast.error('فشل تحميل الفاتورة');
@@ -590,6 +600,7 @@ export default function PurchasesPage() {
     if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl);
     setInvoicePreviewUrl(null);
     setSavedBanner(null);
+    setIsSavedMode(false);
     toast.info('تم بدء فاتورة جديدة فارغة');
   };
 
@@ -734,6 +745,18 @@ export default function PurchasesPage() {
     setSupplierPhone(s.phone || '');
     setSelectedSupplierId(s.id);
     setSupplierDropdownOpen(false);
+  };
+
+  const openNewSupplierModal = (initialName = '') => {
+    setNewSupplierInitialName(initialName || supplierCompanyName.trim());
+    setSupplierDropdownOpen(false);
+    setNewSupplierModalOpen(true);
+  };
+
+  const handleSupplierCreated = (data) => {
+    setSuppliersList((prev) => [data, ...prev.filter((s) => s.id !== data.id)]);
+    selectSupplier(data);
+    setNewSupplierModalOpen(false);
   };
 
   // -------------------------------------------------------------
@@ -1659,6 +1682,7 @@ export default function PurchasesPage() {
       setCurrentPurchaseId(purchaseId);
       setInvoiceNumber(finalInv);
       setSavedBanner({ total: grandTotalSave, invoiceNumber: finalInv });
+      setIsSavedMode(true);
       loadSuppliers();
       fetchInvoicesNavList();
     } catch (e) {
@@ -1717,23 +1741,58 @@ export default function PurchasesPage() {
       <div className="w-full max-w-[1550px] mx-auto space-y-3 pb-12" dir="rtl">
         {/* Banner after successful save */}
         {savedBanner && (
-          <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-100 animate-fadeIn">
-            <div className="flex items-center gap-2">
-              <Check size={18} className="text-emerald-600 dark:text-emerald-400" />
-              <span>
-                تم حفظ الفاتورة بنجاح {savedBanner.invoiceNumber ? `(#${savedBanner.invoiceNumber})` : ''} — الإجمالي:{' '}
-                <span className="font-currency font-black" dir="ltr" lang="en">
-                  ₪ {Number(savedBanner.total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </span>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/50 px-5 py-3 text-xs font-bold text-emerald-900 dark:text-emerald-100 shadow-sm animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs shrink-0">
+                <Check size={20} className="stroke-[3]" />
+              </div>
+              <div>
+                <div className="text-sm font-black flex items-center gap-2">
+                  <span>تم حفظ الفاتورة بنجاح</span>
+                  {savedBanner.invoiceNumber && (
+                    <span className="font-mono text-xs bg-emerald-200/70 dark:bg-emerald-900/60 text-emerald-950 dark:text-emerald-200 px-2 py-0.5 rounded-lg" dir="ltr">
+                      #{savedBanner.invoiceNumber}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                    (الفاتورة في وضع العرض فقط — معتمدة ومحفوظة)
+                  </span>
+                </div>
+                <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                  الصافي النهائي:{' '}
+                  <span className="font-currency font-black text-emerald-950 dark:text-white" dir="ltr" lang="en">
+                    ₪ {Number(savedBanner.total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  {' '}— للبدء بفاتورة جديدة فارغة اضغط على «فاتورة جديدة».
+                </div>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setSavedBanner(null)}
-              className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-300"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePrintCurrentInvoice}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition shadow-xs"
+              >
+                <Printer size={14} />
+                <span>طباعة</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleNewInvoice}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs transition shadow-xs"
+              >
+                <Plus size={14} />
+                <span>فاتورة جديدة</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSavedBanner(null)}
+                className="p-1.5 text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg transition"
+                title="إغلاق التنبيه"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -1754,20 +1813,12 @@ export default function PurchasesPage() {
               <span>فاتورة جديدة</span>
             </button>
 
-            {currentPurchaseId ? (
-              purchaseStatus === 'received' ? (
-                <span className="inline-flex items-center gap-1.5 text-xs font-black text-white bg-emerald-600 px-3 py-1 rounded-xl shadow-xs">
-                  <Check size={14} className="stroke-[3]" />
-                  <span>مرحّل للمخزن</span>
-                  {invoiceNumber ? <span className="font-mono text-[11px] opacity-90">#{invoiceNumber}</span> : null}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 px-3 py-1 rounded-xl">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                  <span>عرض / مسودة</span>
-                  {invoiceNumber ? <span className="font-mono text-[11px] font-black">#{invoiceNumber}</span> : null}
-                </span>
-              )
+            {isSavedMode || currentPurchaseId ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-black text-white bg-emerald-600 px-3 py-1.5 rounded-xl shadow-xs">
+                <Check size={14} className="stroke-[3]" />
+                <span>محفوظة {purchaseStatus === 'received' ? '(مرحّلة للمخزن)' : '(مسودة)'}</span>
+                {invoiceNumber ? <span className="font-mono text-[11px] opacity-90">#{invoiceNumber}</span> : null}
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 px-3 py-1 rounded-xl">
                 <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -1908,25 +1959,29 @@ export default function PurchasesPage() {
               </div>
             </div>
 
-            {/* مؤشر الحالة ملون (جديد / مرحّل) */}
+            {/* مؤشر الحالة ملون (جديد / مرحّل / محفوظ) */}
             <div className="w-32 sm:w-36">
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
                 الحالة
               </label>
               <div
                 className={`h-10 w-full rounded-xl px-2.5 flex items-center justify-center gap-1.5 text-xs font-black select-none shadow-xs transition-all ${
-                  purchaseStatus === 'received'
+                  isSavedMode || currentPurchaseId
                     ? 'bg-emerald-600 text-white border border-emerald-700'
                     : 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-700'
                 }`}
-                title={purchaseStatus === 'received' ? 'فاتورة مرحّلة وتم تحديث أرصدة المخزن بها' : 'مسودة غير مرحّلة للأرصدة بعد'}
+                title={isSavedMode || currentPurchaseId ? 'فاتورة معتمدة ومحفوظة' : 'مسودة غير محفوظة بعد'}
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    purchaseStatus === 'received' ? 'bg-white animate-pulse' : 'bg-amber-500'
+                    isSavedMode || currentPurchaseId ? 'bg-white' : 'bg-amber-500'
                   }`}
                 />
-                <span>{purchaseStatus === 'received' ? 'مرحّل للمخزن' : 'جديد (مسودة)'}</span>
+                <span>
+                  {isSavedMode || currentPurchaseId
+                    ? (purchaseStatus === 'received' ? 'محفوظة ومرحّلة' : 'محفوظة (مسودة)')
+                    : 'جديد (مسودة)'}
+                </span>
               </div>
             </div>
 
@@ -1936,7 +1991,7 @@ export default function PurchasesPage() {
                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">
                   المورد <span className="text-rose-500">*</span>
                 </label>
-                {selectedSupplierId && (
+                {selectedSupplierId && !isSavedMode && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1953,13 +2008,22 @@ export default function PurchasesPage() {
               <div className="relative">
                 <input
                   value={supplierCompanyName}
+                  readOnly={isSavedMode}
+                  disabled={isSavedMode}
                   onChange={(e) => {
+                    if (isSavedMode) return;
                     setSupplierCompanyName(e.target.value);
                     setSelectedSupplierId(null);
                     setSupplierDropdownOpen(true);
                   }}
-                  onFocus={() => setSupplierDropdownOpen(true)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
+                  onFocus={() => {
+                    if (!isSavedMode) setSupplierDropdownOpen(true);
+                  }}
+                  className={`h-10 w-full rounded-xl border px-3 text-sm font-bold outline-none transition-all ${
+                    isSavedMode
+                      ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                      : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
+                  }`}
                   placeholder="ابحث أو اكتب اسم المورد…"
                 />
                 {selectedSupplierId && (
@@ -1967,9 +2031,9 @@ export default function PurchasesPage() {
                 )}
               </div>
 
-              {/* Autocomplete Dropdown for Suppliers */}
-              {supplierDropdownOpen && filteredSuppliers.length > 0 && (
-                <ul className="absolute z-50 right-0 left-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-xs">
+              {/* Autocomplete Dropdown for Suppliers with "+ إضافة مورد جديد" */}
+              {!isSavedMode && supplierDropdownOpen && (
+                <ul className="absolute z-50 right-0 left-0 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-xs">
                   {filteredSuppliers.map((s) => (
                     <li key={s.id}>
                       <button
@@ -1992,6 +2056,28 @@ export default function PurchasesPage() {
                       </button>
                     </li>
                   ))}
+
+                  {/* خيار إضافة مورد جديد عند الكتابة أو عدم وجود تطابق تام */}
+                  {supplierCompanyName.trim() && !filteredSuppliers.some((s) => (s.name || '').toLowerCase() === supplierCompanyName.trim().toLowerCase()) && (
+                    <li className="border-t border-slate-200 dark:border-slate-700 bg-violet-50/70 dark:bg-violet-950/30">
+                      <button
+                        type="button"
+                        className="w-full text-right px-3.5 py-2.5 text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-violet-100 hover:bg-violet-100/70 dark:hover:bg-violet-900/50 flex items-center gap-2 font-black transition-colors"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          openNewSupplierModal(supplierCompanyName.trim());
+                        }}
+                      >
+                        <Plus size={16} className="text-violet-600 dark:text-violet-400 stroke-[3]" />
+                        <span>إضافة مورد جديد باسم «<strong className="underline">{supplierCompanyName.trim()}</strong>»</span>
+                      </button>
+                    </li>
+                  )}
+                  {filteredSuppliers.length === 0 && !supplierCompanyName.trim() && (
+                    <li className="px-3.5 py-3 text-center text-slate-400">
+                      لا يوجد موردين مسجلين بعد
+                    </li>
+                  )}
                 </ul>
               )}
             </div>
@@ -2004,21 +2090,22 @@ export default function PurchasesPage() {
               <input
                 type="tel"
                 value={supplierPhone}
-                readOnly={Boolean(selectedSupplierId)}
+                readOnly={Boolean(selectedSupplierId) || isSavedMode}
+                disabled={isSavedMode}
                 onChange={(e) => {
-                  if (!selectedSupplierId) {
+                  if (!selectedSupplierId && !isSavedMode) {
                     setSupplierPhone(normalizeDigitsToLatin(e.target.value));
                   }
                 }}
                 className={`h-10 w-full rounded-xl border px-3 text-sm font-currency font-bold outline-none transition-all ${
-                  selectedSupplierId
-                    ? 'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-400 select-none'
+                  selectedSupplierId || isSavedMode
+                    ? 'border-slate-200 bg-slate-100 text-slate-600 cursor-not-allowed dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-300 select-none'
                     : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
                 }`}
                 dir="ltr"
                 lang="en"
                 placeholder={selectedSupplierId ? 'مسجل مسبقاً' : '05xxxxxxxx'}
-                title={selectedSupplierId ? 'رقم الهاتف مسجل في ملف المورد ولا يمكن تعديله هنا' : 'أدخل هاتف المورد الجديد'}
+                title={selectedSupplierId ? 'رقم الهاتف مسجل في ملف المورد' : 'أدخل هاتف المورد الجديد'}
               />
             </div>
 
@@ -2029,8 +2116,14 @@ export default function PurchasesPage() {
               </label>
               <input
                 value={invoiceNumber}
-                onChange={(e) => setInvoiceNumber(normalizeDigitsToLatin(e.target.value))}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 transition-all"
+                readOnly={isSavedMode}
+                disabled={isSavedMode}
+                onChange={(e) => !isSavedMode && setInvoiceNumber(normalizeDigitsToLatin(e.target.value))}
+                className={`h-10 w-full rounded-xl border px-3 text-sm font-currency font-bold outline-none transition-all ${
+                  isSavedMode
+                    ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
+                }`}
                 dir="ltr"
                 lang="en"
                 placeholder="تلقائي إن تُرِك فارغاً"
@@ -2045,13 +2138,20 @@ export default function PurchasesPage() {
               <input
                 type="date"
                 value={invoiceDate}
+                readOnly={isSavedMode}
+                disabled={isSavedMode}
                 onChange={(e) => {
+                  if (isSavedMode) return;
                   setInvoiceDate(e.target.value);
                   if (paymentMode === 'credit') {
                     setPaymentDueDate(addDaysISO(e.target.value, 30));
                   }
                 }}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-currency font-bold text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900 transition-all"
+                className={`h-10 w-full rounded-xl border px-3 text-sm font-currency font-bold outline-none transition-all ${
+                  isSavedMode
+                    ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:bg-slate-900'
+                }`}
                 dir="ltr"
                 lang="en"
               />
@@ -2064,17 +2164,21 @@ export default function PurchasesPage() {
               </label>
               <select
                 value={paymentMode}
+                disabled={isSavedMode}
                 onChange={(e) => {
+                  if (isSavedMode) return;
                   const m = e.target.value;
                   setPaymentMode(m);
                   if (m === 'credit' && !paymentDueDate) {
                     setPaymentDueDate(addDaysISO(invoiceDate, 30));
                   }
                 }}
-                className={`h-10 w-full rounded-xl border px-3 text-sm font-bold outline-none cursor-pointer transition-all ${
-                  paymentMode === 'credit'
-                    ? 'border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-700'
-                    : 'border-slate-200 bg-slate-50/80 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+                className={`h-10 w-full rounded-xl border px-3 text-sm font-bold outline-none transition-all ${
+                  isSavedMode
+                    ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                    : paymentMode === 'credit'
+                    ? 'border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-700 cursor-pointer'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer'
                 }`}
               >
                 <option value="cash">نقداً (كاش)</option>
@@ -2091,8 +2195,14 @@ export default function PurchasesPage() {
                 <input
                   type="date"
                   value={paymentDueDate}
-                  onChange={(e) => setPaymentDueDate(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-amber-300 bg-amber-50/50 px-3 text-sm font-currency font-bold text-amber-950 focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:[color-scheme:dark] transition-all"
+                  readOnly={isSavedMode}
+                  disabled={isSavedMode}
+                  onChange={(e) => !isSavedMode && setPaymentDueDate(e.target.value)}
+                  className={`h-10 w-full rounded-xl border px-3 text-sm font-currency font-bold outline-none transition-all ${
+                    isSavedMode
+                      ? 'border-amber-200 bg-amber-50/60 text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100 cursor-default'
+                      : 'border-amber-300 bg-amber-50/50 text-amber-950 focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:[color-scheme:dark]'
+                  }`}
                   dir="ltr"
                   lang="en"
                 />
@@ -2107,8 +2217,13 @@ export default function PurchasesPage() {
               </label>
               <select
                 value={purchaseAccountId}
-                onChange={(e) => setPurchaseAccountId(e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer transition-all"
+                disabled={isSavedMode}
+                onChange={(e) => !isSavedMode && setPurchaseAccountId(e.target.value)}
+                className={`h-10 w-full rounded-xl border px-2.5 text-xs font-bold outline-none transition-all ${
+                  isSavedMode
+                    ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 cursor-pointer'
+                }`}
                 title="تحديد حساب الأستاذ / المشتريات المرتبط"
               >
                 {accountsList.map((acc) => (
@@ -2134,48 +2249,55 @@ export default function PurchasesPage() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setProductSearchOpen(true);
-                  setProductSearchQuery('');
-                  setProductSearchResults([]);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-300 shadow-xs transition-colors cursor-pointer"
-                title="بحث عن منتج في المخزن"
-              >
-                <Search size={15} />
-                بحث صنف
-              </button>
+            {!isSavedMode ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProductSearchOpen(true);
+                    setProductSearchQuery('');
+                    setProductSearchResults([]);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-300 shadow-xs transition-colors cursor-pointer"
+                  title="بحث عن منتج في المخزن"
+                >
+                  <Search size={15} />
+                  بحث صنف
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setNpEngName('');
-                  setNpRef('');
-                  setNpBarcode('');
-                  setNpUnitPrice('');
-                  setNpDiscount('0');
-                  setNpQty('1');
-                  setNewProductOpen(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300"
-                title="إضافة صنف جديد للمخزن والفاتورة"
-              >
-                <PackagePlus size={14} />
-                منتج جديد
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNpEngName('');
+                    setNpRef('');
+                    setNpBarcode('');
+                    setNpUnitPrice('');
+                    setNpDiscount('0');
+                    setNpQty('1');
+                    setNewProductOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  title="إضافة صنف جديد للمخزن والفاتورة"
+                >
+                  <PackagePlus size={14} />
+                  منتج جديد
+                </button>
 
-              <button
-                type="button"
-                onClick={addRow}
-                className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1 text-xs font-black text-white hover:bg-violet-700 shadow-xs dark:bg-violet-500 dark:hover:bg-violet-600"
-              >
-                <Plus size={14} />
-                سطر جديد
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={addRow}
+                  className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1 text-xs font-black text-white hover:bg-violet-700 shadow-xs dark:bg-violet-500 dark:hover:bg-violet-600"
+                >
+                  <Plus size={14} />
+                  سطر جديد
+                </button>
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 font-bold text-xs">
+                <Check size={14} className="stroke-[3]" />
+                <span>وضع العرض فقط (محفوظة)</span>
+              </span>
+            )}
           </div>
 
           {/* Dense Table View */}
@@ -2256,25 +2378,33 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1.5 relative">
                           <input
                             value={row.barcode}
+                            readOnly={isSavedMode}
+                            disabled={isSavedMode}
                             onChange={(e) => {
+                              if (isSavedMode) return;
                               const v = normalizeDigitsToLatin(e.target.value);
                               updateLine(row.key, 'barcode', v);
                               setDropdownRowKey(row.key);
                               setDropdownField('barcode');
                               scheduleSearch(row.key, v);
                             }}
-                            onKeyDown={(e) => handleBarcodeKeyDown(e, row)}
+                            onKeyDown={(e) => !isSavedMode && handleBarcodeKeyDown(e, row)}
                             onFocus={() => {
+                              if (isSavedMode) return;
                               setDropdownRowKey(row.key);
                               setDropdownField('barcode');
                               if ((row.barcode || '').trim().length >= 2) {
                                 fetchProductSuggestions(row.key, row.barcode);
                               }
                             }}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-currency font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 transition-all"
+                            className={`h-8 w-full rounded-md border px-2 text-xs font-currency font-bold outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 cursor-default'
+                                : 'border-slate-200 bg-white text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+                            }`}
                             dir="ltr"
                             lang="en"
-                            placeholder="امسح أو اكتب…"
+                            placeholder={isSavedMode ? '—' : 'امسح أو اكتب…'}
                           />
 
                           {searchLoadingKey === row.key && dropdownField === 'barcode' && (
@@ -2282,7 +2412,7 @@ export default function PurchasesPage() {
                           )}
 
                           {/* Suggestions popup (under barcode) */}
-                          {showDrop && dropdownField === 'barcode' && (
+                          {!isSavedMode && showDrop && dropdownField === 'barcode' && (
                             <ul className="absolute z-50 right-0 left-0 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 text-[11px]">
                               {sug.map((p) => (
                                 <li key={p.unitData ? `u-${p.unitData.id}` : p.id}>
@@ -2311,11 +2441,17 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1.5">
                           <input
                             value={row.productName}
+                            readOnly={isSavedMode}
+                            disabled={isSavedMode}
                             onChange={(e) => {
-                              updateLine(row.key, 'productName', e.target.value);
+                              if (!isSavedMode) updateLine(row.key, 'productName', e.target.value);
                             }}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 transition-all"
-                            placeholder="اسم الصنف أو الوصف…"
+                            className={`h-8 w-full rounded-md border px-2 text-xs font-bold outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-100 cursor-default'
+                                : 'border-slate-200 bg-white text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+                            }`}
+                            placeholder={isSavedMode ? '—' : 'اسم الصنف أو الوصف…'}
                           />
                         </td>
 
@@ -2323,8 +2459,13 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1 text-center">
                           <select
                             value={row.warehouse || 'الرئيسي'}
-                            onChange={(e) => updateLine(row.key, 'warehouse', e.target.value)}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer transition-all"
+                            disabled={isSavedMode}
+                            onChange={(e) => !isSavedMode && updateLine(row.key, 'warehouse', e.target.value)}
+                            className={`h-8 w-full rounded-md border px-1 text-center text-xs font-bold outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 cursor-default'
+                                : 'border-slate-200 bg-white text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer'
+                            }`}
                             title="تحديد مخزن استلام الصنف"
                           >
                             {warehouseOptions.map((wh) => (
@@ -2339,11 +2480,17 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1 text-center">
                           <input
                             value={row.batchNumber || ''}
-                            onChange={(e) => updateLine(row.key, 'batchNumber', e.target.value)}
-                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-currency font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal transition-all"
+                            readOnly={isSavedMode}
+                            disabled={isSavedMode}
+                            onChange={(e) => !isSavedMode && updateLine(row.key, 'batchNumber', e.target.value)}
+                            className={`h-8 w-full rounded-md border px-1 text-center text-xs font-currency font-bold outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-100 cursor-default'
+                                : 'border-slate-200 bg-white text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:font-normal'
+                            }`}
                             dir="ltr"
                             lang="en"
-                            placeholder="اختياري"
+                            placeholder={isSavedMode ? '—' : 'اختياري'}
                             title="رقم التشغيلة / الدفعة (Batch Number)"
                           />
                         </td>
@@ -2364,8 +2511,13 @@ export default function PurchasesPage() {
                               return (
                                 <select
                                   value={row.unit}
-                                  onChange={(e) => handleUnitChange(row.key, e.target.value)}
-                                  className="h-8 w-full rounded-md border border-indigo-200 bg-indigo-50/70 px-1 text-center text-xs font-bold text-indigo-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200 cursor-pointer transition-all"
+                                  disabled={isSavedMode}
+                                  onChange={(e) => !isSavedMode && handleUnitChange(row.key, e.target.value)}
+                                  className={`h-8 w-full rounded-md border px-1 text-center text-xs font-bold outline-none transition-all ${
+                                    isSavedMode
+                                      ? 'border-transparent bg-indigo-50/40 text-indigo-900 dark:bg-indigo-950/20 dark:text-indigo-200 cursor-default'
+                                      : 'border-indigo-200 bg-indigo-50/70 text-indigo-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200 cursor-pointer'
+                                  }`}
                                   title="اختر وحدة الشراء"
                                 >
                                   {unitOptions.map((u) => (
@@ -2381,8 +2533,14 @@ export default function PurchasesPage() {
                                 <input
                                   list={`units-${row.key}`}
                                   value={row.unit}
-                                  onChange={(e) => updateLine(row.key, 'unit', e.target.value)}
-                                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-1 text-center text-xs font-bold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition-all"
+                                  readOnly={isSavedMode}
+                                  disabled={isSavedMode}
+                                  onChange={(e) => !isSavedMode && updateLine(row.key, 'unit', e.target.value)}
+                                  className={`h-8 w-full rounded-md border px-1 text-center text-xs font-bold outline-none transition-all ${
+                                    isSavedMode
+                                      ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 cursor-default'
+                                      : 'border-slate-200 bg-white text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                                  }`}
                                 />
                                 <datalist id={`units-${row.key}`}>
                                   {UNIT_OPTIONS.map((u) => (
@@ -2398,8 +2556,14 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1.5 text-center">
                           <input
                             value={row.qty}
-                            onChange={(e) => updateLine(row.key, 'qty', normalizeDigitsToLatin(e.target.value))}
-                            className={`h-8 w-full rounded-md border px-2 text-center text-xs font-currency font-black focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${getFieldStatusClass(row.qty, 'qty')}`}
+                            readOnly={isSavedMode}
+                            disabled={isSavedMode}
+                            onChange={(e) => !isSavedMode && updateLine(row.key, 'qty', normalizeDigitsToLatin(e.target.value))}
+                            className={`h-8 w-full rounded-md border px-2 text-center text-xs font-currency font-black outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 cursor-default'
+                                : getFieldStatusClass(row.qty, 'qty')
+                            }`}
                             dir="ltr"
                             lang="en"
                             inputMode="decimal"
@@ -2410,10 +2574,16 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1.5 text-center">
                           <input
                             value={row.unit_price}
+                            readOnly={isSavedMode}
+                            disabled={isSavedMode}
                             onChange={(e) =>
-                              updateLine(row.key, 'unit_price', normalizeDigitsToLatin(e.target.value))
+                              !isSavedMode && updateLine(row.key, 'unit_price', normalizeDigitsToLatin(e.target.value))
                             }
-                            className={`h-8 w-full rounded-md border px-2 text-center text-xs font-currency font-black focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${getFieldStatusClass(row.unit_price, 'price')}`}
+                            className={`h-8 w-full rounded-md border px-2 text-center text-xs font-currency font-black outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 cursor-default'
+                                : getFieldStatusClass(row.unit_price, 'price')
+                            }`}
                             dir="ltr"
                             lang="en"
                             inputMode="decimal"
@@ -2425,10 +2595,16 @@ export default function PurchasesPage() {
                         <td className="py-1.5 px-1.5 text-center">
                           <input
                             value={row.discount_percent}
+                            readOnly={isSavedMode}
+                            disabled={isSavedMode}
                             onChange={(e) =>
-                              updateLine(row.key, 'discount_percent', normalizeDigitsToLatin(e.target.value))
+                              !isSavedMode && updateLine(row.key, 'discount_percent', normalizeDigitsToLatin(e.target.value))
                             }
-                            className={`h-8 w-full rounded-md border px-1 text-center text-xs font-currency font-bold focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${getFieldStatusClass(row.discount_percent, 'discount')}`}
+                            className={`h-8 w-full rounded-md border px-1 text-center text-xs font-currency font-bold outline-none transition-all ${
+                              isSavedMode
+                                ? 'border-transparent bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 cursor-default'
+                                : getFieldStatusClass(row.discount_percent, 'discount')
+                            }`}
                             dir="ltr"
                             lang="en"
                             inputMode="decimal"
@@ -2457,25 +2633,29 @@ export default function PurchasesPage() {
                               <Info size={15} />
                             </button>
 
-                            {/* Duplicate */}
-                            <button
-                              type="button"
-                              onClick={() => duplicateRow(row.key)}
-                              className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                              title="تكرار السطر"
-                            >
-                              <Copy size={14} />
-                            </button>
+                            {!isSavedMode && (
+                              <>
+                                {/* Duplicate */}
+                                <button
+                                  type="button"
+                                  onClick={() => duplicateRow(row.key)}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  title="تكرار السطر"
+                                >
+                                  <Copy size={14} />
+                                </button>
 
-                            {/* Delete */}
-                            <button
-                              type="button"
-                              onClick={() => removeRow(row.key)}
-                              className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-                              title="حذف السطر"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                                {/* Delete */}
+                                <button
+                                  type="button"
+                                  onClick={() => removeRow(row.key)}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                                  title="حذف السطر"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2546,7 +2726,9 @@ export default function PurchasesPage() {
                                   <input
                                     type="date"
                                     value={row.expiryDate}
-                                    onChange={(e) => updateLine(row.key, 'expiryDate', e.target.value)}
+                                    readOnly={isSavedMode}
+                                    disabled={isSavedMode}
+                                    onChange={(e) => !isSavedMode && updateLine(row.key, 'expiryDate', e.target.value)}
                                     className="h-7 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 text-[11px] font-currency dark:text-slate-100"
                                     dir="ltr"
                                     lang="en"
@@ -2561,7 +2743,9 @@ export default function PurchasesPage() {
                                     <input
                                       type="text"
                                       value={row.serialInput}
-                                      onChange={(e) => updateLine(row.key, 'serialInput', e.target.value)}
+                                      readOnly={isSavedMode}
+                                      disabled={isSavedMode}
+                                      onChange={(e) => !isSavedMode && updateLine(row.key, 'serialInput', e.target.value)}
                                       placeholder="افصل بينها بفاصلة أو سطر"
                                       className="h-7 w-48 rounded-md border border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/40 px-2 text-[11px] font-currency dark:text-amber-100"
                                       dir="ltr"
@@ -2658,47 +2842,55 @@ export default function PurchasesPage() {
                     type="text"
                     inputMode="decimal"
                     value={taxRate}
-                    onChange={(e) => setTaxRate(normalizeDigitsToLatin(e.target.value))}
-                    className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-xs font-currency font-black text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white transition-all"
+                    readOnly={isSavedMode}
+                    disabled={isSavedMode}
+                    onChange={(e) => !isSavedMode && setTaxRate(normalizeDigitsToLatin(e.target.value))}
+                    className={`h-9 w-full rounded-xl border px-3 text-xs font-currency font-black outline-none transition-all ${
+                      isSavedMode
+                        ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                        : 'border-slate-200 bg-slate-50/80 text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white'
+                    }`}
                     dir="ltr"
                     lang="en"
                     placeholder="0"
                   />
-                  <div className="absolute left-1.5 flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setTaxRate('0')}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                        taxRate === '0'
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      0%
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaxRate('16')}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                        taxRate === '16'
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      16%
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaxRate('17')}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                        taxRate === '17'
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      17%
-                    </button>
-                  </div>
+                  {!isSavedMode && (
+                    <div className="absolute left-1.5 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setTaxRate('0')}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                          taxRate === '0'
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        0%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaxRate('16')}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                          taxRate === '16'
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        16%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaxRate('17')}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                          taxRate === '17'
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-slate-200/70 text-slate-600 hover:bg-slate-300/70 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        17%
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2711,8 +2903,14 @@ export default function PurchasesPage() {
                   type="text"
                   inputMode="decimal"
                   value={landedCostExtra}
-                  onChange={(e) => setLandedCostExtra(normalizeDigitsToLatin(e.target.value))}
-                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-xs font-currency font-black text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white transition-all"
+                  readOnly={isSavedMode}
+                  disabled={isSavedMode}
+                  onChange={(e) => !isSavedMode && setLandedCostExtra(normalizeDigitsToLatin(e.target.value))}
+                  className={`h-9 w-full rounded-xl border px-3 text-xs font-currency font-black outline-none transition-all ${
+                    isSavedMode
+                      ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                      : 'border-slate-200 bg-slate-50/80 text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white'
+                  }`}
                   dir="ltr"
                   lang="en"
                   placeholder="0.00"
@@ -2726,8 +2924,9 @@ export default function PurchasesPage() {
                 <input
                   type="checkbox"
                   checked={isTaxInclusive}
-                  onChange={(e) => setIsTaxInclusive(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                  disabled={isSavedMode}
+                  onChange={(e) => !isSavedMode && setIsTaxInclusive(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer disabled:cursor-default"
                 />
                 <span>الأسعار المدخلة بالجدول <strong>شاملة الضريبة</strong></span>
               </label>
@@ -2755,9 +2954,15 @@ export default function PurchasesPage() {
 
             <textarea
               value={extraNotes}
-              onChange={(e) => setExtraNotes(e.target.value)}
+              readOnly={isSavedMode}
+              disabled={isSavedMode}
+              onChange={(e) => !isSavedMode && setExtraNotes(e.target.value)}
               rows={3}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 resize-none transition-all flex-1"
+              className={`w-full rounded-xl border px-3 py-2 text-xs outline-none resize-none transition-all flex-1 ${
+                isSavedMode
+                  ? 'border-slate-200 bg-slate-100/90 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-200 cursor-default'
+                  : 'border-slate-200 bg-slate-50/80 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900'
+              }`}
               placeholder="أدخل أي ملاحظات تفصيلية تخص الشحنة، الاتفاق مع المورد، رقم بوليصة الشحن، أو شروط الاسترجاع والدفع…"
             />
 
@@ -2766,8 +2971,9 @@ export default function PurchasesPage() {
                 <input
                   type="checkbox"
                   checked={updateCatalogCosts}
-                  onChange={(e) => setUpdateCatalogCosts(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                  disabled={isSavedMode}
+                  onChange={(e) => !isSavedMode && setUpdateCatalogCosts(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer disabled:cursor-default"
                 />
                 <span>تطبيق <strong>متوسط التكلفة المرجح (WAC)</strong> على تكلفة الكتالوج عند الاستلام</span>
               </label>
@@ -2852,26 +3058,67 @@ export default function PurchasesPage() {
             </div>
           </div>
 
-          {/* Right: Status Selector & Save Button */}
+          {/* Right: Status Selector & Save Button OR Saved Mode Controls */}
           <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={purchaseStatus}
-              onChange={(e) => setPurchaseStatus(e.target.value)}
-              className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 outline-none cursor-pointer shadow-xs"
-            >
-              <option value="received">تم الاستلام (تحديث المخزون فوراً)</option>
-              <option value="draft">مسودة (حفظ دون تحديث المخزون)</option>
-            </select>
+            {isSavedMode ? (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                  <Check size={16} className="stroke-[3]" />
+                  <span>{purchaseStatus === 'received' ? 'محفوظة ومرحّلة للمخزن' : 'محفوظة كمسودة'}</span>
+                </span>
 
-            <button
-              type="button"
-              onClick={handleSavePurchase}
-              disabled={saving || grandTotal <= 0}
-              className="h-11 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black px-7 text-xs shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
-            >
-              {saving ? <Loader2 className="animate-spin" size={17} /> : <Save size={17} />}
-              <span>{purchaseStatus === 'draft' ? 'حفظ كمسودة' : 'حفظ واستلام للمخزن'}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSavedMode(false)}
+                  className="h-11 inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold px-4 text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+                  title="تعديل الفاتورة وفك قفل الحقول"
+                >
+                  <Pencil size={15} />
+                  <span>تعديل الفاتورة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintCurrentInvoice}
+                  className="h-11 inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold px-4 text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+                  title="طباعة الفاتورة"
+                >
+                  <Printer size={15} />
+                  <span>طباعة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleNewInvoice}
+                  className="h-11 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black px-5 text-xs shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                  title="فتح فاتورة شراء جديدة فارغة"
+                >
+                  <Plus size={16} />
+                  <span>فاتورة جديدة</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <select
+                  value={purchaseStatus}
+                  onChange={(e) => setPurchaseStatus(e.target.value)}
+                  className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 outline-none cursor-pointer shadow-xs"
+                >
+                  <option value="received">تم الاستلام (تحديث المخزون فوراً)</option>
+                  <option value="draft">مسودة (حفظ دون تحديث المخزون)</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleSavePurchase}
+                  disabled={saving || grandTotal <= 0}
+                  className="h-11 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-black px-7 text-xs shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
+                >
+                  {saving ? <Loader2 className="animate-spin" size={17} /> : <Save size={17} />}
+                  <span>{purchaseStatus === 'draft' ? 'حفظ كمسودة' : 'حفظ واستلام للمخزن'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -3251,6 +3498,14 @@ export default function PurchasesPage() {
             </div>
           </div>
         )}
+
+        {/* Modal: Unified Supplier Form */}
+        <SupplierFormModal
+          isOpen={newSupplierModalOpen}
+          onClose={() => setNewSupplierModalOpen(false)}
+          initialName={newSupplierInitialName}
+          onSuccess={handleSupplierCreated}
+        />
 
         {/* Modal: Purchase Attachments */}
         <PurchaseAttachmentsModal
